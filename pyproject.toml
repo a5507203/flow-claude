@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flow-claude"
+version = "0.1.0"
+description = "Git-driven autonomous development system using Claude agent SDK"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Flow-Claude Contributors"}
+]
+dependencies = [
+    "claude-agent-sdk>=0.1.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+flow-claude = "flow_claude.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flow_claude*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
