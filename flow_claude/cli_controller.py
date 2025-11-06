@@ -15,6 +15,8 @@ import sys
 from datetime import datetime
 from typing import Optional
 
+from flow_claude.logging_config import get_logger, cleanup_old_logs
+
 
 class SimpleCLI:
     """Simple CLI controller for Flow-Claude interactive sessions with async queues"""
@@ -33,25 +35,46 @@ class SimpleCLI:
         self.orchestrator_task = None
         self.shutdown_requested = False
 
+        # Logger (will be initialized in run())
+        self.logger = None
+
     async def run(self):
         """Main async CLI loop - get request and start session"""
+        # Initialize logger
+        session_id = datetime.now().strftime("session-%Y%m%d-%H%M%S")
+        self.logger = get_logger(session_id)
+
+        # Cleanup old logs
+        cleanup_old_logs()
+
         try:
+            self.logger.info(f"Starting Flow-Claude CLI (model={self.model}, max_parallel={self.max_parallel})")
+
             # Get development request from user (synchronous)
             request = self.get_request()
             if not request:
                 print("\nNo request provided. Exiting.")
+                self.logger.info("No request provided, exiting")
                 return
+
+            self.logger.info(f"User request: {request}")
+
+            # Print log file location
+            print(f"  Log file: {self.logger.log_file}")
+            print()
 
             # Create async queues
             self.message_queue = asyncio.Queue()
             self.control_queue = asyncio.Queue()
 
             # Start orchestrator in background
+            self.logger.info("Starting orchestrator task")
             self.orchestrator_task = asyncio.create_task(
                 self.run_orchestrator(request)
             )
 
             # Run UI tasks concurrently
+            self.logger.info("Starting concurrent tasks (render, input, orchestrator)")
             await asyncio.gather(
                 self.render_loop(),      # Display messages from orchestrator
                 self.input_loop(),       # Handle keyboard input (q/ESC)
@@ -61,13 +84,18 @@ class SimpleCLI:
 
         except KeyboardInterrupt:
             print("\n\nInterrupted by user (Ctrl+C)")
+            self.logger.warning("Session interrupted by Ctrl+C")
             await self.cleanup()
         except Exception as e:
             print(f"\n\nError: {e}")
+            self.logger.exception(f"Fatal error: {e}")
             if self.debug:
                 import traceback
                 traceback.print_exc()
             await self.cleanup()
+        finally:
+            if self.logger:
+                self.logger.close()
 
     async def run_orchestrator(self, request: str):
         """Run orchestrator in background with async queue communication"""
@@ -121,6 +149,7 @@ class SimpleCLI:
     async def input_loop(self):
         """Handle keyboard input - q for quit, ESC for intervention"""
         loop = asyncio.get_event_loop()
+        self.logger.debug("Input loop started")
 
         while not self.shutdown_requested:
             try:
@@ -128,6 +157,7 @@ class SimpleCLI:
                 key = await loop.run_in_executor(None, self.read_key_with_timeout)
 
                 if key == 'q':
+                    self.logger.info("User pressed 'q' - initiating shutdown")
                     # Send shutdown signal
                     await self.control_queue.put({
                         "type": "shutdown",
@@ -144,10 +174,12 @@ class SimpleCLI:
                     break
 
                 elif key == '\x1b':  # ESC
+                    self.logger.info("User pressed ESC - entering intervention mode")
                     # Handle intervention
                     await self.handle_intervention()
 
             except asyncio.CancelledError:
+                self.logger.debug("Input loop cancelled")
                 break
 
     def read_key_with_timeout(self) -> Optional[str]:
@@ -186,6 +218,16 @@ class SimpleCLI:
 
     async def handle_intervention(self):
         """Handle ESC interruption - prompt for additional requirement"""
+        self.logger.info("Intervention: Sending pause signal")
+        # First, pause the backend process
+        await self.control_queue.put({
+            "type": "pause",
+            "data": {}
+        })
+
+        # Wait a moment for the pause to take effect
+        await asyncio.sleep(0.5)
+
         print()
         print("  " + "=" * 76)
         print("  INTERVENTION MODE")
@@ -203,6 +245,7 @@ class SimpleCLI:
         )
 
         if requirement:
+            self.logger.info(f"Intervention: User added requirement: {requirement}")
             # Send intervention to orchestrator
             await self.control_queue.put({
                 "type": "intervention",
@@ -215,17 +258,28 @@ class SimpleCLI:
             print()
             print("  Requirement added. Resuming execution...")
         else:
+            self.logger.info("Intervention: No requirement added")
             print()
             print("  No requirement added. Resuming execution...")
 
         print("  " + "=" * 76)
         print()
 
+        self.logger.info("Intervention: Sending resume signal")
+        # Resume the backend process
+        await self.control_queue.put({
+            "type": "resume",
+            "data": {}
+        })
+
     def render_message(self, message: dict):
         """Render message to console"""
         msg_type = message.get("type")
         data = message.get("data", {})
         timestamp = message.get("timestamp", datetime.now().isoformat())[:19]
+
+        # Log all orchestrator messages
+        self.logger.log_orchestrator_message(msg_type, data)
 
         if msg_type == "status":
             print(f"  [{timestamp}] [INFO]  {data.get('message', '')}")

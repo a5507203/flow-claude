@@ -9,6 +9,7 @@ import asyncio
 import os
 import sys
 import subprocess
+import signal
 from datetime import datetime
 from typing import Optional, List
 from pathlib import Path
@@ -203,13 +204,47 @@ class OrchestratorSession:
 
             await self.cleanup()
 
+        elif control_type == "pause":
+            # Pause/suspend the process
+            await self.send_message("status", {"message": "Pausing execution..."})
+            try:
+                if sys.platform == 'win32':
+                    # Windows: Use taskkill to suspend (requires psutil or ctypes)
+                    import psutil
+                    p = psutil.Process(process.pid)
+                    p.suspend()
+                else:
+                    # Unix: Send SIGSTOP
+                    process.send_signal(signal.SIGSTOP)
+
+                await self.send_message("status", {"message": "Process paused"})
+            except Exception as e:
+                await self.send_message("error", {"message": f"Failed to pause: {str(e)}"})
+
+        elif control_type == "resume":
+            # Resume the process
+            await self.send_message("status", {"message": "Resuming execution..."})
+            try:
+                if sys.platform == 'win32':
+                    # Windows: Resume process
+                    import psutil
+                    p = psutil.Process(process.pid)
+                    p.resume()
+                else:
+                    # Unix: Send SIGCONT
+                    process.send_signal(signal.SIGCONT)
+
+                await self.send_message("status", {"message": "Process resumed"})
+            except Exception as e:
+                await self.send_message("error", {"message": f"Failed to resume: {str(e)}"})
+
         elif control_type == "intervention":
             requirement = control.get("data", {}).get("requirement", "")
             await self.send_message("status", {
                 "message": f"Intervention: Adding requirement: {requirement}"
             })
-            # TODO: Implement intervention handling
-            # For now, just log it
+            # TODO: Full intervention implementation would require the backend CLI
+            # to support mid-execution requirement injection
 
     async def init_git_repo(self):
         """Initialize git repository"""
