@@ -5,6 +5,7 @@ Simple interactive CLI for Flow-Claude development sessions.
 Just type `flow` to start an interactive session.
 """
 
+import asyncio
 import click
 from flow_claude.cli_controller import SimpleCLI
 
@@ -25,7 +26,7 @@ def main(model, max_parallel, verbose, debug):
     Launch an interactive development session where you can:
     - Enter development requests
     - See real-time execution progress
-    - Press ESC to interrupt and add requirements
+    - Press 'q' to quit, ESC to add requirements
     """
     cli = SimpleCLI(
         model=model,
@@ -35,7 +36,8 @@ def main(model, max_parallel, verbose, debug):
     )
 
     try:
-        cli.run()
+        # Run async event loop
+        asyncio.run(cli.run())
     except KeyboardInterrupt:
         print("\n\nExiting...")
 
