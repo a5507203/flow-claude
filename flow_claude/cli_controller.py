@@ -50,6 +50,9 @@ class SimpleCLI:
         try:
             self.logger.info(f"Starting Flow-Claude CLI (model={self.model}, max_parallel={self.max_parallel})")
 
+            # Check if we should prompt for CLAUDE.md initialization
+            self.check_and_prompt_init()
+
             # Get development request from user (synchronous)
             request = self.get_request()
             if not request:
@@ -335,6 +338,106 @@ class SimpleCLI:
                 await self.orchestrator_task
             except asyncio.CancelledError:
                 pass
+
+    def check_and_prompt_init(self):
+        """Check if directory needs CLAUDE.md initialization and prompt user"""
+        from pathlib import Path
+        import subprocess
+
+        cwd = Path.cwd()
+        claude_md = cwd / "CLAUDE.md"
+
+        # Check if CLAUDE.md already exists
+        if claude_md.exists():
+            return
+
+        # Check if directory is empty (only check for non-hidden files)
+        files = [f for f in cwd.iterdir() if not f.name.startswith('.')]
+        if not files:
+            # Empty directory, no need to prompt
+            return
+
+        # Directory is not empty and no CLAUDE.md - prompt user
+        print()
+        print("  " + "-" * 76)
+        print("  This directory doesn't have a CLAUDE.md file.")
+        print("  CLAUDE.md helps Claude Code understand your project better.")
+        print("  " + "-" * 76)
+        print()
+
+        while True:
+            response = input("  Would you like to initialize CLAUDE.md now? (y/n): ").strip().lower()
+
+            if response in ['y', 'yes']:
+                self.logger.info("User chose to initialize CLAUDE.md with Claude Code")
+                print()
+                print("  Initializing CLAUDE.md with Claude Code...")
+                print()
+
+                # Try to run claude code to create CLAUDE.md
+                try:
+                    # Check if claude command exists
+                    # On Windows, need shell=True to find .cmd files
+                    result = subprocess.run(
+                        'claude --version',
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+
+                    if result.returncode == 0:
+                        # Claude Code is available, create CLAUDE.md automatically
+                        print("  Creating CLAUDE.md with Claude Code...")
+                        print()
+
+                        # Use echo to pipe prompt to claude code --print with --dangerously-skip-permissions
+                        # This allows non-interactive file creation
+                        prompt = "Please create a CLAUDE.md file for this project with proper documentation structure. Write the file now."
+                        init_result = subprocess.run(
+                            f'echo {prompt} | claude code --print --dangerously-skip-permissions',
+                            shell=True,
+                            cwd=str(cwd),
+                            capture_output=True,
+                            text=True,
+                            timeout=60
+                        )
+
+                        # Check if CLAUDE.md was created
+                        if claude_md.exists():
+                            print("  ✓ CLAUDE.md created successfully!")
+                            print()
+                            self.logger.info("CLAUDE.md initialized successfully with Claude Code")
+                        else:
+                            print("  ✗ CLAUDE.md creation failed.")
+                            print("  You can run 'claude code' and use \\init manually.")
+                            print()
+                            self.logger.warning("CLAUDE.md file not found after initialization")
+                    else:
+                        raise FileNotFoundError()
+
+                except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+                    # Claude Code not available
+                    print("  ✗ Claude Code CLI not found.")
+                    print()
+                    print("  To install Claude Code, visit:")
+                    print("  https://docs.claude.com/en/docs/claude-code")
+                    print()
+                    print("  Or run 'claude code' and use \\init slash command manually.")
+                    print()
+                    self.logger.warning(f"Claude Code CLI not available: {e}")
+
+                break
+
+            elif response in ['n', 'no']:
+                self.logger.info("User declined to create CLAUDE.md")
+                print()
+                print("  Skipping CLAUDE.md initialization.")
+                print("  Note: CLAUDE.md helps Claude Code understand your project better.")
+                print()
+                break
+            else:
+                print("  Please enter 'y' or 'n'")
 
     def get_request(self) -> str:
         """Get development request from user (plain input prompt)"""
