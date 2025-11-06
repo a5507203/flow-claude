@@ -45,7 +45,9 @@
       "Bash(git clean:*)",
       "Bash(git branch:*)",
       "Bash(git checkout:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python -m flow_claude.commands.flow_cli:*)"
     ],
     "deny": [],
     "ask": []

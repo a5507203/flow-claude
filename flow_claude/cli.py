@@ -126,22 +126,10 @@ def cli():
     help='Permission mode for tool usage'
 )
 @click.option(
-    '--parallel',
-    is_flag=True,
-    default=False,
-    help='Enable parallel task execution using git worktrees'
-)
-@click.option(
     '--max-parallel',
-    default=2,
+    default=3,
     type=int,
-    help='Maximum number of parallel workers (default: 2)'
-)
-@click.option(
-    '--sequential',
-    is_flag=True,
-    default=False,
-    help='Force sequential execution (disable parallel mode)'
+    help='Maximum number of parallel workers (default: 3). Set to 1 for sequential execution.'
 )
 @click.option(
     '--verbose',
@@ -160,9 +148,7 @@ def develop(
     model: str,
     max_turns: int,
     permission_mode: str,
-    parallel: bool,
     max_parallel: int,
-    sequential: bool,
     verbose: bool,
     debug: bool
 ):
@@ -191,14 +177,9 @@ def develop(
         click.echo("After installing, authenticate with: claude auth login", err=True)
         sys.exit(1)
 
-    # Handle conflicting parallel flags
-    if parallel and sequential:
-        click.echo("ERROR: Cannot specify both --parallel and --sequential", err=True)
-        sys.exit(1)
-
-    # Determine execution mode
-    # Auto-enable parallel if max_parallel > 1 (unless sequential is explicitly set)
-    enable_parallel = (parallel or max_parallel > 1) and not sequential
+    # Determine execution mode based on max_parallel
+    # Parallel mode enabled automatically when max_parallel > 1
+    enable_parallel = max_parallel > 1
 
     # Auto-initialize git repository if needed
     if not os.path.exists('.git'):
