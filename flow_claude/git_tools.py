@@ -30,6 +30,7 @@ from .parsers import (
     parse_task_metadata,
     parse_plan_commit,
     extract_provides_from_merge_commits,
+    parse_worker_commit,
 )
 
 
@@ -291,77 +292,91 @@ async def get_provides(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-@tool("read_plan_file", "Read a file from the current plan branch (e.g., plan.md, system-overview.md)", {"file_name": str})
-async def read_plan_file(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Read a file from the current plan branch.
+@tool("parse_worker_commit", "Parse worker's latest commit with design and TODO progress", {"branch": str})
+async def parse_worker_commit_tool(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse the latest commit on a worker's task branch.
 
-    NEW in V6.2: Plan branches now contain actual MD files instead of just
-    commit messages. This tool reads those files.
+    This tool extracts structured information from worker commits in the
+    commit-only architecture where design.md and todo.md are embedded in
+    commit messages.
 
     Args:
-        args: Dictionary with 'file_name' key (e.g., "plan.md", "system-overview.md")
+        args: Dictionary with 'branch' key (e.g., "task/001-user-model")
 
     Returns:
-        MCP tool response with file contents as text
+        MCP tool response with parsed commit data as JSON
 
     Example:
-        Input: {"file_name": "plan.md"}
+        Input: {"branch": "task/001-user-model"}
         Output: {
             "content": [{
                 "type": "text",
-                "text": "# Execution Plan v1\n\n..."
+                "text": "{
+                    \"task_id\": \"001\",
+                    \"commit_type\": \"implementation\",
+                    \"step_number\": 2,
+                    \"total_steps\": 6,
+                    \"implementation\": \"Added User class with fields\",
+                    \"design\": {
+                        \"overview\": \"...\",
+                        \"architecture_decisions\": [...],
+                        \"interfaces_provided\": [...]
+                    },
+                    \"todo_list\": [
+                        {\"number\": 1, \"description\": \"...\", \"completed\": true},
+                        {\"number\": 2, \"description\": \"...\", \"completed\": true},
+                        {\"number\": 3, \"description\": \"...\", \"completed\": false}
+                    ],
+                    \"progress\": {
+                        \"status\": \"in_progress\",
+                        \"completed\": 2,
+                        \"total\": 6
+                    }
+                }"
             }]
         }
     """
-    file_name = args.get("file_name", "")
+    branch = args.get("branch", "")
 
-    # Validate file_name (handle empty strings and whitespace)
-    if not file_name or not file_name.strip():
+    if not branch:
         return {
             "content": [{
                 "type": "text",
-                "text": json.dumps({"error": "file_name is required (cannot be empty or whitespace)"}, indent=2)
+                "text": json.dumps({"error": "branch parameter is required"}, indent=2)
             }],
             "isError": True
         }
 
     try:
-        # Get current plan branch from git config
+        # Get latest commit message on the branch
         result = subprocess.run(
-            ['git', 'config', '--local', 'flow-claude.current-plan'],
-            capture_output=True,
-            text=True,
-            check=False,  # Don't raise on non-zero exit (config might not exist)
-            timeout=5
-        )
-
-        plan_branch = result.stdout.strip()
-
-        if not plan_branch:
-            return {
-                "content": [{
-                    "type": "text",
-                    "text": json.dumps({
-                        "error": "No active plan branch found",
-                        "hint": "Planning agent should set 'flow-claude.current-plan' config"
-                    }, indent=2)
-                }],
-                "isError": True
-            }
-
-        # Read file from plan branch
-        result = subprocess.run(
-            ['git', 'show', f'{plan_branch}:{file_name}'],
+            ['git', 'log', branch, '-n', '1', '--format=%B'],
             capture_output=True,
             text=True,
             check=True,
             timeout=10
         )
 
+        commit_message = result.stdout
+
+        if not commit_message.strip():
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "error": f"No commits found on branch {branch}"
+                    }, indent=2)
+                }],
+                "isError": True
+            }
+
+        # Parse the commit message
+        parsed = parse_worker_commit(commit_message)
+
         return {
             "content": [{
                 "type": "text",
-                "text": result.stdout
+                "text": json.dumps(parsed, indent=2)
             }]
         }
 
@@ -370,9 +385,8 @@ async def read_plan_file(args: Dict[str, Any]) -> Dict[str, Any]:
             "content": [{
                 "type": "text",
                 "text": json.dumps({
-                    "error": f"Failed to read file from plan branch: {e.stderr}",
-                    "file_name": file_name,
-                    "plan_branch": plan_branch if 'plan_branch' in locals() else "unknown"
+                    "error": f"Failed to read commit from branch: {e.stderr}",
+                    "branch": branch
                 }, indent=2)
             }],
             "isError": True
@@ -383,7 +397,7 @@ async def read_plan_file(args: Dict[str, Any]) -> Dict[str, Any]:
                 "type": "text",
                 "text": json.dumps({
                     "error": "Git command timed out",
-                    "file_name": file_name
+                    "branch": branch
                 }, indent=2)
             }],
             "isError": True
@@ -394,7 +408,7 @@ async def read_plan_file(args: Dict[str, Any]) -> Dict[str, Any]:
                 "type": "text",
                 "text": json.dumps({
                     "error": f"Unexpected error: {str(e)}",
-                    "file_name": file_name
+                    "branch": branch
                 }, indent=2)
             }],
             "isError": True
@@ -415,13 +429,13 @@ def create_git_tools_server():
             )
 
         Agents can then use:
-            - mcp__git__parse_task
-            - mcp__git__parse_plan
-            - mcp__git__get_provides
-            - mcp__git__read_plan_file (NEW in V6.2)
+            - mcp__git__parse_task: Parse task metadata from branch commit
+            - mcp__git__parse_plan: Parse plan data from plan branch commit (commit-only)
+            - mcp__git__get_provides: Query completed task capabilities from main
+            - mcp__git__parse_worker_commit: Parse worker's latest commit (design + TODO progress)
     """
     return create_sdk_mcp_server(
         name="git",
         version="1.0.0",
-        tools=[parse_task, parse_plan, get_provides, read_plan_file]
+        tools=[parse_task, parse_plan, get_provides, parse_worker_commit_tool]
     )

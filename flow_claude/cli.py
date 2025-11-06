@@ -197,7 +197,8 @@ def develop(
         sys.exit(1)
 
     # Determine execution mode
-    enable_parallel = parallel and not sequential
+    # Auto-enable parallel if max_parallel > 1 (unless sequential is explicitly set)
+    enable_parallel = (parallel or max_parallel > 1) and not sequential
 
     # Auto-initialize git repository if needed
     if not os.path.exists('.git'):
@@ -227,13 +228,23 @@ def develop(
     # V6.3: Load prompts from files using @filepath syntax
     # Orchestrator is main agent, planner and workers are subagents
     # The SDK loads the full file content at runtime
+    # V6.7: Check for instruction files in working directory first (user's git repo)
+    # This allows users to customize agent behavior per-project
+    working_dir = os.getcwd()
     prompts_dir = os.path.join(os.path.dirname(__file__), '..', 'prompts')
 
-    # Get absolute paths for prompts
-    orchestrator_prompt_file = os.path.abspath(os.path.join(prompts_dir, 'orchestrator.md'))
-    planner_prompt_file = os.path.abspath(os.path.join(prompts_dir, 'planner.md'))
-    worker_prompt_file = os.path.abspath(os.path.join(prompts_dir, 'worker.md'))
-    user_proxy_prompt_file = os.path.abspath(os.path.join(prompts_dir, 'user.md'))
+    def get_prompt_file(local_name, fallback_name):
+        """Get prompt file from working dir or fall back to flow-claude prompts."""
+        local_path = os.path.join(working_dir, local_name)
+        if os.path.exists(local_path):
+            return local_path
+        return os.path.abspath(os.path.join(prompts_dir, fallback_name))
+
+    # Get absolute paths for prompts (check working dir first, then fall back)
+    orchestrator_prompt_file = get_prompt_file('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md')
+    planner_prompt_file = get_prompt_file('PLANNER_INSTRUCTIONS.md', 'planner.md')
+    worker_prompt_file = get_prompt_file('WORKER_INSTRUCTIONS.md', 'worker.md')
+    user_proxy_prompt_file = get_prompt_file('USER_PROXY_INSTRUCTIONS.md', 'user.md')
 
     # Use @filepath syntax for all agents
     orchestrator_prompt = f"@{orchestrator_prompt_file}"
@@ -244,8 +255,12 @@ def develop(
     # Determine number of workers
     num_workers = max_parallel if enable_parallel else 1
 
-    if debug:
-        click.echo(f"DEBUG: Loading agent prompts using @filepath syntax")
+    if debug or verbose:
+        click.echo(f"DEBUG: Loading agent prompts:")
+        click.echo(f"  Orchestrator: {orchestrator_prompt_file}")
+        click.echo(f"  Planner: {planner_prompt_file}")
+        click.echo(f"  Worker: {worker_prompt_file}")
+        click.echo(f"  User Proxy: {user_proxy_prompt_file}")
         click.echo(f"DEBUG: - orchestrator-minimal.md: {orchestrator_prompt}")
         click.echo(f"DEBUG: - planner.md: {planner_prompt}")
         click.echo(f"DEBUG: - worker.md: {worker_prompt}")
@@ -425,11 +440,18 @@ async def run_development_session(
     # SDK v0.1.6+ automatically handles Windows cmd.exe 8191-char limit via temp files (PR #245)
     agent_definitions = {}
 
-    # Define planner subagent (V6.5: Added Task tool for worker invocation)
+    # Define planner subagent (V6.7: Commit-only architecture - NO Write/Edit tools!)
     agent_definitions['planner'] = AgentDefinition(
         description='Planning agent that creates execution plans and breaks down requests',
         prompt=planner_prompt,
-        tools=['Task', 'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob', 'mcp__git__read_plan_file', 'mcp__git__get_provides'],
+        tools=[
+            'Task', 'Bash', 'Read', 'Grep', 'Glob',
+            # Commit-only architecture - planner uses git commits, NOT files
+            'mcp__git__parse_plan',  # Read plan from commits
+            'mcp__git__parse_task',  # Read task metadata from commits
+            'mcp__git__parse_worker_commit',  # Monitor worker progress
+            'mcp__git__get_provides'  # Query completed task capabilities
+        ],
         model=model
     )
 
@@ -446,7 +468,12 @@ async def run_development_session(
         agent_definitions[f'worker-{i}'] = AgentDefinition(
             description=f'Worker agent {i} that executes individual development tasks',
             prompt=worker_prompt,
-            tools=['Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob'],  # V6.6: Removed MCP tools - workers use git commands
+            tools=[
+                'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob',
+                'mcp__git__parse_task',  # Read task metadata from branch
+                'mcp__git__parse_plan',  # Read plan context
+                'mcp__git__parse_worker_commit'  # Read own progress (commit-only architecture)
+            ],
             model=model
         )
 
@@ -471,11 +498,11 @@ async def run_development_session(
             "Edit",
             "Grep",
             "Glob",
-            # MCP git tools (required for planner subagent)
-            "mcp__git__parse_task",
-            "mcp__git__parse_plan",
-            "mcp__git__get_provides",
-            "mcp__git__read_plan_file",
+            # MCP git tools (commit-only architecture)
+            "mcp__git__parse_task",  # Parse task metadata from branch commits
+            "mcp__git__parse_plan",  # Parse plan from plan branch commits
+            "mcp__git__get_provides",  # Query completed task capabilities
+            "mcp__git__parse_worker_commit",  # Parse worker progress from commits
         ],
         mcp_servers={
             "git": create_git_tools_server()
@@ -553,7 +580,9 @@ Task tool:
 {{
   "subagent_type": "planner",
   "description": "Create plan and Wave 1 branches",
-  "prompt": "Create execution plan and Wave 1 task branches for this request:
+  "prompt": "**FIRST:** Read your instructions at PLANNER_INSTRUCTIONS.md (if it exists in working directory).
+
+Create execution plan and Wave 1 task branches for this request:
 
 **User Request:** {request}
 
@@ -562,20 +591,12 @@ Task tool:
 - Plan Branch: {plan_branch}
 - Working Directory: {os.getcwd()}
 
-**Your Tasks (Round 1):**
-1. Create {plan_branch} branch with plan.md and system-overview.md
-2. Identify Wave 1 tasks (those with Preconditions: [])
-3. Create task branches for Wave 1 ONLY (with metadata + test files)
-4. Return to me with list of created task branches
-
-**DO NOT spawn workers.** I (orchestrator) will spawn them.
-
-Follow your Phase 1, 2, 3 workflow."
+Follow your Phase 1 workflow from PLANNER_INSTRUCTIONS.md."
 }}
 ```
 
 **After Planner Returns:**
-1. Read plan.md or run `git branch --list 'task/*'` to see what branches were created
+1. Use mcp__git__parse_plan or run `git branch --list 'task/*'` to see what branches were created
 2. **Create git worktrees for parallel execution** (CRITICAL for avoiding conflicts):
    ```bash
    # For each task branch in the current wave:
@@ -593,7 +614,7 @@ Follow your Phase 1, 2, 3 workflow."
    git worktree remove .worktrees/worker-2
    # etc.
    ```
-6. Check if more waves remain (read plan.md for pending tasks)
+6. Check if more waves remain (use mcp__git__parse_plan for pending tasks)
 7. If yes: Invoke planner again with "Wave N complete. Prepare Wave N+1." prompt (go back to step 2)
 8. If no: Invoke planner with "All waves complete. Generate final report." prompt
 9. Report final results to user

@@ -146,6 +146,15 @@ def parse_context(text: str) -> Dict[str, Any]:
     Returns:
         Dictionary with context fields
 
+    Supported fields (as specified in prompts/planner.md):
+        - Session Goal, Session ID, Plan Branch, Plan Version (required)
+        - Depends on, Enables (actively used for dependency tracking)
+        - Parallel with, Completed Tasks (optional, for future extensibility)
+
+    Note: Parser supports 'Parallel with:' and 'Completed Tasks:' fields
+    for extensibility, but these are not currently required by planner.md.
+    If present, they will be parsed; if absent, empty lists are returned.
+
     Example:
         Input:
             "Session Goal: Add user auth\\nSession ID: session-123\\n
@@ -233,13 +242,16 @@ def parse_plan_commit(message: str) -> Dict[str, Any]:
         message: Plan commit message
 
     Returns:
-        Dictionary with plan information including tasks list
+        Dictionary with plan information including tasks list and architecture
 
     Example:
         {
             'session_id': 'session-20250101-120000',
             'user_request': 'Add user authentication',
             'plan_version': 'v1',
+            'architecture': 'System uses MVC pattern...',
+            'design_patterns': 'Repository pattern for...',
+            'technology_stack': 'Python 3.10, Flask...',
             'tasks': [
                 {'id': '001', 'description': '...', ...},
                 {'id': '002', 'description': '...', ...},
@@ -263,6 +275,11 @@ def parse_plan_commit(message: str) -> Dict[str, Any]:
         version_match = re.search(r'v(\d+)', first_line, re.IGNORECASE)
         if version_match:
             plan_version = f"v{version_match.group(1)}"
+
+    # Extract architecture sections (commit-only architecture)
+    architecture_text = sections.get('architecture', '')
+    design_patterns_text = sections.get('design_patterns', '')
+    tech_stack_text = sections.get('technology_stack', '')
 
     # Extract tasks (each starts with ### Task NNN)
     tasks = []
@@ -290,6 +307,9 @@ def parse_plan_commit(message: str) -> Dict[str, Any]:
         'user_request': extract_field(session_text, 'User Request'),
         'created': extract_field(session_text, 'Created'),
         'plan_version': plan_version or 'v1',
+        'architecture': architecture_text,
+        'design_patterns': design_patterns_text,
+        'technology_stack': tech_stack_text,
         'tasks': tasks,
         'total_tasks': len(tasks),
         'estimated_total_time': extract_field(estimates_text, 'Estimated Total Time'),
@@ -333,3 +353,183 @@ def extract_provides_from_merge_commits(log_output: str) -> List[str]:
                 provides.append(stripped[2:].strip())
 
     return provides
+
+
+def parse_worker_commit(message: str) -> Dict[str, Any]:
+    """Parse worker progressive commit with embedded design and TODO list.
+
+    Worker commits in the commit-only architecture contain:
+    - Design: Architecture decisions and interfaces
+    - TODO List: Implementation checklist with completion status
+    - Progress: Current status and completion metrics
+    - Implementation: What was done in this specific commit
+
+    Args:
+        message: Git commit message from worker
+
+    Returns:
+        Dictionary with parsed worker commit data
+
+    Example:
+        Input commit message:
+            [task-001] Implement: Create models/user.py (1/6)
+
+            ## Implementation
+            Created models/user.py with SQLAlchemy base.
+
+            ## Design
+            ### Overview
+            Implementing User model with bcrypt.
+
+            ### Architecture Decisions
+            - SQLAlchemy ORM
+            - Bcrypt for passwords
+
+            ### Interfaces Provided
+            - User(email, password)
+
+            ## TODO List
+            - [x] 1. Create models/user.py
+            - [ ] 2. Add User class
+            - [ ] 3. Add password hashing
+
+            ## Progress
+            Status: in_progress
+            Completed: 1/6 tasks
+
+        Output:
+            {
+                'task_id': '001',
+                'commit_type': 'implementation',
+                'step_number': 1,
+                'total_steps': 6,
+                'implementation': 'Created models/user.py with SQLAlchemy base.',
+                'design': {
+                    'overview': 'Implementing User model with bcrypt.',
+                    'architecture_decisions': ['SQLAlchemy ORM', 'Bcrypt for passwords'],
+                    'interfaces_provided': ['User(email, password)']
+                },
+                'todo_list': [
+                    {'number': 1, 'description': 'Create models/user.py', 'completed': True},
+                    {'number': 2, 'description': 'Add User class', 'completed': False},
+                    {'number': 3, 'description': 'Add password hashing', 'completed': False}
+                ],
+                'progress': {
+                    'status': 'in_progress',
+                    'completed': 1,
+                    'total': 6
+                }
+            }
+    """
+    sections = parse_commit_message(message)
+
+    # Parse commit title to extract task ID and step info
+    first_line = message.split('\n')[0]
+    task_id = ''
+    commit_type = 'unknown'
+    step_number = None
+    total_steps = None
+
+    # Extract task ID from [task-XXX] prefix
+    task_match = re.search(r'\[task-(\d+[a-z]?)\]', first_line, re.IGNORECASE)
+    if task_match:
+        task_id = task_match.group(1)
+
+    # Determine commit type
+    if 'Initialize:' in first_line or 'initialize:' in first_line:
+        commit_type = 'initial_design'
+    elif 'Implement:' in first_line or 'implement:' in first_line:
+        commit_type = 'implementation'
+        # Extract step number (X/Y)
+        step_match = re.search(r'\((\d+)/(\d+)\)', first_line)
+        if step_match:
+            step_number = int(step_match.group(1))
+            total_steps = int(step_match.group(2))
+
+    # Parse Design section
+    design_text = sections.get('design', '')
+    design = {
+        'overview': '',
+        'architecture_decisions': [],
+        'interfaces_provided': []
+    }
+
+    if design_text:
+        # Extract Overview subsection
+        overview_match = re.search(r'###\s*Overview\s*\n(.*?)(?=###|\Z)', design_text, re.DOTALL | re.IGNORECASE)
+        if overview_match:
+            design['overview'] = overview_match.group(1).strip()
+
+        # Extract Architecture Decisions subsection
+        arch_match = re.search(r'###\s*Architecture Decisions\s*\n(.*?)(?=###|\Z)', design_text, re.DOTALL | re.IGNORECASE)
+        if arch_match:
+            arch_text = arch_match.group(1).strip()
+            for line in arch_text.split('\n'):
+                stripped = line.strip()
+                if stripped.startswith('- '):
+                    design['architecture_decisions'].append(stripped[2:].strip())
+                elif stripped.startswith('* '):
+                    design['architecture_decisions'].append(stripped[2:].strip())
+
+        # Extract Interfaces Provided subsection
+        interfaces_match = re.search(r'###\s*Interfaces Provided\s*\n(.*?)(?=###|\Z)', design_text, re.DOTALL | re.IGNORECASE)
+        if interfaces_match:
+            interfaces_text = interfaces_match.group(1).strip()
+            for line in interfaces_text.split('\n'):
+                stripped = line.strip()
+                if stripped.startswith('- '):
+                    design['interfaces_provided'].append(stripped[2:].strip())
+                elif stripped.startswith('* '):
+                    design['interfaces_provided'].append(stripped[2:].strip())
+
+    # Parse TODO List section
+    todo_text = sections.get('todo_list', '')
+    todo_list = []
+
+    if todo_text:
+        # Match patterns like "- [x] 1. Description" or "- [ ] 2. Description"
+        todo_pattern = r'-\s*\[([ xX])\]\s*(\d+)\.\s*(.+)'
+        for match in re.finditer(todo_pattern, todo_text):
+            completed = match.group(1).lower() == 'x'
+            number = int(match.group(2))
+            description = match.group(3).strip()
+            todo_list.append({
+                'number': number,
+                'description': description,
+                'completed': completed
+            })
+
+    # Parse Progress section
+    progress_text = sections.get('progress', '')
+    progress = {
+        'status': 'unknown',
+        'completed': 0,
+        'total': 0
+    }
+
+    if progress_text:
+        status = extract_field(progress_text, 'Status')
+        if status:
+            progress['status'] = status
+
+        completed_str = extract_field(progress_text, 'Completed')
+        if completed_str:
+            # Parse "X/Y tasks" format
+            completed_match = re.search(r'(\d+)/(\d+)', completed_str)
+            if completed_match:
+                progress['completed'] = int(completed_match.group(1))
+                progress['total'] = int(completed_match.group(2))
+
+    # Parse Implementation section
+    implementation = sections.get('implementation', '').strip()
+
+    return {
+        'task_id': task_id,
+        'commit_type': commit_type,
+        'step_number': step_number,
+        'total_steps': total_steps,
+        'implementation': implementation,
+        'design': design,
+        'todo_list': todo_list,
+        'progress': progress
+    }

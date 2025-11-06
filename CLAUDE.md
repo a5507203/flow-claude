@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Git as Single Source of Truth**: All task metadata, execution plans, and state are stored in git commits and branches. No external configuration files. The entire system state can be reconstructed from git history alone.
 
+
 ## Commands
 
 ### Setup and Installation
@@ -252,6 +253,10 @@ Priority: high
 - `## Files` section with `Files to modify:` subheading (exact phrase!)
 - `## Estimates` as separate section
 - Structured `Context` fields: `Depends on:`, `Enables:`
+
+### Prompts
+
+When revise agents prompts, the prompts should be clear and precise
 
 ## Important Design Constraints
 

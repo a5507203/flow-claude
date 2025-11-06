@@ -39,7 +39,13 @@
       "Bash(git log:*)",
       "Bash(README.md)",
       "Bash(git add:*)",
-      "Bash(if exist \"test-icml-2027-v6.7\" rmdir /s /q \"test-icml-2027-v6.7\")"
+      "Bash(if exist \"test-icml-2027-v6.7\" rmdir /s /q \"test-icml-2027-v6.7\")",
+      "Bash(if exist \"test-neurips-2028\" rmdir /s /q \"test-neurips-2028\")",
+      "Bash(git reset:*)",
+      "Bash(git clean:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []

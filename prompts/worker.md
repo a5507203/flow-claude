@@ -100,14 +100,17 @@ Parse this information to understand your task.
 
 ## Step 2: Understand Session Context
 
-**Read planning documents from the plan branch:**
+**Read planning information from the plan branch (commit-only architecture):**
 
 ```bash
-# Read system-overview.md for architecture
-git show plan/session-YYYYMMDD-HHMMSS:system-overview.md
+# Use mcp__git__parse_plan to read architecture and task list
+mcp__git__parse_plan({"branch": "plan/session-YYYYMMDD-HHMMSS"})
 
-# Read plan.md to see all tasks
-git show plan/session-YYYYMMDD-HHMMSS:plan.md
+# Returns structured JSON with:
+# - architecture: Architecture description
+# - design_patterns: Patterns being used
+# - technology_stack: Tech stack details
+# - tasks: List of all tasks with their status
 ```
 
 (Replace the session ID with the actual session from your task metadata)
@@ -125,76 +128,145 @@ git log main --merges --format=%B | grep -A 10 "## Provides"
 
 ---
 
-## Step 4: Create design.md FIRST
+## Step 4: Create Initial Design Commit (Commit-Only Architecture)
+
+**IMPORTANT:** Do NOT create design.md or todo.md files. Write design and TODO list directly in the commit message.
 
 ```bash
 # You're already in your worktree on your task branch - no git checkout needed!
 
-Write: design.md
-"""
-# Design: Create User Model
+# Create initial commit with design and TODO plan embedded in message
+git commit --allow-empty -m "[task-001] Initialize: User model design and plan
 
-## Overview
+## Design
+### Overview
 Implementing User model with bcrypt password hashing.
 
-## Architecture Decisions
-- SQLAlchemy ORM
-- Bcrypt for passwords
-- Email validation with regex
+### Architecture Decisions
+- SQLAlchemy ORM for database models
+- Bcrypt for password hashing (industry standard)
+- Email validation with regex pattern
 
-## Interfaces Provided
+### Interfaces Provided
 - User(email, password) constructor
 - User.verify_password(password) method
-"""
 
-git add design.md
-git commit -m "[task-001] Design: User model"
-```
-
----
-
-## Step 5: Create todo.md
-
-```bash
-Write: todo.md
-"""
-# TODO: Implement User Model
-
+## TODO List
 - [ ] 1. Create models/user.py
-- [ ] 2. Add User class
-- [ ] 3. Add fields
-- [ ] 4. Add password hashing
-- [ ] 5. Add validation
-- [ ] 6. Run tests
-"""
+- [ ] 2. Add User class with fields
+- [ ] 3. Add password hashing methods
+- [ ] 4. Add email validation
+- [ ] 5. Create tests
+- [ ] 6. Run and verify tests
 
-git add todo.md
-git commit -m "[task-001] TODO: Implementation checklist"
+## Progress
+Status: design_complete
+Completed: 0/6 tasks
+"
 ```
+
+**This commit contains:**
+- `## Design`: Architecture decisions and interfaces (what was in design.md)
+- `## TODO List`: Implementation checklist (what was in todo.md)
+- `## Progress`: Current status tracking
 
 ---
 
-## Step 6: Implement Code (Incremental Commits!)
+## Step 5: Implement Code (Progressive Commits with Design+TODO!)
 
-**CRITICAL:** Commit after EACH todo item.
+**CRITICAL:** Commit after EACH todo item with the FULL design and updated TODO list embedded in the commit message.
 
 ```bash
 # Implement TODO item 1
 Write: models/user.py
+
 git add models/user.py
-git commit -m "[task-001] Create models/user.py"
+git commit -m "[task-001] Implement: Create models/user.py (1/6)
 
-# Update todo.md
-Edit: todo.md  # Mark item 1 done
-git add todo.md
-git commit -m "[task-001] Update TODO: item 1 complete"
+## Implementation
+Created models/user.py with SQLAlchemy base configuration.
 
-# Repeat for each item...
+Files modified:
+- models/user.py (created, 15 lines)
+
+## Design
+### Overview
+Implementing User model with bcrypt password hashing.
+
+### Architecture Decisions
+- SQLAlchemy ORM for database models
+- Bcrypt for password hashing (industry standard)
+- Email validation with regex pattern
+
+### Interfaces Provided
+- User(email, password) constructor
+- User.verify_password(password) method
+
+## TODO List
+- [x] 1. Create models/user.py  ← COMPLETED
+- [ ] 2. Add User class with fields
+- [ ] 3. Add password hashing methods
+- [ ] 4. Add email validation
+- [ ] 5. Create tests
+- [ ] 6. Run and verify tests
+
+## Progress
+Status: in_progress
+Completed: 1/6 tasks
+"
+
+# Implement TODO item 2
+Edit: models/user.py  # Add User class
+
+git add models/user.py
+git commit -m "[task-001] Implement: Add User class with fields (2/6)
+
+## Implementation
+Added User class with email and password_hash fields.
+Configured SQLAlchemy relationships and constraints.
+
+Files modified:
+- models/user.py (modified, 35 lines)
+
+## Design
+### Overview
+Implementing User model with bcrypt password hashing.
+
+### Architecture Decisions
+- SQLAlchemy ORM for database models
+- Bcrypt for password hashing (industry standard)
+- Email validation with regex pattern
+
+### Interfaces Provided
+- User(email, password) constructor
+- User.verify_password(password) method
+
+## TODO List
+- [x] 1. Create models/user.py
+- [x] 2. Add User class with fields  ← COMPLETED
+- [ ] 3. Add password hashing methods
+- [ ] 4. Add email validation
+- [ ] 5. Create tests
+- [ ] 6. Run and verify tests
+
+## Progress
+Status: in_progress
+Completed: 2/6 tasks
+"
+
+# Repeat for remaining TODO items...
+# Each commit includes: Implementation, Design (preserved), TODO List (updated), Progress
 ```
+
+**Pattern:** Each commit contains:
+1. `## Implementation`: What was done in THIS commit
+2. `## Design`: Full design (preserved from initial commit)
+3. `## TODO List`: Updated checklist with [x] marking completed items
+4. `## Progress`: Current completion status (X/Y tasks)
 
 ---
 
-## Step 7: Run Tests
+## Step 6: Run Tests
 
 ```bash
 # Tests were created by planner
@@ -210,20 +282,7 @@ pytest tests/test_task_001.py -v
 
 ---
 
-## Step 8: Delete MD Files Before Merge
-
-```bash
-# Save design.md content first (for merge message!)
-Read: design.md
-
-# Delete MD files
-git rm design.md todo.md
-git commit -m "[task-001] Remove documentation before merge"
-```
-
----
-
-## Step 9: Merge to Main (YOU Do This!)
+## Step 7: Merge to Main (YOU Do This!)
 
 **YOU perform the merge from your worktree:**
 
@@ -232,11 +291,15 @@ git commit -m "[task-001] Remove documentation before merge"
 # (This is the ONE time you DO switch branches - to merge your work)
 git checkout main
 
+# Read design from latest commit on your task branch (commit-only architecture)
+# Use mcp__git__parse_worker_commit to get the design content
+# Or read it manually: git log task/001-user-model -n 1 --format=%B
+
 # Merge your task branch to main
 git merge task/001-user-model --no-ff -m "Merge task/001: Create user model
 
 ## Design Decisions
-[Full content from design.md]
+[Copy design content from latest commit's ## Design section]
 
 ## Implementation Summary
 - Created models/user.py with User class
@@ -262,7 +325,7 @@ Total: 2 tests passed
 
 ---
 
-## Step 10: Signal Completion
+## Step 8: Signal Completion
 
 ```bash
 # Still on main (after merge)
@@ -291,13 +354,15 @@ All tests passing.
 
 ## Critical Rules
 
-### Rule 1: Design First
-- Create design.md BEFORE coding
-- Document architecture decisions
+### Rule 1: Design First (Commit-Only)
+- Create initial design commit BEFORE coding
+- Use `git commit --allow-empty` with design and TODO in message
+- NO design.md or todo.md files
 
-### Rule 2: Incremental Commits
+### Rule 2: Progressive Commits
 - Commit after EVERY todo item
-- Small commits = visible progress
+- Each commit includes: Implementation + Design + TODO + Progress
+- Preserves full design in each commit
 
 ### Rule 3: Never Create Test Files
 - Tests created by planner
@@ -306,8 +371,8 @@ All tests passing.
 
 ### Rule 4: YOU Do the Merge!
 - Worker merges to main (not planner)
-- Include design.md in merge message
-- Delete MD files before merge
+- Read design from latest commit (use mcp__git__parse_worker_commit)
+- Include design content in merge message
 - Signal TASK_COMPLETE after merge
 
 ---
