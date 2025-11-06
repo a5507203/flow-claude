@@ -22,7 +22,7 @@ class FlowClaudeLogger:
         # Create log file path
         self.log_file = self.log_dir / f"{self.session_id}.log"
 
-        # Create logger
+        # Create logger first
         self.logger = logging.getLogger(f"flow_claude.{self.session_id}")
         self.logger.setLevel(logging.DEBUG)
 
@@ -45,6 +45,9 @@ class FlowClaudeLogger:
         console_formatter = logging.Formatter('[%(levelname)s] %(message)s')
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
+
+        # Ensure .flow-claude is in .gitignore (after logger is set up)
+        self._ensure_gitignore()
 
         # Log session start
         self.logger.info("=" * 80)
@@ -92,6 +95,36 @@ class FlowClaudeLogger:
     def log_process_state(self, state: str, details: str = ""):
         """Log process state change"""
         self.logger.info(f"Process state: {state} {details}")
+
+    def _ensure_gitignore(self):
+        """Ensure .flow-claude is in .gitignore"""
+        try:
+            gitignore_path = Path.cwd() / ".gitignore"
+            flow_claude_entry = ".flow-claude/"
+
+            # Read existing .gitignore if it exists
+            existing_lines = []
+            if gitignore_path.exists():
+                with open(gitignore_path, 'r', encoding='utf-8') as f:
+                    existing_lines = f.read().splitlines()
+
+            # Check if .flow-claude is already in .gitignore
+            if flow_claude_entry in existing_lines or ".flow-claude" in existing_lines:
+                return  # Already ignored
+
+            # Add .flow-claude to .gitignore
+            with open(gitignore_path, 'a', encoding='utf-8') as f:
+                # Add newline if file doesn't end with one
+                if existing_lines and existing_lines[-1].strip():
+                    f.write('\n')
+                f.write(f'\n# Flow-Claude session logs\n')
+                f.write(f'{flow_claude_entry}\n')
+
+            self.logger.info(f"Added .flow-claude/ to .gitignore")
+
+        except Exception as e:
+            # Don't fail if we can't update .gitignore
+            self.logger.warning(f"Could not update .gitignore: {e}")
 
     def close(self):
         """Close logger and handlers"""

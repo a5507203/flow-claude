@@ -400,7 +400,7 @@ class SimpleCLI:
                             cwd=str(cwd),
                             capture_output=True,
                             text=True,
-                            timeout=60
+                            timeout=180  # 3 minutes for Claude Code to analyze and generate CLAUDE.md
                         )
 
                         # Check if CLAUDE.md was created
