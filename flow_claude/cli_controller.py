@@ -27,8 +27,7 @@ class SimpleCLI:
         self.verbose = verbose
         self.debug = debug
 
-        # Async queues for communication
-        self.message_queue = None
+        # Control queue for interventions (ESC, shutdown)
         self.control_queue = None
 
         # Session state
@@ -53,6 +52,9 @@ class SimpleCLI:
             # Check if we should prompt for CLAUDE.md initialization
             self.check_and_prompt_init()
 
+            # Ensure prompt files exist in working directory
+            self.ensure_prompt_files()
+
             # Get development request from user (synchronous)
             request = self.get_request()
             if not request:
@@ -66,8 +68,7 @@ class SimpleCLI:
             print(f"  Log file: {self.logger.log_file}")
             print()
 
-            # Create async queues
-            self.message_queue = asyncio.Queue()
+            # Create control queue for interventions
             self.control_queue = asyncio.Queue()
 
             # Start orchestrator in background
@@ -76,10 +77,10 @@ class SimpleCLI:
                 self.run_orchestrator(request)
             )
 
-            # Run UI tasks concurrently
-            self.logger.info("Starting concurrent tasks (render, input, orchestrator)")
+            # Run input loop concurrently with orchestrator
+            # (No render_loop needed - orchestrator prints directly)
+            self.logger.info("Starting concurrent tasks (input, orchestrator)")
             await asyncio.gather(
-                self.render_loop(),      # Display messages from orchestrator
                 self.input_loop(),       # Handle keyboard input (q/ESC)
                 self.orchestrator_task,  # Orchestrator execution
                 return_exceptions=True
@@ -101,53 +102,75 @@ class SimpleCLI:
                 self.logger.close()
 
     async def run_orchestrator(self, request: str):
-        """Run orchestrator in background with async queue communication"""
-        from flow_claude.orchestrator import OrchestratorSession
+        """Run orchestrator directly (no subprocess) with control_queue for interventions"""
+        from flow_claude.cli import run_development_session
+        import os
 
-        session = OrchestratorSession(
-            request=request,
-            message_queue=self.message_queue,
-            control_queue=self.control_queue,
-            model=self.model,
-            max_parallel=self.max_parallel,
-            verbose=self.verbose,
-            debug=self.debug
-        )
+        # Load prompts (same logic as cli.py)
+        working_dir = os.getcwd()
+        prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
+
+        def get_prompt_file(local_name, fallback_name):
+            """Get prompt file from working dir, copying default if it doesn't exist."""
+            local_path = os.path.join(working_dir, local_name)
+            default_path = os.path.abspath(os.path.join(prompts_dir, fallback_name))
+
+            # If local prompt doesn't exist, copy the default template
+            if not os.path.exists(local_path):
+                try:
+                    import shutil
+                    shutil.copy2(default_path, local_path)
+                    if self.debug:
+                        print(f"DEBUG: Copied default prompt {fallback_name} -> {local_name}")
+                except Exception as e:
+                    # If copy fails, fall back to using default directly
+                    if self.debug:
+                        print(f"DEBUG: Failed to copy prompt, using default: {e}")
+                    return default_path
+
+            return local_path
+
+        orchestrator_prompt_file = get_prompt_file('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md')
+        planner_prompt_file = get_prompt_file('PLANNER_INSTRUCTIONS.md', 'planner.md')
+        worker_prompt_file = get_prompt_file('WORKER_INSTRUCTIONS.md', 'worker.md')
+        user_proxy_prompt_file = get_prompt_file('USER_PROXY_INSTRUCTIONS.md', 'user.md')
+
+        orchestrator_prompt = f"@{orchestrator_prompt_file}"
+        planner_prompt = f"@{planner_prompt_file}"
+        worker_prompt = f"@{worker_prompt_file}"
+        user_proxy_prompt = f"@{user_proxy_prompt_file}"
+
+        # Determine execution mode
+        enable_parallel = self.max_parallel > 1
+        num_workers = self.max_parallel if enable_parallel else 1
 
         try:
-            await session.run()
+            # Call run_development_session directly with control_queue and logger
+            await run_development_session(
+                request=request,
+                model=self.model,
+                max_turns=100,
+                permission_mode="bypassPermissions",  # Non-interactive mode
+                enable_parallel=enable_parallel,
+                max_parallel=self.max_parallel,
+                verbose=self.verbose,
+                debug=self.debug,
+                orchestrator_prompt=orchestrator_prompt,
+                planner_prompt=planner_prompt,
+                worker_prompt=worker_prompt,
+                user_proxy_prompt=user_proxy_prompt,
+                num_workers=num_workers,
+                control_queue=self.control_queue,  # Pass control_queue for interventions!
+                logger=self.logger  # Pass logger for file logging
+            )
         except asyncio.CancelledError:
-            # Orchestrator was cancelled, cleanup already handled
+            # Session was cancelled
             pass
         except Exception as e:
-            await self.message_queue.put({
-                "type": "error",
-                "timestamp": datetime.now().isoformat(),
-                "data": {"message": f"Orchestrator error: {str(e)}"}
-            })
-
-    async def render_loop(self):
-        """Display messages from orchestrator"""
-        while not self.shutdown_requested:
-            try:
-                # Wait for message from orchestrator
-                message = await asyncio.wait_for(
-                    self.message_queue.get(),
-                    timeout=0.5
-                )
-
-                # Render message
-                self.render_message(message)
-
-                # Check if session complete
-                if message.get("type") == "complete":
-                    break
-
-            except asyncio.TimeoutError:
-                # No message, continue
-                continue
-            except asyncio.CancelledError:
-                break
+            print(f"\nERROR: Orchestrator error: {str(e)}")
+            if self.debug:
+                import traceback
+                traceback.print_exc()
 
     async def input_loop(self):
         """Handle keyboard input - q for quit, ESC for intervention"""
@@ -177,9 +200,13 @@ class SimpleCLI:
                     break
 
                 elif key == '\x1b':  # ESC
-                    self.logger.info("User pressed ESC - entering intervention mode")
-                    # Handle intervention
-                    await self.handle_intervention()
+                    self.logger.info("User pressed ESC - requesting intervention")
+                    # Queue intervention request (don't prompt yet - wait for clean output)
+                    await self.control_queue.put({
+                        "type": "intervention_pending",
+                        "data": {}
+                    })
+                    print("\n\n  [ESC PRESSED] Waiting for current operation to complete...")
 
             except asyncio.CancelledError:
                 self.logger.debug("Input loop cancelled")
@@ -219,117 +246,6 @@ class SimpleCLI:
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
-    async def handle_intervention(self):
-        """Handle ESC interruption - prompt for additional requirement"""
-        self.logger.info("Intervention: Sending pause signal")
-        # First, pause the backend process
-        await self.control_queue.put({
-            "type": "pause",
-            "data": {}
-        })
-
-        # Wait a moment for the pause to take effect
-        await asyncio.sleep(0.5)
-
-        print()
-        print("  " + "=" * 76)
-        print("  INTERVENTION MODE")
-        print("  " + "=" * 76)
-        print()
-        print("  Session paused. You can add additional requirements.")
-        print("  (Press Enter with empty input to resume)")
-        print()
-
-        # Get requirement synchronously (blocking is OK here)
-        loop = asyncio.get_event_loop()
-        requirement = await loop.run_in_executor(
-            None,
-            lambda: input("  > Additional requirement: ").strip()
-        )
-
-        if requirement:
-            self.logger.info(f"Intervention: User added requirement: {requirement}")
-            # Send intervention to orchestrator
-            await self.control_queue.put({
-                "type": "intervention",
-                "data": {
-                    "requirement": requirement,
-                    "timestamp": datetime.now().isoformat()
-                }
-            })
-
-            print()
-            print("  Requirement added. Resuming execution...")
-        else:
-            self.logger.info("Intervention: No requirement added")
-            print()
-            print("  No requirement added. Resuming execution...")
-
-        print("  " + "=" * 76)
-        print()
-
-        self.logger.info("Intervention: Sending resume signal")
-        # Resume the backend process
-        await self.control_queue.put({
-            "type": "resume",
-            "data": {}
-        })
-
-    def render_message(self, message: dict):
-        """Render message to console"""
-        msg_type = message.get("type")
-        data = message.get("data", {})
-        timestamp = message.get("timestamp", datetime.now().isoformat())[:19]
-
-        # Log all orchestrator messages
-        self.logger.log_orchestrator_message(msg_type, data)
-
-        if msg_type == "status":
-            print(f"  [{timestamp}] [INFO]  {data.get('message', '')}")
-
-        elif msg_type == "agent_start":
-            agent = data.get('agent', 'unknown')
-            msg = data.get('message', '')
-            print(f"  [{timestamp}] [AGENT] {agent}: {msg}")
-
-        elif msg_type == "agent_output":
-            print(f"  [{timestamp}] [OUT]   {data.get('message', '')}")
-
-        elif msg_type == "task_progress":
-            print(f"  [{timestamp}] [PROG] {data.get('message', '')}")
-
-        elif msg_type == "warning":
-            print(f"  [{timestamp}] [WARN]  {data.get('message', '')}")
-
-        elif msg_type == "error":
-            print(f"  [{timestamp}] [ERROR] {data.get('message', '')}")
-
-        elif msg_type == "complete":
-            self.show_completion(data)
-
-    def show_completion(self, data: dict):
-        """Show session completion status"""
-        status = data.get('status', 'unknown')
-
-        print()
-        print("  " + "=" * 76)
-        print("  SESSION COMPLETE")
-        print("  " + "=" * 76)
-        print()
-
-        if status == 'success':
-            print("  Status: COMPLETED")
-        elif status == 'failed':
-            print("  Status: FAILED")
-        elif status == 'interrupted':
-            print("  Status: INTERRUPTED")
-        else:
-            print(f"  Status: {status.upper()}")
-
-        print()
-        print("  " + "=" * 76)
-        print()
-
     async def cleanup(self):
         """Clean up resources"""
         if self.orchestrator_task and not self.orchestrator_task.done():
@@ -338,6 +254,38 @@ class SimpleCLI:
                 await self.orchestrator_task
             except asyncio.CancelledError:
                 pass
+
+    def ensure_prompt_files(self):
+        """Ensure prompt instruction files exist in working directory"""
+        import os
+        import shutil
+
+        working_dir = os.getcwd()
+        prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
+
+        prompt_files = [
+            ('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md'),
+            ('PLANNER_INSTRUCTIONS.md', 'planner.md'),
+            ('WORKER_INSTRUCTIONS.md', 'worker.md'),
+            ('USER_PROXY_INSTRUCTIONS.md', 'user.md')
+        ]
+
+        for local_name, fallback_name in prompt_files:
+            local_path = os.path.join(working_dir, local_name)
+            default_path = os.path.abspath(os.path.join(prompts_dir, fallback_name))
+
+            # If local prompt doesn't exist, copy the default template
+            if not os.path.exists(local_path):
+                try:
+                    shutil.copy2(default_path, local_path)
+                    self.logger.info(f"Created prompt file: {local_name}")
+                    if self.debug:
+                        print(f"  Created: {local_name}")
+                except Exception as e:
+                    # Log error but don't fail - will use default directly
+                    self.logger.warning(f"Failed to copy prompt {local_name}: {e}")
+                    if self.debug:
+                        print(f"  Warning: Could not copy {local_name}: {e}")
 
     def check_and_prompt_init(self):
         """Check if directory needs CLAUDE.md initialization and prompt user"""

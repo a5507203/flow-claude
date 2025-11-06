@@ -49,7 +49,9 @@
       "Bash(python -m py_compile:*)",
       "Bash(python -m flow_claude.commands.flow_cli:*)",
       "Bash(if exist \"test-interactive-cli\" rmdir /s /q \"test-interactive-cli\")",
-      "Bash(claude:*)"
+      "Bash(claude:*)",
+      "Bash(del:*)",
+      "Bash(python test_prompt_copy.py:*)"
     ],
     "deny": [],
     "ask": []

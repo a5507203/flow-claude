@@ -16,6 +16,10 @@ import click
 # Global logging flags
 _verbose_logging = False
 _debug_logging = False
+_session_logger = None  # Optional logger for file logging
+
+# Track subagent identification (tool_use_id -> agent_name)
+_tool_id_to_agent = {}
 
 
 def safe_echo(text: str, nl: bool = True, **kwargs):
@@ -212,16 +216,29 @@ def develop(
     # V6.7: Check for instruction files in working directory first (user's git repo)
     # This allows users to customize agent behavior per-project
     working_dir = os.getcwd()
-    prompts_dir = os.path.join(os.path.dirname(__file__), '..', 'prompts')
+    prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
 
     def get_prompt_file(local_name, fallback_name):
-        """Get prompt file from working dir or fall back to flow-claude prompts."""
+        """Get prompt file from working dir, copying default if it doesn't exist."""
         local_path = os.path.join(working_dir, local_name)
-        if os.path.exists(local_path):
-            return local_path
-        return os.path.abspath(os.path.join(prompts_dir, fallback_name))
+        default_path = os.path.abspath(os.path.join(prompts_dir, fallback_name))
 
-    # Get absolute paths for prompts (check working dir first, then fall back)
+        # If local prompt doesn't exist, copy the default template
+        if not os.path.exists(local_path):
+            try:
+                import shutil
+                shutil.copy2(default_path, local_path)
+                if debug:
+                    click.echo(f"DEBUG: Copied default prompt {fallback_name} -> {local_name}")
+            except Exception as e:
+                # If copy fails, fall back to using default directly
+                if debug:
+                    click.echo(f"DEBUG: Failed to copy prompt, using default: {e}")
+                return default_path
+
+        return local_path
+
+    # Get absolute paths for prompts (use working dir, auto-copy if missing)
     orchestrator_prompt_file = get_prompt_file('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md')
     planner_prompt_file = get_prompt_file('PLANNER_INSTRUCTIONS.md', 'planner.md')
     worker_prompt_file = get_prompt_file('WORKER_INSTRUCTIONS.md', 'worker.md')
@@ -287,7 +304,9 @@ async def run_development_session(
     planner_prompt: str,
     worker_prompt: str,
     user_proxy_prompt: str,
-    num_workers: int
+    num_workers: int,
+    control_queue: Optional[asyncio.Queue] = None,
+    logger: Optional[object] = None  # FlowClaudeLogger instance
 ):
     """Run development session with orchestrator, planner, user, and worker agents.
 
@@ -311,10 +330,12 @@ async def run_development_session(
         The SDK loads the full file content at runtime.
         V6.6 adds user agent for user confirmations and decision points.
     """
-    # Store logging flags globally for use in handle_agent_message
-    global _verbose_logging, _debug_logging
+    # Store logging flags and logger globally for use in handle_agent_message
+    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent
     _verbose_logging = verbose
     _debug_logging = debug
+    _session_logger = logger
+    _tool_id_to_agent = {}  # Clear agent tracking for new session
     # Print banner
     click.echo("=" * 60)
     click.echo("Flow-Claude V6.6 Development Session Starting...")
@@ -612,12 +633,115 @@ The user agent is available for key decision points:
     # Start session
     try:
         async with ClaudeSDKClient(options=options) as client:
-            # Send initial query to planning agent
+            # Send initial query to orchestrator
             await client.query(initial_prompt)
 
-            # Stream responses
-            async for msg in client.receive_response():
-                handle_agent_message(msg)
+            # Multi-turn conversation loop
+            # The orchestrator needs to be able to send follow-up queries
+            # after processing responses (e.g., checking if planner created branches)
+            turn_number = 0
+
+            while turn_number < max_turns:
+                turn_number += 1
+
+                if debug:
+                    click.echo(f"\nDEBUG: Turn {turn_number}/{max_turns}")
+
+                # Receive and process all messages for this turn
+                response_complete = False
+                pending_intervention = None
+                intervention_requested = False
+                shutdown_requested = False
+
+                async for msg in client.receive_response():
+                    handle_agent_message(msg)
+
+                    # Check for interventions after each message for more responsive handling
+                    if control_queue and not pending_intervention and not intervention_requested:
+                        try:
+                            control = control_queue.get_nowait()
+                            control_type = control.get("type")
+
+                            if control_type == "intervention_pending":
+                                # User pressed ESC - wait for turn to complete before prompting
+                                intervention_requested = True
+
+                            elif control_type == "intervention":
+                                # Direct intervention with requirement already provided
+                                requirement = control.get("data", {}).get("requirement", "")
+                                if requirement:
+                                    pending_intervention = requirement
+                                    click.echo(f"\n[INTERVENTION QUEUED] Requirement will be injected after current operation: {requirement[:80]}...\n")
+
+                            elif control_type == "shutdown":
+                                # User pressed 'q' to quit
+                                shutdown_requested = True
+                                click.echo("\n[SHUTDOWN QUEUED] Will stop after current operation...\n")
+
+                        except asyncio.QueueEmpty:
+                            pass  # No intervention
+
+                    # Check if this is the last message in the response
+                    # (The SDK will stop yielding when response is complete)
+                    response_complete = True
+
+                if not response_complete:
+                    # No more messages, conversation ended naturally
+                    break
+
+                # Handle shutdown immediately
+                if shutdown_requested:
+                    click.echo("\n[SHUTDOWN] Stopping execution\n")
+                    break
+
+                # Handle intervention request - prompt user now that output has settled
+                if intervention_requested:
+                    click.echo()
+                    click.echo("  " + "=" * 76)
+                    click.echo("  INTERVENTION MODE")
+                    click.echo("  " + "=" * 76)
+                    click.echo()
+                    click.echo("  You can add additional requirements to the current task.")
+                    click.echo("  (Press Enter with empty input to resume without changes)")
+                    click.echo()
+
+                    # Get requirement from user
+                    import sys
+                    try:
+                        requirement = input("  > Additional requirement: ").strip()
+                        sys.stdout.flush()
+
+                        if requirement:
+                            pending_intervention = requirement
+                            click.echo()
+                            click.echo("  ✓ Requirement will be sent to orchestrator")
+                        else:
+                            click.echo()
+                            click.echo("  No requirement added. Continuing...")
+
+                        click.echo("  " + "=" * 76)
+                        click.echo()
+                    except (EOFError, KeyboardInterrupt):
+                        click.echo()
+                        click.echo("  Intervention cancelled")
+                        click.echo("  " + "=" * 76)
+                        click.echo()
+
+                # Inject pending intervention immediately after turn completes
+                if pending_intervention:
+                    click.echo(f"\n[INTERVENTION] Injecting requirement: {pending_intervention}\n")
+                    # Inject as new query into conversation
+                    await client.query(f"IMPORTANT - User Intervention: The user has added a new requirement mid-execution: {pending_intervention}\n\nPlease incorporate this requirement into your current work.")
+                    # Clear the intervention
+                    pending_intervention = None
+
+                # Note: The orchestrator system prompt should handle continuation
+                # It will use tools and self-direct its own next steps
+                # We just need to keep the conversation open for follow-ups
+                # The orchestrator will signal completion by not using any more tools
+
+            if turn_number >= max_turns:
+                click.echo(f"\nWARNING: Reached maximum turns ({max_turns})", err=True)
 
         # Session complete
         click.echo("\n" + "=" * 60)
@@ -642,12 +766,19 @@ def handle_agent_message(msg):
         - UserMessage: User input
         - dict with "type": Legacy format
     """
-    global _verbose_logging, _debug_logging
+    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent
 
     timestamp = datetime.now().strftime("%H:%M:%S")
 
     # Handle SDK message objects
     from claude_agent_sdk import SystemMessage, AssistantMessage, ResultMessage, UserMessage
+
+    # Determine agent name from parent_tool_use_id
+    agent_name = "orchestrator"  # Default to orchestrator
+    if isinstance(msg, AssistantMessage):
+        parent_id = getattr(msg, 'parent_tool_use_id', None)
+        if parent_id:
+            agent_name = _tool_id_to_agent.get(parent_id, f"agent-{parent_id[:8]}")
 
     if isinstance(msg, SystemMessage):
         # System message - show in debug mode
@@ -680,10 +811,19 @@ def handle_agent_message(msg):
                     # Text output from agent
                     text = block.text if hasattr(block, 'text') else str(block)
                     if text:
+                        # Log to file if logger available
+                        if _session_logger:
+                            _session_logger.info(f"[{agent_name.upper()}] {text}")
+
+                        # Print to terminal with agent identification
                         if _debug_logging:
-                            safe_echo(f"[{timestamp}] [TEXT] {text}")
+                            safe_echo(f"[{timestamp}] [{agent_name.upper()}] {text}")
                         else:
-                            safe_echo(text)
+                            # Show agent name for subagents, hide for orchestrator to reduce noise
+                            if agent_name != "orchestrator":
+                                safe_echo(f"[{agent_name.upper()}] {text}")
+                            else:
+                                safe_echo(text)
                         import sys
                         sys.stdout.flush()
 
@@ -693,8 +833,47 @@ def handle_agent_message(msg):
                     tool_id = block.id if hasattr(block, 'id') else ''
                     tool_input = block.input if hasattr(block, 'input') else {}
 
-                    # Always show tool name
-                    click.echo(f"[{timestamp}] [TOOL] {tool_name}", nl=False)
+                    # Track Task tool invocations to identify subagents
+                    if tool_name == 'Task' and tool_id:
+                        subagent_type = tool_input.get('subagent_type', 'unknown')
+                        _tool_id_to_agent[tool_id] = subagent_type
+
+                    # Extract key parameter for display
+                    tool_detail = None
+                    if tool_name == 'Read':
+                        tool_detail = tool_input.get('file_path', '')
+                    elif tool_name == 'Write':
+                        tool_detail = tool_input.get('file_path', '')
+                    elif tool_name == 'Edit':
+                        tool_detail = tool_input.get('file_path', '')
+                    elif tool_name == 'Bash':
+                        command = tool_input.get('command', '')
+                        # Truncate long commands
+                        tool_detail = command[:80] + '...' if len(command) > 80 else command
+                    elif tool_name == 'Grep':
+                        pattern = tool_input.get('pattern', '')
+                        tool_detail = f"pattern: {pattern}"
+                    elif tool_name == 'Glob':
+                        pattern = tool_input.get('pattern', '')
+                        tool_detail = f"pattern: {pattern}"
+                    elif tool_name == 'Task':
+                        subagent = tool_input.get('subagent_type', 'unknown')
+                        tool_detail = f"→ {subagent}"
+
+                    # Log to file if logger available (with details)
+                    if _session_logger:
+                        if tool_detail:
+                            _session_logger.debug(f"[{agent_name.upper()}] TOOL: {tool_name} | {tool_detail}")
+                        else:
+                            _session_logger.debug(f"[{agent_name.upper()}] TOOL: {tool_name}")
+
+                    # Always show tool name with agent identification
+                    click.echo(f"[{timestamp}] [{agent_name.upper()}] [TOOL] {tool_name}", nl=False)
+
+                    # Show tool detail on same line if available
+                    if tool_detail and tool_name != 'Task':  # Task has special display below
+                        click.echo(f" | {tool_detail}", nl=False)
+
                     import sys
                     sys.stdout.flush()
 
@@ -704,6 +883,13 @@ def handle_agent_message(msg):
 
                     click.echo()  # Newline
                     sys.stdout.flush()
+
+                    # Show subagent invocation for Task tool
+                    if tool_name == 'Task':
+                        subagent_type = tool_input.get('subagent_type', 'unknown')
+                        description = tool_input.get('description', '')
+                        click.echo(f"  → Invoking {subagent_type}: {description}")
+                        sys.stdout.flush()
 
                     # Show tool input in verbose/debug mode - FULL, NO TRUNCATION
                     if (_verbose_logging or _debug_logging) and tool_input:
