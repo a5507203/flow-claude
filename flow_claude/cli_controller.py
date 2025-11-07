@@ -35,6 +35,7 @@ class SimpleCLI:
         self.shutdown_requested = False
         self.should_exit_cli = False  # Flag for 'q' to quit entire CLI
         self.auto_mode = True  # Default: user agent enabled for autonomous decisions
+        self.orchestrator_session_id = None  # SDK session ID for resume
 
         # Logger (will be initialized in run())
         self.logger = None
@@ -68,7 +69,8 @@ class SimpleCLI:
         print("  " + "-" * 76)
         print()
         print("  Commands: \\parallel, \\model, \\verbose, \\debug, \\init, \\auto, \\help")
-        print("  Tip: Press 'q' to quit, ESC to stop agents & add requirements, 'p' to pause")
+        print("  While agents work: Type follow-up requests anytime, or '\\stop' to cancel")
+        print("  Quit: Type '\\q', '\\exit', 'q', or press Ctrl+C")
         print()
 
     async def run(self):
@@ -220,10 +222,24 @@ class SimpleCLI:
                 num_workers=num_workers,
                 control_queue=self.control_queue,  # Pass control_queue for interventions!
                 logger=self.logger,  # Pass logger for file logging
-                auto_mode=self.auto_mode  # Pass auto_mode for user agent control
+                auto_mode=self.auto_mode,  # Pass auto_mode for user agent control
+                resume_session_id=self.orchestrator_session_id  # Resume from previous session if available
             )
+
+            # Capture session ID after session completes (for future resume)
+            from flow_claude import cli
+            if hasattr(cli, '_current_session_id') and cli._current_session_id:
+                self.orchestrator_session_id = cli._current_session_id
+                if self.debug:
+                    print(f"DEBUG: Captured session ID: {self.orchestrator_session_id}")
+
         except asyncio.CancelledError:
-            # Session was cancelled
+            # Session was cancelled - preserve session ID for resume
+            from flow_claude import cli
+            if hasattr(cli, '_current_session_id') and cli._current_session_id:
+                self.orchestrator_session_id = cli._current_session_id
+                if self.debug:
+                    print(f"DEBUG: Session cancelled, preserved ID: {self.orchestrator_session_id}")
             pass
         except Exception as e:
             print(f"\nERROR: Orchestrator error: {str(e)}")
@@ -232,26 +248,33 @@ class SimpleCLI:
                 traceback.print_exc()
 
     async def input_loop(self):
-        """Handle keyboard input - q for quit, ESC for intervention"""
+        """Handle user input - always-available text input for follow-up requests"""
         loop = asyncio.get_event_loop()
         self.logger.debug("Input loop started")
 
+        # Show initial prompt
+        print("\n  > ", end="", flush=True)
+
         while not self.shutdown_requested:
             try:
-                # Read key in non-blocking way
-                key = await loop.run_in_executor(None, self.read_key_with_timeout)
+                # Read full line of input asynchronously
+                user_input = await loop.run_in_executor(
+                    None,
+                    lambda: input().strip()
+                )
 
-                if key == 'q':
-                    self.logger.info("User pressed 'q' - initiating shutdown")
-                    # Send shutdown signal
-                    await self.control_queue.put({
-                        "type": "shutdown",
-                        "data": {}
-                    })
+                # Handle different input types
+                if not user_input:
+                    # Empty input - just show prompt again
+                    print("  > ", end="", flush=True)
+                    continue
 
-                    print("\n\n  Shutting down... Please wait.")
+                elif user_input in ['\\q', '\\exit', 'q']:
+                    # Quit entire CLI
+                    self.logger.info("User requested quit")
+                    print("\n  Shutting down... Please wait.")
                     self.shutdown_requested = True
-                    self.should_exit_cli = True  # Signal to exit entire CLI
+                    self.should_exit_cli = True
 
                     # Cancel orchestrator
                     if self.orchestrator_task:
@@ -259,11 +282,13 @@ class SimpleCLI:
 
                     break
 
-                elif key == '\x1b':  # ESC
-                    self.logger.info("User pressed ESC - stopping all agents for intervention")
-                    print("\n\n  [ESC PRESSED] Stopping all agents...")
+                elif user_input in ['\\stop', 'stop']:
+                    # Hard cancel - stops ALL agents immediately
+                    # Session ID preserved for resume
+                    self.logger.info("User requested stop (will resume session)")
+                    print("\n  [STOP] Stopping all agents...")
 
-                    # Cancel orchestrator task immediately
+                    # Cancel orchestrator task (kills all agents including subagents)
                     if self.orchestrator_task and not self.orchestrator_task.done():
                         self.orchestrator_task.cancel()
 
@@ -271,41 +296,56 @@ class SimpleCLI:
                         try:
                             await asyncio.wait_for(self.orchestrator_task, timeout=2.0)
                         except asyncio.CancelledError:
-                            # Expected - task was cancelled
                             pass
                         except asyncio.TimeoutError:
                             self.logger.warning("Orchestrator task did not stop within timeout")
                         except Exception as e:
                             self.logger.warning(f"Error waiting for orchestrator to stop: {e}")
 
-                    # Get intervention immediately (after agents are stopped)
-                    await self.handle_intervention_immediate()
+                    # Session ID already captured in CancelledError handler
+                    print("  Stopped. Session will resume when you continue.")
+                    print("  Type new request to continue, or \\q to quit.")
+                    print("  > ", end="", flush=True)
+                    # Don't break - stay in input loop for follow-up
 
-                    # After intervention, end the session so user can start a new one
-                    self.shutdown_requested = True
-                    break
+                else:
+                    # User typed a follow-up request
+                    self.logger.info(f"User follow-up request: {user_input}")
 
-                elif key == 'p':
-                    self.logger.info("User pressed 'p' - entering pause mode")
-                    # Pause mode: allow text selection/copying
-                    print("\n")
-                    print("  " + "=" * 76)
-                    print("  PAUSE MODE")
-                    print("  " + "=" * 76)
-                    print()
-                    print("  Keyboard monitoring paused. You can now select and copy text freely.")
-                    print("  Press any key to resume monitoring...")
-                    print("  " + "=" * 76)
-                    print()
+                    # Check if orchestrator is still running
+                    if self.orchestrator_task and not self.orchestrator_task.done():
+                        # Orchestrator is running - queue intervention
+                        await self.control_queue.put({
+                            "type": "intervention",
+                            "data": {
+                                "requirement": user_input,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        })
+                        print("  ✓ Request queued, agents will adjust")
+                    else:
+                        # Orchestrator was stopped - restart with resume
+                        print("  ✓ Resuming session...")
+                        self.orchestrator_task = asyncio.create_task(
+                            self.run_orchestrator(user_input)
+                        )
+                        # Note: run_orchestrator will use self.orchestrator_session_id for resume
 
-                    # Wait for any keypress to resume (blocking is OK here)
-                    await loop.run_in_executor(None, self.wait_for_any_key)
-
-                    print("\n  Resumed. Press 'q' to quit, ESC to stop agents & intervene, 'p' to pause.\n")
-                    self.logger.info("Pause mode ended - resumed monitoring")
+                    print("  > ", end="", flush=True)
 
             except asyncio.CancelledError:
                 self.logger.debug("Input loop cancelled")
+                break
+            except KeyboardInterrupt:
+                # Ctrl+C - quit CLI
+                self.logger.info("Keyboard interrupt - quitting")
+                print("\n\n  Interrupted. Quitting...")
+                self.shutdown_requested = True
+                self.should_exit_cli = True
+
+                if self.orchestrator_task:
+                    self.orchestrator_task.cancel()
+
                 break
 
     def read_key_with_timeout(self) -> Optional[str]:

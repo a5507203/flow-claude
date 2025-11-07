@@ -21,6 +21,9 @@ _session_logger = None  # Optional logger for file logging
 # Track subagent identification (tool_use_id -> agent_name)
 _tool_id_to_agent = {}
 
+# SDK session ID for resume capability
+_current_session_id = None
+
 
 def safe_echo(text: str, nl: bool = True, **kwargs):
     """Safely print text handling Unicode/emoji on Windows.
@@ -394,7 +397,8 @@ async def run_development_session(
     num_workers: int,
     control_queue: Optional[asyncio.Queue] = None,
     logger: Optional[object] = None,  # FlowClaudeLogger instance
-    auto_mode: bool = True  # Enable user agent for autonomous decisions
+    auto_mode: bool = True,  # Enable user agent for autonomous decisions
+    resume_session_id: Optional[str] = None  # Resume from previous session
 ):
     """Run development session with orchestrator, planner, user, and worker agents.
 
@@ -579,10 +583,10 @@ async def run_development_session(
         click.echo()
 
     # Configure agent options with programmatic agents
-    options = ClaudeAgentOptions(
-        system_prompt=orchestrator_prompt,  # Main orchestrator system prompt (@filepath syntax)
-        agents=agent_definitions,  # Planner + worker subagent definitions
-        allowed_tools=[
+    options_kwargs = {
+        "system_prompt": orchestrator_prompt,  # Main orchestrator system prompt (@filepath syntax)
+        "agents": agent_definitions,  # Planner + worker subagent definitions
+        "allowed_tools": [
             # Standard tools
             "Bash",
             "Read",
@@ -596,14 +600,22 @@ async def run_development_session(
             "mcp__git__get_provides",  # Query completed task capabilities
             "mcp__git__parse_worker_commit",  # Parse worker progress from commits
         ],
-        mcp_servers={
+        "mcp_servers": {
             "git": create_git_tools_server()
         },
-        permission_mode=permission_mode,
-        max_turns=max_turns,
-        cwd=os.getcwd(),
-        cli_path=claude_path  # Explicitly set Claude CLI path
-    )
+        "permission_mode": permission_mode,
+        "max_turns": max_turns,
+        "cwd": os.getcwd(),
+        "cli_path": claude_path  # Explicitly set Claude CLI path
+    }
+
+    # Add resume parameter if provided (session resumption)
+    if resume_session_id:
+        options_kwargs["resume"] = resume_session_id
+        if debug:
+            click.echo(f"DEBUG: Resuming session: {resume_session_id}")
+
+    options = ClaudeAgentOptions(**options_kwargs)
 
     if debug:
         click.echo(f"DEBUG: ClaudeAgentOptions created")
@@ -751,18 +763,14 @@ The user agent is available for key decision points:
                             control = control_queue.get_nowait()
                             control_type = control.get("type")
 
-                            if control_type == "stop_and_intervene":
-                                # User pressed ESC - stop immediately and inject requirement
+                            if control_type == "intervention":
+                                # User typed a follow-up request - queue it for injection
                                 requirement = control.get("data", {}).get("requirement", "")
                                 if requirement:
                                     pending_intervention = requirement
-                                    stop_immediately = True
-                                    click.echo("\n[AGENTS STOPPED] Processing intervention...\n")
-                                    # Break out of message loop immediately
-                                    break
-                                else:
-                                    # No requirement - just continue
-                                    click.echo("\n[INTERVENTION CANCELLED] Resuming...\n")
+                                    click.echo("\n[USER REQUEST] Queueing follow-up requirement...\n")
+                                    # Don't break - let current response complete naturally
+                                    # Intervention will be injected after this response
 
                             elif control_type == "shutdown":
                                 # User pressed 'q' to quit
@@ -788,9 +796,9 @@ The user agent is available for key decision points:
 
                 # Inject pending intervention immediately
                 if pending_intervention:
-                    click.echo(f"[INTERVENTION] Injecting requirement into conversation:\n  \"{pending_intervention}\"\n")
+                    click.echo(f"[FOLLOW-UP] Injecting user requirement:\n  \"{pending_intervention}\"\n")
                     # Inject as new query into conversation
-                    await client.query(f"IMPORTANT - User Intervention: The user has stopped all current work and added a new requirement: {pending_intervention}\n\nPlease acknowledge this requirement and incorporate it into your work. If you were in the middle of something, consider the current state and how to integrate this new requirement.")
+                    await client.query(f"IMPORTANT - User Follow-Up Request: {pending_intervention}\n\nPlease acknowledge this additional requirement and incorporate it into your current work. Consider the current state of the project and how to integrate this request smoothly.")
                     # Clear the intervention
                     pending_intervention = None
 
@@ -825,7 +833,7 @@ def handle_agent_message(msg):
         - UserMessage: User input
         - dict with "type": Legacy format
     """
-    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent
+    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent, _current_session_id
 
     timestamp = datetime.now().strftime("%H:%M:%S")
 
@@ -840,6 +848,13 @@ def handle_agent_message(msg):
             agent_name = _tool_id_to_agent.get(parent_id, f"agent-{parent_id[:8]}")
 
     if isinstance(msg, SystemMessage):
+        # Capture session ID from init message
+        if hasattr(msg, 'subtype') and msg.subtype == 'init':
+            if hasattr(msg, 'session_id'):
+                _current_session_id = msg.session_id
+                if _debug_logging:
+                    click.echo(f"[{timestamp}] [SESSION] Captured session ID: {_current_session_id}")
+
         # System message - show in debug mode
         if _debug_logging:
             click.echo(f"[{timestamp}] [SYSTEM] {msg.content if hasattr(msg, 'content') else str(msg)}")
