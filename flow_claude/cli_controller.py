@@ -33,73 +33,131 @@ class SimpleCLI:
         # Session state
         self.orchestrator_task = None
         self.shutdown_requested = False
+        self.should_exit_cli = False  # Flag for 'q' to quit entire CLI
+        self.auto_mode = True  # Default: user agent enabled for autonomous decisions
 
         # Logger (will be initialized in run())
         self.logger = None
 
-    async def run(self):
-        """Main async CLI loop - get request and start session"""
-        # Initialize logger
-        session_id = datetime.now().strftime("session-%Y%m%d-%H%M%S")
-        self.logger = get_logger(session_id)
+    def show_welcome_banner(self):
+        """Show welcome banner once at CLI startup"""
+        import sys
 
-        # Cleanup old logs
+        # Clear screen for cleaner look
+        print("\n" * 2)
+
+        # Header with box drawing - use ASCII for Windows compatibility
+        if sys.platform == 'win32':
+            print("+" + "-" * 78 + "+")
+            print("|" + " " * 78 + "|")
+            print("|" + "  Flow-Claude v6.7".ljust(78) + "|")
+            print("|" + "  Git-First Autonomous Development System".ljust(78) + "|")
+            print("|" + " " * 78 + "|")
+            print("+" + "-" * 78 + "+")
+        else:
+            print("┌" + "─" * 78 + "┐")
+            print("│" + " " * 78 + "│")
+            print("│" + "  Flow-Claude v6.7".ljust(78) + "│")
+            print("│" + "  Git-First Autonomous Development System".ljust(78) + "│")
+            print("│" + " " * 78 + "│")
+            print("└" + "─" * 78 + "┘")
+        print()
+
+        # Instructions with better formatting
+        print("  Enter your development request below:")
+        print("  " + "-" * 76)
+        print()
+        print("  Commands: \\parallel, \\model, \\verbose, \\debug, \\init, \\auto, \\help")
+        print("  Tip: Press 'q' to quit, ESC to stop agents & add requirements, 'p' to pause")
+        print()
+
+    async def run(self):
+        """Main async CLI loop - supports continuous sessions"""
+        # Show welcome banner once at startup
+        self.show_welcome_banner()
+
+        # Cleanup old logs once at startup
         cleanup_old_logs()
 
-        try:
-            self.logger.info(f"Starting Flow-Claude CLI (model={self.model}, max_parallel={self.max_parallel})")
+        # One-time initialization checks (CLAUDE.md, prompts)
+        self.check_and_prompt_init()
+        self.ensure_prompt_files()
 
-            # Check if we should prompt for CLAUDE.md initialization
-            self.check_and_prompt_init()
+        # Main session loop - continue until user explicitly exits
+        while not self.should_exit_cli:
+            # Initialize NEW session
+            session_id = datetime.now().strftime("session-%Y%m%d-%H%M%S")
+            self.logger = get_logger(session_id)
+            self.logger.info(f"Starting new session (model={self.model}, max_parallel={self.max_parallel})")
 
-            # Ensure prompt files exist in working directory
-            self.ensure_prompt_files()
+            try:
+                # Get development request from user
+                request = self.get_request(show_banner=False)  # Banner already shown
+                if not request:
+                    # User requested exit via \exit or empty input handling
+                    break
 
-            # Get development request from user (synchronous)
-            request = self.get_request()
-            if not request:
-                print("\nNo request provided. Exiting.")
-                self.logger.info("No request provided, exiting")
-                return
+                self.logger.info(f"User request: {request}")
 
-            self.logger.info(f"User request: {request}")
+                # Print log file location
+                print(f"  Log file: {self.logger.log_file}")
+                print()
 
-            # Print log file location
-            print(f"  Log file: {self.logger.log_file}")
-            print()
+                # Run the session
+                await self.run_session(request)
 
-            # Create control queue for interventions
-            self.control_queue = asyncio.Queue()
+                # Check if user pressed 'q' to exit entirely
+                if self.should_exit_cli:
+                    break
 
-            # Start orchestrator in background
-            self.logger.info("Starting orchestrator task")
-            self.orchestrator_task = asyncio.create_task(
-                self.run_orchestrator(request)
-            )
+                # Session completed successfully
+                print("\n  " + "=" * 76)
+                print("  Session complete. Enter another request or type \\exit to quit.")
+                print("  " + "=" * 76 + "\n")
 
-            # Run input loop concurrently with orchestrator
-            # (No render_loop needed - orchestrator prints directly)
-            self.logger.info("Starting concurrent tasks (input, orchestrator)")
-            await asyncio.gather(
-                self.input_loop(),       # Handle keyboard input (q/ESC)
-                self.orchestrator_task,  # Orchestrator execution
-                return_exceptions=True
-            )
+            except KeyboardInterrupt:
+                print("\n\nInterrupted by user (Ctrl+C)")
+                self.logger.warning("Session interrupted by Ctrl+C")
+                await self.cleanup()
+                break  # Exit CLI on Ctrl+C
 
-        except KeyboardInterrupt:
-            print("\n\nInterrupted by user (Ctrl+C)")
-            self.logger.warning("Session interrupted by Ctrl+C")
-            await self.cleanup()
-        except Exception as e:
-            print(f"\n\nError: {e}")
-            self.logger.exception(f"Fatal error: {e}")
-            if self.debug:
-                import traceback
-                traceback.print_exc()
-            await self.cleanup()
-        finally:
-            if self.logger:
-                self.logger.close()
+            except Exception as e:
+                print(f"\n\nError: {e}")
+                self.logger.exception(f"Fatal error: {e}")
+                if self.debug:
+                    import traceback
+                    traceback.print_exc()
+                await self.cleanup()
+                # Don't break - allow user to try another session
+
+            finally:
+                # Clean up current session
+                if self.logger:
+                    self.logger.close()
+                    self.logger = None
+
+        # Final exit message
+        print("\n  Exiting Flow-Claude...\n")
+
+    async def run_session(self, request: str):
+        """Run a single development session"""
+        # Reset session state
+        self.shutdown_requested = False
+        self.control_queue = asyncio.Queue()
+
+        # Start orchestrator in background
+        self.logger.info("Starting orchestrator task")
+        self.orchestrator_task = asyncio.create_task(
+            self.run_orchestrator(request)
+        )
+
+        # Run input loop concurrently with orchestrator
+        self.logger.info("Starting concurrent tasks (input, orchestrator)")
+        await asyncio.gather(
+            self.input_loop(),       # Handle keyboard input (q/ESC/p)
+            self.orchestrator_task,  # Orchestrator execution
+            return_exceptions=True
+        )
 
     async def run_orchestrator(self, request: str):
         """Run orchestrator directly (no subprocess) with control_queue for interventions"""
@@ -161,7 +219,8 @@ class SimpleCLI:
                 user_proxy_prompt=user_proxy_prompt,
                 num_workers=num_workers,
                 control_queue=self.control_queue,  # Pass control_queue for interventions!
-                logger=self.logger  # Pass logger for file logging
+                logger=self.logger,  # Pass logger for file logging
+                auto_mode=self.auto_mode  # Pass auto_mode for user agent control
             )
         except asyncio.CancelledError:
             # Session was cancelled
@@ -192,6 +251,7 @@ class SimpleCLI:
 
                     print("\n\n  Shutting down... Please wait.")
                     self.shutdown_requested = True
+                    self.should_exit_cli = True  # Signal to exit entire CLI
 
                     # Cancel orchestrator
                     if self.orchestrator_task:
@@ -200,13 +260,30 @@ class SimpleCLI:
                     break
 
                 elif key == '\x1b':  # ESC
-                    self.logger.info("User pressed ESC - requesting intervention")
-                    # Queue intervention request (don't prompt yet - wait for clean output)
-                    await self.control_queue.put({
-                        "type": "intervention_pending",
-                        "data": {}
-                    })
-                    print("\n\n  [ESC PRESSED] Waiting for current operation to complete...")
+                    self.logger.info("User pressed ESC - stopping all agents for intervention")
+                    print("\n\n  [ESC PRESSED] Stopping all agents...")
+
+                    # Get intervention immediately
+                    await self.handle_intervention_immediate()
+
+                elif key == 'p':
+                    self.logger.info("User pressed 'p' - entering pause mode")
+                    # Pause mode: allow text selection/copying
+                    print("\n")
+                    print("  " + "=" * 76)
+                    print("  PAUSE MODE")
+                    print("  " + "=" * 76)
+                    print()
+                    print("  Keyboard monitoring paused. You can now select and copy text freely.")
+                    print("  Press any key to resume monitoring...")
+                    print("  " + "=" * 76)
+                    print()
+
+                    # Wait for any keypress to resume (blocking is OK here)
+                    await loop.run_in_executor(None, self.wait_for_any_key)
+
+                    print("\n  Resumed. Press 'q' to quit, ESC to stop agents & intervene, 'p' to pause.\n")
+                    self.logger.info("Pause mode ended - resumed monitoring")
 
             except asyncio.CancelledError:
                 self.logger.debug("Input loop cancelled")
@@ -246,6 +323,74 @@ class SimpleCLI:
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
+    def wait_for_any_key(self) -> str:
+        """Wait for any keypress (blocking, no timeout)"""
+        import sys
+
+        if sys.platform == 'win32':
+            import msvcrt
+            # Wait indefinitely for a keypress
+            return msvcrt.getch().decode('utf-8', errors='ignore')
+        else:
+            import tty
+            import termios
+
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                # Wait indefinitely for input
+                return sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+    async def handle_intervention_immediate(self):
+        """Handle ESC - stop agents immediately and get intervention"""
+        print()
+        print("  " + "=" * 76)
+        print("  INTERVENTION MODE")
+        print("  " + "=" * 76)
+        print()
+        print("  All agents have been stopped.")
+        print("  Enter additional requirements:")
+        print("  (Press Enter with empty input to cancel)")
+        print()
+
+        # Get requirement from user (async)
+        loop = asyncio.get_event_loop()
+        try:
+            requirement = await loop.run_in_executor(
+                None,
+                lambda: input("  > Additional requirement: ").strip()
+            )
+
+            if requirement:
+                self.logger.info(f"Intervention: User added requirement: {requirement}")
+                # Send stop and intervention signal
+                await self.control_queue.put({
+                    "type": "stop_and_intervene",
+                    "data": {
+                        "requirement": requirement,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                })
+
+                print()
+                print("  ✓ Requirement will be sent to orchestrator")
+            else:
+                self.logger.info("Intervention: No requirement added, resuming")
+                print()
+                print("  No requirement added. Resuming...")
+
+            print("  " + "=" * 76)
+            print()
+
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print("  Intervention cancelled. Resuming...")
+            print("  " + "=" * 76)
+            print()
+
     async def cleanup(self):
         """Clean up resources"""
         if self.orchestrator_task and not self.orchestrator_task.done():
@@ -270,6 +415,8 @@ class SimpleCLI:
             ('USER_PROXY_INSTRUCTIONS.md', 'user.md')
         ]
 
+        created_files = []  # Track newly created files for auto-commit
+
         for local_name, fallback_name in prompt_files:
             local_path = os.path.join(working_dir, local_name)
             default_path = os.path.abspath(os.path.join(prompts_dir, fallback_name))
@@ -278,14 +425,126 @@ class SimpleCLI:
             if not os.path.exists(local_path):
                 try:
                     shutil.copy2(default_path, local_path)
-                    self.logger.info(f"Created prompt file: {local_name}")
+                    created_files.append(local_name)  # Track this file was created
+                    if self.logger:
+                        self.logger.info(f"Created prompt file: {local_name}")
                     if self.debug:
                         print(f"  Created: {local_name}")
                 except Exception as e:
                     # Log error but don't fail - will use default directly
-                    self.logger.warning(f"Failed to copy prompt {local_name}: {e}")
+                    if self.logger:
+                        self.logger.warning(f"Failed to copy prompt {local_name}: {e}")
                     if self.debug:
                         print(f"  Warning: Could not copy {local_name}: {e}")
+
+        # Auto-commit newly created files to main branch
+        if created_files:
+            self.commit_prompt_files_to_main(created_files)
+
+    def commit_prompt_files_to_main(self, created_files: list):
+        """
+        Commit newly created instruction files to main branch.
+
+        This ensures task branches created later will have these files.
+
+        Args:
+            created_files: List of instruction file names that were just created
+        """
+        import subprocess
+        from pathlib import Path
+
+        try:
+            # Check if git repo exists
+            if not Path('.git').exists():
+                if self.debug:
+                    print("  No git repository - skipping auto-commit")
+                return
+
+            # Check current branch (empty output means no commits yet, which is fine)
+            try:
+                result = subprocess.run(
+                    'git branch --show-current',
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                current_branch = result.stdout.strip()
+
+                # If there's a current branch and it's not main/master, skip
+                if current_branch and current_branch not in ['main', 'master']:
+                    if self.debug:
+                        print(f"  Not on main/master branch ({current_branch}) - skipping auto-commit")
+                    return
+            except Exception:
+                # If we can't determine branch, assume it's safe (probably fresh repo)
+                pass
+
+            # Check if files are untracked
+            untracked_files = []
+            for filename in created_files:
+                result = subprocess.run(
+                    f'git status --porcelain "{filename}"',
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                status = result.stdout.strip()
+                # ?? means untracked, which is what we want
+                if status.startswith('??'):
+                    untracked_files.append(filename)
+
+            if not untracked_files:
+                if self.debug:
+                    print("  Instruction files already tracked - skipping auto-commit")
+                return
+
+            # Stage the untracked files
+            files_str = ' '.join(f'"{f}"' for f in untracked_files)
+            subprocess.run(
+                f'git add {files_str}',
+                shell=True,
+                check=True,
+                timeout=10
+            )
+
+            # Commit with descriptive message
+            commit_message = """Initialize Flow-Claude instruction files
+
+Added agent instruction files for Flow-Claude v6.7
+
+🤖 Auto-committed by Flow-Claude"""
+
+            subprocess.run(
+                f'git commit -m "{commit_message}"',
+                shell=True,
+                check=True,
+                capture_output=True,
+                timeout=10
+            )
+
+            if self.logger:
+                self.logger.info(f"Auto-committed instruction files to main: {', '.join(untracked_files)}")
+            if self.debug:
+                print(f"  ✓ Committed instruction files to main branch")
+
+        except subprocess.TimeoutExpired:
+            if self.logger:
+                self.logger.warning("Git command timed out during auto-commit")
+            if self.debug:
+                print("  Warning: Git command timed out - instruction files not committed")
+        except subprocess.CalledProcessError as e:
+            if self.logger:
+                self.logger.warning(f"Git command failed during auto-commit: {e}")
+            if self.debug:
+                print(f"  Warning: Could not auto-commit instruction files")
+                print(f"  You can manually commit them with: git add *_INSTRUCTIONS.md && git commit -m 'Add Flow-Claude instructions'")
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Unexpected error during auto-commit: {e}")
+            if self.debug:
+                print(f"  Warning: Could not auto-commit instruction files: {e}")
 
     def check_and_prompt_init(self):
         """Check if directory needs CLAUDE.md initialization and prompt user"""
@@ -317,7 +576,8 @@ class SimpleCLI:
             response = input("  Would you like to initialize CLAUDE.md now? (y/n): ").strip().lower()
 
             if response in ['y', 'yes']:
-                self.logger.info("User chose to initialize CLAUDE.md with Claude Code")
+                if self.logger:
+                    self.logger.info("User chose to initialize CLAUDE.md with Claude Code")
                 print()
                 print("  Initializing CLAUDE.md with Claude Code...")
                 print()
@@ -355,12 +615,14 @@ class SimpleCLI:
                         if claude_md.exists():
                             print("  ✓ CLAUDE.md created successfully!")
                             print()
-                            self.logger.info("CLAUDE.md initialized successfully with Claude Code")
+                            if self.logger:
+                                self.logger.info("CLAUDE.md initialized successfully with Claude Code")
                         else:
                             print("  ✗ CLAUDE.md creation failed.")
                             print("  You can run 'claude code' and use \\init manually.")
                             print()
-                            self.logger.warning("CLAUDE.md file not found after initialization")
+                            if self.logger:
+                                self.logger.warning("CLAUDE.md file not found after initialization")
                     else:
                         raise FileNotFoundError()
 
@@ -373,12 +635,14 @@ class SimpleCLI:
                     print()
                     print("  Or run 'claude code' and use \\init slash command manually.")
                     print()
-                    self.logger.warning(f"Claude Code CLI not available: {e}")
+                    if self.logger:
+                        self.logger.warning(f"Claude Code CLI not available: {e}")
 
                 break
 
             elif response in ['n', 'no']:
-                self.logger.info("User declined to create CLAUDE.md")
+                if self.logger:
+                    self.logger.info("User declined to create CLAUDE.md")
                 print()
                 print("  Skipping CLAUDE.md initialization.")
                 print("  Note: CLAUDE.md helps Claude Code understand your project better.")
@@ -387,37 +651,18 @@ class SimpleCLI:
             else:
                 print("  Please enter 'y' or 'n'")
 
-    def get_request(self) -> str:
-        """Get development request from user (plain input prompt)"""
-        import sys
+    def get_request(self, show_banner: bool = True) -> str:
+        """Get development request from user (plain input prompt)
 
-        # Clear screen for cleaner look
-        print("\n" * 2)
+        Args:
+            show_banner: If True, show welcome banner. False for subsequent sessions.
 
-        # Header with box drawing - use ASCII for Windows compatibility
-        if sys.platform == 'win32':
-            print("+" + "-" * 78 + "+")
-            print("|" + " " * 78 + "|")
-            print("|" + "  Flow-Claude v6.7".ljust(78) + "|")
-            print("|" + "  Git-First Autonomous Development System".ljust(78) + "|")
-            print("|" + " " * 78 + "|")
-            print("+" + "-" * 78 + "+")
-        else:
-            print("┌" + "─" * 78 + "┐")
-            print("│" + " " * 78 + "│")
-            print("│" + "  Flow-Claude v6.7".ljust(78) + "│")
-            print("│" + "  Git-First Autonomous Development System".ljust(78) + "│")
-            print("│" + " " * 78 + "│")
-            print("└" + "─" * 78 + "┘")
-        print()
-
-        # Instructions with better formatting
-        print("  Enter your development request below:")
-        print("  " + "-" * 76)
-        print()
-        print("  Commands: \\parallel, \\model, \\verbose, \\debug, \\init, \\help")
-        print("  Tip: Press 'q' during execution to stop, ESC to add requirements")
-        print()
+        Returns:
+            str: User's request, or empty string to signal exit
+        """
+        # Show banner only if requested (first time)
+        if show_banner:
+            self.show_welcome_banner()
 
         while True:
             # Prompt with nice styling
@@ -483,6 +728,15 @@ class SimpleCLI:
             print()
             return True
 
+        elif cmd == 'auto':
+            self.auto_mode = not self.auto_mode
+            status = "ENABLED" if self.auto_mode else "DISABLED"
+            print()
+            print(f"  Auto mode {status}")
+            print(f"  User agent (for autonomous decisions): {'Available' if self.auto_mode else 'Not available'}")
+            print()
+            return True
+
         elif cmd == 'init':
             print()
             print("  Generating CLAUDE.md...")
@@ -499,6 +753,7 @@ class SimpleCLI:
             print("  \\model       - Select Claude model (sonnet/opus/haiku)")
             print("  \\verbose     - Toggle verbose output")
             print("  \\debug       - Toggle debug mode")
+            print(f"  \\auto        - Toggle user agent (autonomous decisions) [Current: {'ON' if self.auto_mode else 'OFF'}]")
             print("  \\init        - Generate CLAUDE.md template")
             print("  \\help        - Show this help message")
             print("  \\exit        - Exit Flow-Claude")

@@ -210,6 +210,86 @@ def develop(
             click.echo("ERROR: git command not found. Install git first.", err=True)
             sys.exit(1)
 
+    def _commit_instruction_files(created_files: list, debug_mode: bool):
+        """Helper to commit newly created instruction files to main branch."""
+        import subprocess
+        from pathlib import Path
+
+        try:
+            # Check if git repo exists
+            if not Path('.git').exists():
+                if debug_mode:
+                    click.echo("DEBUG: No git repository - skipping auto-commit")
+                return
+
+            # Check current branch
+            try:
+                result = subprocess.run(
+                    ['git', 'branch', '--show-current'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                current_branch = result.stdout.strip()
+
+                # If there's a current branch and it's not main/master, skip
+                if current_branch and current_branch not in ['main', 'master']:
+                    if debug_mode:
+                        click.echo(f"DEBUG: Not on main/master branch ({current_branch}) - skipping auto-commit")
+                    return
+            except Exception:
+                # If we can't determine branch, assume it's safe (probably fresh repo)
+                pass
+
+            # Check if files are untracked
+            untracked_files = []
+            for filename in created_files:
+                result = subprocess.run(
+                    ['git', 'status', '--porcelain', filename],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                status = result.stdout.strip()
+                # ?? means untracked
+                if status.startswith('??'):
+                    untracked_files.append(filename)
+
+            if not untracked_files:
+                if debug_mode:
+                    click.echo("DEBUG: Instruction files already tracked - skipping auto-commit")
+                return
+
+            # Stage the untracked files
+            subprocess.run(
+                ['git', 'add'] + untracked_files,
+                check=True,
+                timeout=10
+            )
+
+            # Commit with descriptive message
+            commit_message = "Initialize Flow-Claude instruction files\n\nAdded agent instruction files for Flow-Claude v6.7\n\n🤖 Auto-committed by Flow-Claude"
+
+            subprocess.run(
+                ['git', 'commit', '-m', commit_message],
+                check=True,
+                capture_output=True,
+                timeout=10
+            )
+
+            if debug_mode:
+                click.echo(f"DEBUG: ✓ Committed instruction files to main branch")
+
+        except subprocess.TimeoutExpired:
+            if debug_mode:
+                click.echo("DEBUG: Git command timed out - instruction files not committed")
+        except subprocess.CalledProcessError as e:
+            if debug_mode:
+                click.echo(f"DEBUG: Could not auto-commit instruction files: {e}")
+        except Exception as e:
+            if debug_mode:
+                click.echo(f"DEBUG: Unexpected error during auto-commit: {e}")
+
     # V6.3: Load prompts from files using @filepath syntax
     # Orchestrator is main agent, planner and workers are subagents
     # The SDK loads the full file content at runtime
@@ -217,6 +297,8 @@ def develop(
     # This allows users to customize agent behavior per-project
     working_dir = os.getcwd()
     prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
+
+    created_instruction_files = []  # Track newly created files for auto-commit
 
     def get_prompt_file(local_name, fallback_name):
         """Get prompt file from working dir, copying default if it doesn't exist."""
@@ -228,6 +310,7 @@ def develop(
             try:
                 import shutil
                 shutil.copy2(default_path, local_path)
+                created_instruction_files.append(local_name)  # Track file was created
                 if debug:
                     click.echo(f"DEBUG: Copied default prompt {fallback_name} -> {local_name}")
             except Exception as e:
@@ -243,6 +326,10 @@ def develop(
     planner_prompt_file = get_prompt_file('PLANNER_INSTRUCTIONS.md', 'planner.md')
     worker_prompt_file = get_prompt_file('WORKER_INSTRUCTIONS.md', 'worker.md')
     user_proxy_prompt_file = get_prompt_file('USER_PROXY_INSTRUCTIONS.md', 'user.md')
+
+    # Auto-commit newly created instruction files to main branch
+    if created_instruction_files:
+        _commit_instruction_files(created_instruction_files, debug)
 
     # Use @filepath syntax for all agents
     orchestrator_prompt = f"@{orchestrator_prompt_file}"
@@ -306,7 +393,8 @@ async def run_development_session(
     user_proxy_prompt: str,
     num_workers: int,
     control_queue: Optional[asyncio.Queue] = None,
-    logger: Optional[object] = None  # FlowClaudeLogger instance
+    logger: Optional[object] = None,  # FlowClaudeLogger instance
+    auto_mode: bool = True  # Enable user agent for autonomous decisions
 ):
     """Run development session with orchestrator, planner, user, and worker agents.
 
@@ -458,12 +546,14 @@ async def run_development_session(
     )
 
     # Define user subagent (V6.6: New - handles user confirmations)
-    agent_definitions['user'] = AgentDefinition(
-        description='User proxy agent that represents the user for confirmation dialogs',
-        prompt=user_proxy_prompt,
-        tools=[],  # User proxy doesn't need tools - just facilitates user interaction
-        model='haiku'  # Use haiku for fast, cheap confirmation dialogs
-    )
+    # Only register if auto_mode is enabled
+    if auto_mode:
+        agent_definitions['user'] = AgentDefinition(
+            description='User proxy agent that represents the user for confirmation dialogs',
+            prompt=user_proxy_prompt,
+            tools=[],  # User proxy doesn't need tools - just facilitates user interaction
+            model='haiku'  # Use haiku for fast, cheap confirmation dialogs
+        )
 
     # Define worker subagents
     for i in range(1, num_workers + 1):
@@ -560,8 +650,7 @@ async def run_development_session(
 
 **Available Subagents:**
 - **planner** - Planning subagent (invoke FIRST to create execution plan)
-- **user** - User proxy subagent (invoke for user confirmations and decisions)
-{chr(10).join([f'- worker-{i} - Worker subagent (invoke for task execution)' for i in range(1, num_workers + 1)])}
+{f'- **user** - User proxy subagent (invoke for user confirmations and decisions){chr(10)}' if auto_mode else ''}{chr(10).join([f'- worker-{i} - Worker subagent (invoke for task execution)' for i in range(1, num_workers + 1)])}
 
 ---
 
@@ -622,13 +711,13 @@ Follow your Phase 1 workflow from PLANNER_INSTRUCTIONS.md."
 9. Report final results to user
 
 **YOUR ROLE:** Coordinate the loop. The planner creates branches and updates docs. Workers execute tasks. You orchestrate between them.
-
+{'''
 **User Proxy Usage:**
 The user agent is available for key decision points:
 - After planner creates plan (get user confirmation)
 - When tasks are blocked (get user decision)
 - At session completion (acknowledge results)
-"""
+''' if auto_mode else ''}"""
 
     # Start session
     try:
@@ -650,33 +739,37 @@ The user agent is available for key decision points:
                 # Receive and process all messages for this turn
                 response_complete = False
                 pending_intervention = None
-                intervention_requested = False
                 shutdown_requested = False
+                stop_immediately = False
 
                 async for msg in client.receive_response():
                     handle_agent_message(msg)
 
-                    # Check for interventions after each message for more responsive handling
-                    if control_queue and not pending_intervention and not intervention_requested:
+                    # Check for interventions after each message for immediate response
+                    if control_queue and not pending_intervention:
                         try:
                             control = control_queue.get_nowait()
                             control_type = control.get("type")
 
-                            if control_type == "intervention_pending":
-                                # User pressed ESC - wait for turn to complete before prompting
-                                intervention_requested = True
-
-                            elif control_type == "intervention":
-                                # Direct intervention with requirement already provided
+                            if control_type == "stop_and_intervene":
+                                # User pressed ESC - stop immediately and inject requirement
                                 requirement = control.get("data", {}).get("requirement", "")
                                 if requirement:
                                     pending_intervention = requirement
-                                    click.echo(f"\n[INTERVENTION QUEUED] Requirement will be injected after current operation: {requirement[:80]}...\n")
+                                    stop_immediately = True
+                                    click.echo("\n[AGENTS STOPPED] Processing intervention...\n")
+                                    # Break out of message loop immediately
+                                    break
+                                else:
+                                    # No requirement - just continue
+                                    click.echo("\n[INTERVENTION CANCELLED] Resuming...\n")
 
                             elif control_type == "shutdown":
                                 # User pressed 'q' to quit
                                 shutdown_requested = True
-                                click.echo("\n[SHUTDOWN QUEUED] Will stop after current operation...\n")
+                                click.echo("\n[SHUTDOWN] Stopping execution...\n")
+                                # Break immediately
+                                break
 
                         except asyncio.QueueEmpty:
                             pass  # No intervention
@@ -691,47 +784,13 @@ The user agent is available for key decision points:
 
                 # Handle shutdown immediately
                 if shutdown_requested:
-                    click.echo("\n[SHUTDOWN] Stopping execution\n")
                     break
 
-                # Handle intervention request - prompt user now that output has settled
-                if intervention_requested:
-                    click.echo()
-                    click.echo("  " + "=" * 76)
-                    click.echo("  INTERVENTION MODE")
-                    click.echo("  " + "=" * 76)
-                    click.echo()
-                    click.echo("  You can add additional requirements to the current task.")
-                    click.echo("  (Press Enter with empty input to resume without changes)")
-                    click.echo()
-
-                    # Get requirement from user
-                    import sys
-                    try:
-                        requirement = input("  > Additional requirement: ").strip()
-                        sys.stdout.flush()
-
-                        if requirement:
-                            pending_intervention = requirement
-                            click.echo()
-                            click.echo("  ✓ Requirement will be sent to orchestrator")
-                        else:
-                            click.echo()
-                            click.echo("  No requirement added. Continuing...")
-
-                        click.echo("  " + "=" * 76)
-                        click.echo()
-                    except (EOFError, KeyboardInterrupt):
-                        click.echo()
-                        click.echo("  Intervention cancelled")
-                        click.echo("  " + "=" * 76)
-                        click.echo()
-
-                # Inject pending intervention immediately after turn completes
+                # Inject pending intervention immediately
                 if pending_intervention:
-                    click.echo(f"\n[INTERVENTION] Injecting requirement: {pending_intervention}\n")
+                    click.echo(f"[INTERVENTION] Injecting requirement into conversation:\n  \"{pending_intervention}\"\n")
                     # Inject as new query into conversation
-                    await client.query(f"IMPORTANT - User Intervention: The user has added a new requirement mid-execution: {pending_intervention}\n\nPlease incorporate this requirement into your current work.")
+                    await client.query(f"IMPORTANT - User Intervention: The user has stopped all current work and added a new requirement: {pending_intervention}\n\nPlease acknowledge this requirement and incorporate it into your work. If you were in the middle of something, consider the current state and how to integrate this new requirement.")
                     # Clear the intervention
                     pending_intervention = None
 

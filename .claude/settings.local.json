@@ -51,7 +51,8 @@
       "Bash(if exist \"test-interactive-cli\" rmdir /s /q \"test-interactive-cli\")",
       "Bash(claude:*)",
       "Bash(del:*)",
-      "Bash(python test_prompt_copy.py:*)"
+      "Bash(python test_prompt_copy.py:*)",
+      "Bash(if exist CLAUDE.md del CLAUDE.md)"
     ],
     "deny": [],
     "ask": []
