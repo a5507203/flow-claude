@@ -263,8 +263,27 @@ class SimpleCLI:
                     self.logger.info("User pressed ESC - stopping all agents for intervention")
                     print("\n\n  [ESC PRESSED] Stopping all agents...")
 
-                    # Get intervention immediately
+                    # Cancel orchestrator task immediately
+                    if self.orchestrator_task and not self.orchestrator_task.done():
+                        self.orchestrator_task.cancel()
+
+                        # Wait for task to actually stop (with timeout)
+                        try:
+                            await asyncio.wait_for(self.orchestrator_task, timeout=2.0)
+                        except asyncio.CancelledError:
+                            # Expected - task was cancelled
+                            pass
+                        except asyncio.TimeoutError:
+                            self.logger.warning("Orchestrator task did not stop within timeout")
+                        except Exception as e:
+                            self.logger.warning(f"Error waiting for orchestrator to stop: {e}")
+
+                    # Get intervention immediately (after agents are stopped)
                     await self.handle_intervention_immediate()
+
+                    # After intervention, end the session so user can start a new one
+                    self.shutdown_requested = True
+                    break
 
                 elif key == 'p':
                     self.logger.info("User pressed 'p' - entering pause mode")
