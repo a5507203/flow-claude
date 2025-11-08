@@ -137,13 +137,26 @@ All data lives in git branches and commits:
 
 ### Custom MCP Tools
 
-Three custom tools exposed to agents via MCP protocol (`flow_claude/git_tools.py`):
+Seven custom tools exposed to agents via MCP protocol (`flow_claude/git_tools.py`):
 
+**Query Tools** (read git state):
 1. **`mcp__git__parse_task`**: Extracts task metadata from first commit on task branch
 2. **`mcp__git__parse_plan`**: Parses execution plan from plan branch commit
 3. **`mcp__git__get_provides`**: Queries available preconditions from main branch merges
+4. **`mcp__git__parse_worker_commit`**: Parses worker's latest commit (design + TODO progress)
 
-These allow agents to query git history without subprocess calls in prompts.
+**Creation Tools** (atomically create branches):
+5. **`mcp__git__create_plan_branch`**: Creates plan branch with instruction files + metadata commit
+6. **`mcp__git__create_task_branch`**: Creates task branch with instruction files + metadata commit
+7. **`mcp__git__update_plan_branch`**: Updates plan commit with completed tasks + new wave tasks
+
+**Why creation tools are critical:**
+- **Instruction files always included**: All 4 instruction files (ORCHESTRATOR_INSTRUCTIONS.md, PLANNER_INSTRUCTIONS.md, WORKER_INSTRUCTIONS.md, USER_PROXY_INSTRUCTIONS.md) are automatically copied from `flow_claude/prompts/` to every branch
+- **Metadata format guaranteed**: Commit messages follow exact `parsers.py` format (no agent errors)
+- **Atomic operations**: Branch creation + file copy + commit happen atomically (rollback on error)
+- **Performance**: Reduces planner tool calls from ~10 per wave to 1-2 (5-10x faster)
+
+These tools allow agents to query git history and create branches without complex subprocess orchestration in prompts.
 
 ### Parsing Utilities
 

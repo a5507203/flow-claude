@@ -540,11 +540,15 @@ async def run_development_session(
         prompt=planner_prompt,
         tools=[
             'Task', 'Bash', 'Read', 'Grep', 'Glob',
-            # Commit-only architecture - planner uses git commits, NOT files
+            # MCP tools for reading git state
             'mcp__git__parse_plan',  # Read plan from commits
             'mcp__git__parse_task',  # Read task metadata from commits
             'mcp__git__parse_worker_commit',  # Monitor worker progress
-            'mcp__git__get_provides'  # Query completed task capabilities
+            'mcp__git__get_provides',  # Query completed task capabilities
+            # MCP tools for creating branches (atomically copy instruction files + create commits)
+            'mcp__git__create_plan_branch',  # Create plan branch with instruction files
+            'mcp__git__create_task_branch',  # Create task branch with instruction files
+            'mcp__git__update_plan_branch'  # Update plan with completed tasks
         ],
         model=model
     )
@@ -669,9 +673,9 @@ async def run_development_session(
 **CRITICAL - Wave-Based Ping-Pong Execution:**
 
 You are the Orchestrator. You coordinate a PING-PONG pattern between planner and workers:
-1. Invoke planner → planner creates branches → returns to you
-2. Spawn workers → workers execute and merge → return to you
-3. Invoke planner again → planner updates docs and creates next wave → returns to you
+1. Invoke planner -> planner creates branches -> returns to you
+2. Spawn workers -> workers execute and merge -> return to you
+3. Invoke planner again -> planner updates docs and creates next wave -> returns to you
 4. Repeat until done
 
 **WHY:** The planner CANNOT spawn workers (SDK constraint). Only you can spawn subagents.
@@ -932,7 +936,7 @@ def handle_agent_message(msg):
                         tool_detail = f"pattern: {pattern}"
                     elif tool_name == 'Task':
                         subagent = tool_input.get('subagent_type', 'unknown')
-                        tool_detail = f"→ {subagent}"
+                        tool_detail = f"-> {subagent}"
 
                     # Log to file if logger available (with details)
                     if _session_logger:
@@ -962,7 +966,7 @@ def handle_agent_message(msg):
                     if tool_name == 'Task':
                         subagent_type = tool_input.get('subagent_type', 'unknown')
                         description = tool_input.get('description', '')
-                        click.echo(f"  → Invoking {subagent_type}: {description}")
+                        click.echo(f"  -> Invoking {subagent_type}: {description}")
                         sys.stdout.flush()
 
                     # Show tool input in verbose/debug mode - FULL, NO TRUNCATION
