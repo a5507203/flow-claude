@@ -77,6 +77,7 @@ async def parse_task(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'log', branch, '--reverse', '--format=%B', '-n', '1'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=10
         )
@@ -169,6 +170,7 @@ async def parse_plan(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'log', branch, '--format=%B', '-n', '1'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=10
         )
@@ -246,6 +248,7 @@ async def get_provides(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'log', 'master', '--merges', '--format=%B'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=30
         )
@@ -356,6 +359,7 @@ async def parse_worker_commit_tool(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'log', branch, '-n', '1', '--format=%B'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=10
         )
@@ -528,6 +532,7 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'branch', '--show-current'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=5
         )
@@ -673,6 +678,7 @@ Completed: {completed_tasks}/{total_tasks} tasks
             ['git', 'rev-parse', 'HEAD'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=5
         )
@@ -858,6 +864,7 @@ async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'branch', '--show-current'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=5
         )
@@ -990,6 +997,7 @@ Priority: {priority}
             ['git', 'rev-parse', 'HEAD'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=5
         )
@@ -1115,6 +1123,7 @@ async def update_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'branch', '--show-current'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=5
         )
@@ -1133,6 +1142,7 @@ async def update_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'log', '-n', '1', '--format=%B'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=10
         )
@@ -1145,6 +1155,7 @@ async def update_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             ['git', 'rev-list', '--count', plan_branch],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=5
         )
@@ -1255,6 +1266,7 @@ Completed: {completed_count}/{total_tasks} tasks
             ['git', 'rev-parse', 'HEAD'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=5
         )

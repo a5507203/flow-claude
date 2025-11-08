@@ -54,7 +54,8 @@
       "Bash(python test_prompt_copy.py:*)",
       "Bash(if exist CLAUDE.md del CLAUDE.md)",
       "Bash(git show:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(if exist test_encoding_fix.py del test_encoding_fix.py)"
     ],
     "deny": [],
     "ask": []
