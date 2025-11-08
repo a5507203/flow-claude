@@ -69,6 +69,9 @@ def create_planning_agent(model: str = "sonnet") -> AgentDefinition:
         - mcp__git__parse_task: Parse task metadata from commits
         - mcp__git__parse_plan: Parse plan from plan branch
         - mcp__git__get_provides: Get available preconditions
+        - mcp__git__create_plan_branch: Create plan branch with metadata
+        - mcp__git__create_task_branch: Create task branch with metadata
+        - mcp__git__update_plan_branch: Update plan with completed tasks
     """
     try:
         prompt = load_prompt("planner.md")
@@ -94,6 +97,9 @@ Please create prompts/planner.md with the complete planning agent workflow.
             "mcp__git__parse_task",
             "mcp__git__parse_plan",
             "mcp__git__get_provides",
+            "mcp__git__create_plan_branch",
+            "mcp__git__create_task_branch",
+            "mcp__git__update_plan_branch",
         ],
         model=model,
     )

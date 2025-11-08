@@ -533,9 +533,15 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
         )
         current_branch = current_branch_result.stdout.strip() or "master"
 
-        # Create plan branch from master
+        # Create plan branch from master (force checkout master first)
         subprocess.run(
-            ['git', 'checkout', '-b', branch_name, 'master'],
+            ['git', 'checkout', '-f', 'master'],
+            capture_output=True,
+            check=True,
+            timeout=10
+        )
+        subprocess.run(
+            ['git', 'checkout', '-b', branch_name],
             capture_output=True,
             check=True,
             timeout=10
@@ -857,9 +863,15 @@ async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
         )
         current_branch = current_branch_result.stdout.strip() or "master"
 
-        # Create task branch from master
+        # Create task branch from master (force checkout master first)
         subprocess.run(
-            ['git', 'checkout', '-b', branch_name, 'master'],
+            ['git', 'checkout', '-f', 'master'],
+            capture_output=True,
+            check=True,
+            timeout=10
+        )
+        subprocess.run(
+            ['git', 'checkout', '-b', branch_name],
             capture_output=True,
             check=True,
             timeout=10
