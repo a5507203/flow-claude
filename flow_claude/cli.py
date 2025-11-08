@@ -1074,8 +1074,10 @@ def handle_agent_message(msg):
                 else:
                     result_str = json.dumps(content, indent=2)
 
-                if len(result_str) > 300:
-                    result_str = result_str[:300] + "..."
+                # Show MORE output for errors and MCP tools (up to 1000 chars)
+                max_len = 1000 if (is_error or "mcp__git__" in str(tool_id)) else 300
+                if len(result_str) > max_len:
+                    result_str = result_str[:max_len] + "..."
 
                 click.echo(f"  Output: {result_str}")
 
