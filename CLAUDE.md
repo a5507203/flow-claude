@@ -31,14 +31,93 @@ Flow-Claude runs INSIDE other git repositories (not from its own directory):
 # Navigate to your project's git repository
 cd /path/to/your/project
 
-# Run Flow-Claude (interactive mode by default)
+# Run interactive CLI (recommended)
+python -m flow_claude.commands.flow_cli
+
+# Or single-shot mode with specific request
 python -m flow_claude.cli develop "your development request" --verbose --debug
 
-# Or if installed as package
-flow-claude develop "your request"
+# If installed as package
+flow "your request"
+```
 
-# Disable interactive mode for CI/CD or scripts
-flow-claude develop "your request" --no-interactive
+### Interactive Features (New in V6.7)
+
+**Command Autocomplete**: When typing at the prompt, slash commands show an autocomplete dropdown:
+
+```
+  > \
+
+  ↓ Dropdown appears:
+
+    \parallel - Set maximum number of parallel workers
+    \model - Select Claude model (sonnet/opus/haiku)
+    \verbose - Toggle verbose output
+    \debug - Toggle debug mode
+    \auto - Toggle user agent (autonomous decisions)
+    \init - Generate CLAUDE.md template
+    \help - Show help message
+    \exit - Exit Flow-Claude
+```
+
+**Usage:**
+- Type `\` to see all commands
+- Type `\mo` to filter to `\model`
+- Use arrow keys (↑/↓) to navigate
+- Press Enter to execute
+- Just type normally for development requests (autocomplete doesn't interfere)
+
+See `AUTOCOMPLETE_DEMO.md` for visual examples.
+
+### Flow Branch Workflow
+
+**New in V6.7:** Flow-Claude uses a dedicated "flow" branch for all development work, keeping your main/master branch clean.
+
+```bash
+# First time in a project
+$ python -m flow_claude.commands.flow_cli
+
+==============================================================
+FLOW BRANCH SETUP
+==============================================================
+
+Flow-Claude uses a dedicated 'flow' branch for development work.
+This keeps your work isolated until you're ready to merge.
+
+Select base branch for flow branch:
+
+  → main (current)
+    develop
+    feature-xyz
+
+(Use arrow keys, j/k, or Enter to select)
+
+Creating 'flow' branch from 'main'...
+✓ Flow branch created from 'main'
+
+[... development proceeds ...]
+```
+
+**Interactive Selection (New)**: Arrow-key menu for branch selection instead of typing numbers.
+
+**How it works:**
+- **First run**: Prompts you to select a base branch, then creates "flow" branch
+- **Subsequent runs**: Automatically uses existing flow branch (no prompt)
+- **All work accumulates on flow branch** across multiple sessions
+- **When ready**: Manually merge flow → your base branch
+
+**Branch isolation:**
+- Plan branches created from flow (e.g., `plan/session-*`)
+- Task branches created from flow (e.g., `task/001-*`)
+- Workers merge completed tasks to flow
+- Your main/master branch remains untouched
+
+**Merging flow branch when ready:**
+```bash
+# After Flow-Claude completes work
+git checkout main
+git merge flow
+git push
 ```
 
 ### Multi-Round Conversations

@@ -130,7 +130,7 @@ mcp__git__create_plan_branch({
     "dependency_graph": "Wave 1: ...\nWave 2: ..."
 })
 # Returns: {success: true, branch_name, commit_sha}
-# What it does: Creates plan branch with metadata commit, returns to main
+# What it does: Creates plan branch with metadata commit, returns to original branch
 ```
 
 **6. mcp__git__create_task_branch** - Create task branch with metadata
@@ -154,7 +154,7 @@ mcp__git__create_task_branch({
     "priority": "high"
 })
 # Returns: {success: true, branch_name, commit_sha}
-# What it does: Creates task branch with metadata commit, returns to main
+# What it does: Creates task branch with metadata commit, returns to original branch
 ```
 
 **7. mcp__git__update_plan_branch** - Update plan (mark complete + add tasks)

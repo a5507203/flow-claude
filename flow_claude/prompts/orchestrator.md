@@ -191,6 +191,7 @@ mcp__git__parse_plan({"branch": "plan/{plan_branch}"})
 
 # Option B: Use provides query to see if all tasks complete
 mcp__git__get_provides
+# Queries flow branch for completed capabilities
 # Compare with total tasks in plan
 ```
 
@@ -246,7 +247,7 @@ After planner returns final summary, report to the user:
 - Session ID: {session_id}
 - Plan Branch: {plan_branch}
 - Total Tasks: {X} across {Y} waves
-- All work merged to main branch
+- All work merged to flow branch
 
 The implementation is ready!
 ```
@@ -299,7 +300,7 @@ Orchestrator: [Invokes planner for final report]
 
 Planner: "✅ All 5 tasks complete across 2 waves. Conference website delivered."
 
-Orchestrator: "Development complete! Conference website with 3 pages delivered across 5 tasks in 2 waves. Ready on main branch."
+Orchestrator: "Development complete! Conference website with 3 pages delivered across 5 tasks in 2 waves. Ready on flow branch."
 ```
 
 **Keep coordinating. Let planner and workers do their jobs.**
@@ -388,9 +389,9 @@ I'll plan this enhancement."
 ### Important Notes for Follow-Ups
 
 - **Each follow-up gets a NEW session ID and plan branch** (e.g., session-20250115-150000)
-- **The main branch accumulates all work** across multiple sessions
+- **The flow branch accumulates all work** across multiple sessions
 - **Planner should reference previous work** when planning follow-ups
-- **Workers inherit the full codebase state** from main branch
+- **Workers inherit the full codebase state** from flow branch
 - **No limit on number of follow-ups** - keep going until user exits
 
 **Your role:** Seamlessly handle new requests as they come, treating each as a fresh wave-based execution while building on existing work.

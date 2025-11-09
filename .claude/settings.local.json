@@ -55,7 +55,9 @@
       "Bash(if exist CLAUDE.md del CLAUDE.md)",
       "Bash(git show:*)",
       "Bash(python:*)",
-      "Bash(if exist test_encoding_fix.py del test_encoding_fix.py)"
+      "Bash(if exist test_encoding_fix.py del test_encoding_fix.py)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:questionary.readthedocs.io)"
     ],
     "deny": [],
     "ask": []

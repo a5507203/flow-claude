@@ -219,6 +219,99 @@ def develop(
             click.echo("ERROR: git command not found. Install git first.", err=True)
             sys.exit(1)
 
+    # Flow branch setup: Check if flow branch exists, create if needed
+    import subprocess
+    try:
+        # Check if flow branch exists
+        flow_check = subprocess.run(
+            ['git', 'rev-parse', '--verify', 'flow'],
+            capture_output=True,
+            timeout=5
+        )
+
+        if flow_check.returncode == 0:
+            # Flow branch exists - use it
+            click.echo("\n✓ Flow branch found. Using existing flow branch for this session.")
+            base_branch = "flow"
+        else:
+            # Flow branch doesn't exist - need to create it
+            click.echo("\n" + "=" * 60)
+            click.echo("FLOW BRANCH SETUP")
+            click.echo("=" * 60)
+            click.echo("\nFlow-Claude uses a dedicated 'flow' branch for development work.")
+            click.echo("This keeps your work isolated until you're ready to merge.")
+
+            # Get list of branches
+            branches_result = subprocess.run(
+                ['git', 'branch', '--format=%(refname:short)'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                check=True,
+                timeout=5
+            )
+            branches = [b.strip() for b in branches_result.stdout.strip().split('\n') if b.strip()]
+
+            if not branches:
+                # No branches yet - create main and use it
+                click.echo("\nNo branches found. Creating 'main' branch...")
+                subprocess.run(
+                    ['git', 'checkout', '-b', 'main'],
+                    capture_output=True,
+                    check=True,
+                    timeout=5
+                )
+                branches = ['main']
+                selected_base = 'main'
+            else:
+                # Get current branch as default
+                current_result = subprocess.run(
+                    ['git', 'branch', '--show-current'],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    timeout=5
+                )
+                current_branch = current_result.stdout.strip()
+
+                # Show branch selection
+                click.echo("\nAvailable branches:")
+                for i, branch in enumerate(branches, 1):
+                    marker = " (current)" if branch == current_branch else ""
+                    click.echo(f"  {i}. {branch}{marker}")
+
+                # Prompt for selection
+                default_choice = branches.index(current_branch) + 1 if current_branch in branches else 1
+                choice = click.prompt(
+                    f'\nSelect base branch for flow branch [1-{len(branches)}]',
+                    type=int,
+                    default=default_choice
+                )
+
+                if choice < 1 or choice > len(branches):
+                    click.echo(f"ERROR: Invalid choice. Using default: {branches[default_choice-1]}", err=True)
+                    selected_base = branches[default_choice-1]
+                else:
+                    selected_base = branches[choice-1]
+
+            # Create flow branch from selected base
+            click.echo(f"\nCreating 'flow' branch from '{selected_base}'...")
+            subprocess.run(
+                ['git', 'branch', 'flow', selected_base],
+                capture_output=True,
+                check=True,
+                timeout=5
+            )
+            click.echo(f"✓ Created 'flow' branch from '{selected_base}'\n")
+            base_branch = "flow"
+
+    except subprocess.CalledProcessError as e:
+        click.echo(f"ERROR: Failed to setup flow branch: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"ERROR: Unexpected error during flow branch setup: {e}", err=True)
+        sys.exit(1)
+
     def _commit_instruction_files(created_files: list, debug_mode: bool):
         """Helper to commit newly created instruction files to main branch."""
         import subprocess

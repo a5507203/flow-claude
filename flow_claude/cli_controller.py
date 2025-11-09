@@ -15,6 +15,8 @@ import sys
 from datetime import datetime
 from typing import Optional
 
+import questionary
+
 from flow_claude.logging_config import get_logger, cleanup_old_logs
 
 
@@ -65,13 +67,19 @@ class SimpleCLI:
         print()
 
         # Instructions with better formatting
-        print("  Enter your development request below:")
-        print("  " + "-" * 76)
+        print("  Available Commands:")
+        print("    \\parallel  - Set max parallel workers")
+        print("    \\model     - Select Claude model")
+        print("    \\verbose   - Toggle verbose output")
+        print("    \\debug     - Toggle debug mode")
+        print("    \\auto      - Toggle autonomous mode")
+        print("    \\init      - Generate CLAUDE.md")
+        print("    \\help      - Show help")
+        print("    \\exit      - Exit Flow-Claude")
         print()
-        print("  Commands: \\parallel, \\model, \\verbose, \\debug, \\init, \\auto, \\help")
-        print("  While agents work: Type follow-up requests anytime, or '\\stop' to cancel")
-        print("  Quit: Type '\\q', '\\exit', 'q', or press Ctrl+C")
-        print()
+        print("  Tip: Type '\\' to see autocomplete suggestions (in terminal)")
+        print("  While agents work: Type follow-up requests or '\\stop' to cancel")
+        print("  Quit: Type '\\exit' or '\\q'")
 
     async def run(self):
         """Main async CLI loop - supports continuous sessions"""
@@ -82,10 +90,11 @@ class SimpleCLI:
         cleanup_old_logs()
 
         # One-time initialization checks (CLAUDE.md, prompts)
-        self.check_and_prompt_init()
+        await self.check_and_prompt_init()
         self.ensure_prompt_files()
 
         # Main session loop - continue until user explicitly exits
+        is_first_request = True
         while not self.should_exit_cli:
             # Initialize NEW session
             session_id = datetime.now().strftime("session-%Y%m%d-%H%M%S")
@@ -94,7 +103,8 @@ class SimpleCLI:
 
             try:
                 # Get development request from user
-                request = self.get_request(show_banner=False)  # Banner already shown
+                request = await self.get_request(show_banner=False, is_first_request=is_first_request)
+                is_first_request = False  # After first request, all subsequent are not first
                 if not request:
                     # User requested exit via \exit or empty input handling
                     break
@@ -252,21 +262,29 @@ class SimpleCLI:
         loop = asyncio.get_event_loop()
         self.logger.debug("Input loop started")
 
-        # Show initial prompt
-        print("\n  > ", end="", flush=True)
+        # Show initial prompt with top border
+        print("\n" + "-" * 78)
 
         while not self.shutdown_requested:
             try:
+                # Show prompt
+                print("  > ", end="", flush=True)
+
                 # Read full line of input asynchronously
                 user_input = await loop.run_in_executor(
                     None,
                     lambda: input().strip()
                 )
 
+                # Print bottom border immediately on next line, then blank line
+                print("-" * 78, flush=True)  # Force immediate flush to prevent race condition
+                print(flush=True)  # Blank line, also flushed
+                await asyncio.sleep(0.01)  # Give border time to render (10ms)
+
                 # Handle different input types
                 if not user_input:
-                    # Empty input - just show prompt again
-                    print("  > ", end="", flush=True)
+                    # Empty input - show top border and prompt again
+                    print("-" * 78)
                     continue
 
                 elif user_input in ['\\q', '\\exit', 'q']:
@@ -305,7 +323,9 @@ class SimpleCLI:
                     # Session ID already captured in CancelledError handler
                     print("  Stopped. Session will resume when you continue.")
                     print("  Type new request to continue, or \\q to quit.")
-                    print("  > ", end="", flush=True)
+                    print()
+                    print("-" * 78)
+                    # Loop will show prompt again
                     # Don't break - stay in input loop for follow-up
 
                 else:
@@ -331,7 +351,9 @@ class SimpleCLI:
                         )
                         # Note: run_orchestrator will use self.orchestrator_session_id for resume
 
-                    print("  > ", end="", flush=True)
+                    print()
+                    print("-" * 78)
+                    # Loop will show prompt again
 
             except asyncio.CancelledError:
                 self.logger.debug("Input loop cancelled")
@@ -418,10 +440,13 @@ class SimpleCLI:
         # Get requirement from user (async)
         loop = asyncio.get_event_loop()
         try:
+            # Show input border
+            print("\n" + "-" * 78)
             requirement = await loop.run_in_executor(
                 None,
                 lambda: input("  > Additional requirement: ").strip()
             )
+            print("-" * 78)
 
             if requirement:
                 self.logger.info(f"Intervention: User added requirement: {requirement}")
@@ -605,13 +630,129 @@ Added agent instruction files for Flow-Claude v6.7
             if self.debug:
                 print(f"  Warning: Could not auto-commit instruction files: {e}")
 
-    def check_and_prompt_init(self):
-        """Check if directory needs CLAUDE.md initialization and prompt user"""
+    async def setup_flow_branch(self):
+        """Setup flow branch if it doesn't exist"""
+        import subprocess
+
+        try:
+            # Check if flow branch exists
+            flow_check = subprocess.run(
+                ['git', 'rev-parse', '--verify', 'flow'],
+                capture_output=True,
+                timeout=5
+            )
+
+            if flow_check.returncode == 0:
+                # Flow branch exists - use it
+                print("\n  ✓ Flow branch found. Using existing flow branch for this session.\n")
+                return
+
+            # Flow branch doesn't exist - need to create it
+            print("\n  " + "=" * 76)
+            print("  FLOW BRANCH SETUP")
+            print("  " + "=" * 76)
+            print("\n  Flow-Claude uses a dedicated 'flow' branch for development work.")
+            print("  This keeps your work isolated until you're ready to merge.\n")
+
+            # Get list of branches
+            branches_result = subprocess.run(
+                ['git', 'branch', '--format=%(refname:short)'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                check=True,
+                timeout=5
+            )
+            branches = [b.strip() for b in branches_result.stdout.strip().split('\n') if b.strip()]
+
+            if not branches:
+                # No branches yet - create main and use it
+                print("  No branches found. Creating 'main' branch...")
+                subprocess.run(
+                    ['git', 'checkout', '-b', 'main'],
+                    capture_output=True,
+                    check=True,
+                    timeout=5
+                )
+                branches = ['main']
+                selected_base = 'main'
+            else:
+                # Get current branch as default
+                current_result = subprocess.run(
+                    ['git', 'branch', '--show-current'],
+                    capture_output=True,
+                    text=True,
+                    encoding='utf-8',
+                    timeout=5
+                )
+                current_branch = current_result.stdout.strip()
+
+                # Prepare choices with current branch indicator
+                choices = []
+                default_choice = None
+
+                for branch in branches:
+                    if branch == current_branch:
+                        label = f"{branch} (current)"
+                        default_choice = label
+                    else:
+                        label = branch
+                    choices.append(label)
+
+                # If no current branch match, default to first branch
+                if default_choice is None and choices:
+                    default_choice = choices[0]
+
+                # Interactive selection with arrow keys
+                print("  Select base branch for flow branch:")
+                selected_label = await questionary.select(
+                    "",  # Empty message since we print above
+                    choices=choices,
+                    default=default_choice,
+                    pointer="  →",
+                    qmark="",
+                    use_arrow_keys=True,
+                    use_jk_keys=True,
+                    instruction="  (Use arrow keys, j/k, or Enter to select)"
+                ).ask_async()
+
+                # Extract branch name (remove " (current)" suffix if present)
+                if selected_label:
+                    selected_base = selected_label.replace(" (current)", "")
+                else:
+                    # Handle Ctrl+C or ESC - use current branch as fallback
+                    print("\n  Selection cancelled, using current branch.")
+                    selected_base = current_branch if current_branch else branches[0]
+
+            # Create flow branch from selected base
+            print(f"\n  Creating 'flow' branch from '{selected_base}'...")
+            subprocess.run(
+                ['git', 'branch', 'flow', selected_base],
+                capture_output=True,
+                check=True,
+                timeout=5
+            )
+            print(f"  ✓ Created 'flow' branch from '{selected_base}'\n")
+
+        except subprocess.CalledProcessError as e:
+            print(f"\n  ERROR: Failed to setup flow branch: {e}")
+            if self.logger:
+                self.logger.error(f"Flow branch setup failed: {e}")
+        except Exception as e:
+            print(f"\n  ERROR: Unexpected error during flow branch setup: {e}")
+            if self.logger:
+                self.logger.error(f"Unexpected error in flow branch setup: {e}")
+
+    async def check_and_prompt_init(self):
+        """Check if directory needs CLAUDE.md initialization and flow branch setup"""
         from pathlib import Path
         import subprocess
 
         cwd = Path.cwd()
         claude_md = cwd / "CLAUDE.md"
+
+        # First: Setup flow branch if needed
+        await self.setup_flow_branch()
 
         # Check if CLAUDE.md already exists
         if claude_md.exists():
@@ -632,7 +773,9 @@ Added agent instruction files for Flow-Claude v6.7
         print()
 
         while True:
+            print("-" * 78)
             response = input("  Would you like to initialize CLAUDE.md now? (y/n): ").strip().lower()
+            print("-" * 78)
 
             if response in ['y', 'yes']:
                 if self.logger:
@@ -710,11 +853,12 @@ Added agent instruction files for Flow-Claude v6.7
             else:
                 print("  Please enter 'y' or 'n'")
 
-    def get_request(self, show_banner: bool = True) -> str:
+    async def get_request(self, show_banner: bool = True, is_first_request: bool = True) -> str:
         """Get development request from user (plain input prompt)
 
         Args:
             show_banner: If True, show welcome banner. False for subsequent sessions.
+            is_first_request: If True, this is the first request of the session.
 
         Returns:
             str: User's request, or empty string to signal exit
@@ -723,19 +867,95 @@ Added agent instruction files for Flow-Claude v6.7
         if show_banner:
             self.show_welcome_banner()
 
+        # Check if we're in an interactive terminal
+        import sys
+        is_interactive = sys.stdin.isatty() and sys.stdout.isatty()
+
+        # Available slash commands for autocomplete
+        slash_commands = [
+            '\\parallel - Set maximum number of parallel workers',
+            '\\model - Select Claude model (sonnet/opus/haiku)',
+            '\\verbose - Toggle verbose output',
+            '\\debug - Toggle debug mode',
+            '\\auto - Toggle user agent (autonomous decisions)',
+            '\\init - Generate CLAUDE.md template',
+            '\\help - Show help message',
+            '\\exit - Exit Flow-Claude',
+            '\\q - Exit Flow-Claude',
+        ]
+
+        # Try questionary once, fall back permanently if it fails
+        use_questionary = is_interactive
+        questionary_failed = False
+
+        # Show input border (once per get_request call)
+        if is_first_request:
+            print("\n" + "=" * 78)
+            print("  Enter your request below (or use \\help for commands):")
+            print("=" * 78)
+        else:
+            print("\n" + "-" * 78)
+            print("  Next request:")
+            print("-" * 78)
+
         while True:
-            # Prompt with nice styling
-            request = input("  > ").strip()
+
+            if use_questionary and not questionary_failed:
+                try:
+                    # Use questionary autocomplete for better UX (async)
+                    request = await questionary.autocomplete(
+                        "",
+                        choices=slash_commands,
+                        qmark="  >",
+                        match_middle=True,
+                        validate=lambda text: True,  # Allow any input
+                        style=questionary.Style([
+                            ('qmark', 'fg:default'),
+                            ('answer', 'fg:default'),
+                        ])
+                    ).ask_async()
+
+                    if request is None:  # User pressed Ctrl+C
+                        return ""
+
+                    # Extract just the command part (before ' - ')
+                    if ' - ' in request:
+                        request = request.split(' - ')[0]
+
+                    request = request.strip()
+
+                except KeyboardInterrupt:
+                    return ""
+                except Exception as e:
+                    # Questionary failed - fall back permanently
+                    questionary_failed = True
+                    if self.debug:
+                        print(f"\n  Note: Interactive features unavailable in this environment.")
+                        print(f"  Reason: {type(e).__name__}: {e}")
+                        print(f"  Using simple input mode. Type \\help for commands.\n")
+                    else:
+                        print(f"  Note: Using simple input mode. Type \\help for commands.\n")
+                    continue
+            else:
+                # Simple input mode
+                try:
+                    request = input("  > ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    return ""
 
             # Handle slash commands
             if request.startswith('\\'):
                 if self.handle_slash_command(request):
                     continue  # Command handled, prompt again
                 else:
+                    # Show bottom border before exit
+                    print("=" * 78 + "\n")
                     return ""  # Exit requested
 
             # Regular request
             if request:
+                # Show bottom border after receiving request
+                print("=" * 78 + "\n")
                 return request
 
             print("  Please enter a request or use \\help for available commands")
@@ -750,7 +970,9 @@ Added agent instruction files for Flow-Claude v6.7
         if cmd == 'parallel':
             print()
             current = self.max_parallel
+            print("-" * 78)
             new_value = input(f"  Max parallel workers (current: {current}): ").strip()
+            print("-" * 78)
             if new_value.isdigit():
                 self.max_parallel = int(new_value)
                 print(f"  → Set max parallel workers to {self.max_parallel}")
@@ -764,7 +986,9 @@ Added agent instruction files for Flow-Claude v6.7
             current = self.model
             print(f"  Current model: {current}")
             print("  Available: sonnet, opus, haiku")
+            print("-" * 78)
             new_value = input("  Select model: ").strip().lower()
+            print("-" * 78)
             if new_value in ['sonnet', 'opus', 'haiku']:
                 self.model = new_value
                 print(f"  → Set model to {self.model}")
@@ -820,7 +1044,7 @@ Added agent instruction files for Flow-Claude v6.7
             print()
             return True
 
-        elif cmd == 'exit':
+        elif cmd == 'exit' or cmd == 'q':
             print()
             print("  Exiting Flow-Claude...")
             return False

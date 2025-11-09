@@ -220,11 +220,11 @@ async def parse_plan(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-@tool("get_provides", "Get list of available preconditions from merged tasks on master branch", {})
+@tool("get_provides", "Get list of available preconditions from merged tasks on flow branch", {})
 async def get_provides(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Query master branch merge commits for available provides.
+    """Query flow branch merge commits for available provides.
 
-    This tool examines all merge commits on the master branch and
+    This tool examines all merge commits on the flow branch and
     extracts the "Provides" sections to determine what capabilities
     are currently available for task preconditions.
 
@@ -243,9 +243,9 @@ async def get_provides(args: Dict[str, Any]) -> Dict[str, Any]:
         }
     """
     try:
-        # Get all merge commit messages from master branch
+        # Get all merge commit messages from flow branch
         result = subprocess.run(
-            ['git', 'log', 'master', '--merges', '--format=%B'],
+            ['git', 'log', 'flow', '--merges', '--format=%B'],
             capture_output=True,
             text=True,
             encoding='utf-8',
@@ -443,8 +443,8 @@ async def parse_worker_commit_tool(args: Dict[str, Any]) -> Dict[str, Any]:
 async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
     """Create plan branch with initial plan commit.
 
-    Creates branch plan/session-{session_id} from master, commits plan metadata
-    in exact parsers.py format, and returns to master branch.
+    Creates branch plan/session-{session_id} from flow, commits plan metadata
+    in exact parsers.py format, and returns to original branch.
 
     Args:
         args: Dictionary with required fields:
@@ -536,11 +536,11 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             check=True,
             timeout=5
         )
-        current_branch = current_branch_result.stdout.strip() or "master"
+        current_branch = current_branch_result.stdout.strip() or "flow"
 
-        # Create plan branch from master (force checkout master first)
+        # Create plan branch from flow (force checkout flow first)
         subprocess.run(
-            ['git', 'checkout', '-f', 'master'],
+            ['git', 'checkout', '-f', 'flow'],
             capture_output=True,
             check=True,
             timeout=10
@@ -779,8 +779,8 @@ Completed: {completed_tasks}/{total_tasks} tasks
 async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
     """Create task branch with task metadata commit.
 
-    Creates branch task/{task_id}-{branch_slug} from master, commits task metadata
-    in exact parsers.py format, and returns to master branch.
+    Creates branch task/{task_id}-{branch_slug} from flow, commits task metadata
+    in exact parsers.py format, and returns to original branch.
 
     Args:
         args: Dictionary with required fields:
@@ -868,11 +868,11 @@ async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             check=True,
             timeout=5
         )
-        current_branch = current_branch_result.stdout.strip() or "master"
+        current_branch = current_branch_result.stdout.strip() or "flow"
 
-        # Create task branch from master (force checkout master first)
+        # Create task branch from flow (force checkout flow first)
         subprocess.run(
-            ['git', 'checkout', '-f', 'master'],
+            ['git', 'checkout', '-f', 'flow'],
             capture_output=True,
             check=True,
             timeout=10
@@ -1353,7 +1353,7 @@ def create_git_tools_server():
         Agents can then use:
             - mcp__git__parse_task: Parse task metadata from branch commit
             - mcp__git__parse_plan: Parse plan data from plan branch commit (commit-only)
-            - mcp__git__get_provides: Query completed task capabilities from main
+            - mcp__git__get_provides: Query completed task capabilities from flow
             - mcp__git__parse_worker_commit: Parse worker's latest commit (design + TODO progress)
             - mcp__git__create_plan_branch: Create plan branch with instruction files and metadata
             - mcp__git__create_task_branch: Create task branch with instruction files and metadata
