@@ -31,12 +31,70 @@ Flow-Claude runs INSIDE other git repositories (not from its own directory):
 # Navigate to your project's git repository
 cd /path/to/your/project
 
-# Run Flow-Claude
+# Run Flow-Claude (interactive mode by default)
 python -m flow_claude.cli develop "your development request" --verbose --debug
 
 # Or if installed as package
 flow-claude develop "your request"
+
+# Disable interactive mode for CI/CD or scripts
+flow-claude develop "your request" --no-interactive
 ```
+
+### Multi-Round Conversations
+
+**New in V6.7:** Flow-Claude now supports multi-round conversations! After completing a development request, you can provide follow-up requests to continue building.
+
+```bash
+# Start Flow-Claude in interactive mode (default)
+$ flow-claude develop "Create a blog backend API"
+
+[... executes waves, builds backend ...]
+
+============================================================
+SUCCESS: Development session complete!
+============================================================
+
+------------------------------------------------------------
+INTERACTIVE MODE: Enter a follow-up request to continue,
+                  or type 'q' / 'quit' / 'exit' to finish.
+------------------------------------------------------------
+
+Follow-up request: Create a React frontend for this backend
+
+[NEW REQUEST] Starting new development round...
+Request: Create a React frontend for this backend
+
+[... executes new waves, builds frontend ...]
+
+============================================================
+SUCCESS: Development session complete!
+============================================================
+
+------------------------------------------------------------
+INTERACTIVE MODE: Enter a follow-up request to continue,
+                  or type 'q' / 'quit' / 'exit' to finish.
+------------------------------------------------------------
+
+Follow-up request: q
+
+============================================================
+Exiting Flow-Claude. Goodbye!
+============================================================
+```
+
+**How it works:**
+- After completing all waves, Flow-Claude prompts for a follow-up request
+- Each follow-up creates a new session with a new plan branch
+- All work accumulates on the main branch across sessions
+- The orchestrator builds on existing codebase state
+- No limit on number of follow-ups
+
+**Use cases:**
+- **Iterative development**: Build backend → Add frontend → Add features → Refactor
+- **Incremental features**: Core functionality → Admin panel → Analytics → Reports
+- **Exploration**: Try approach A → Try approach B → Combine best parts
+- **Bug fixes**: Initial implementation → Fix discovered issues → Add tests
 
 ### Testing
 

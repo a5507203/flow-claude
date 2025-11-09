@@ -150,6 +150,11 @@ def cli():
     default=False,
     help='Enable debug mode (show all messages, connection details)'
 )
+@click.option(
+    '--interactive/--no-interactive',
+    default=True,
+    help='Enable multi-round conversation mode (default: enabled). Prompts for follow-up requests after completion.'
+)
 def develop(
     request: str,
     model: str,
@@ -157,7 +162,8 @@ def develop(
     permission_mode: str,
     max_parallel: int,
     verbose: bool,
-    debug: bool
+    debug: bool,
+    interactive: bool
 ):
     """Execute development request using planning and worker agents.
 
@@ -371,7 +377,8 @@ def develop(
             planner_prompt=planner_prompt,
             worker_prompt=worker_prompt,
             user_proxy_prompt=user_proxy_prompt,
-            num_workers=num_workers
+            num_workers=num_workers,
+            interactive=interactive
         ))
     except KeyboardInterrupt:
         click.echo("\n\nWARNING: Development session interrupted by user.", err=True)
@@ -398,7 +405,8 @@ async def run_development_session(
     control_queue: Optional[asyncio.Queue] = None,
     logger: Optional[object] = None,  # FlowClaudeLogger instance
     auto_mode: bool = True,  # Enable user agent for autonomous decisions
-    resume_session_id: Optional[str] = None  # Resume from previous session
+    resume_session_id: Optional[str] = None,  # Resume from previous session
+    interactive: bool = True  # Enable multi-round conversation mode
 ):
     """Run development session with orchestrator, planner, user, and worker agents.
 
@@ -818,6 +826,56 @@ The user agent is available for key decision points:
         click.echo("\n" + "=" * 60)
         click.echo("SUCCESS: Development session complete!")
         click.echo("=" * 60)
+
+        # Multi-round conversation support
+        if interactive:
+            click.echo("\n" + "-" * 60)
+            click.echo("INTERACTIVE MODE: Enter a follow-up request to continue,")
+            click.echo("                  or type 'q' / 'quit' / 'exit' to finish.")
+            click.echo("-" * 60)
+
+            # Prompt for follow-up request
+            follow_up = click.prompt(
+                "\nFollow-up request",
+                type=str,
+                default='',
+                show_default=False,
+                prompt_suffix=': '
+            ).strip()
+
+            # Check if user wants to quit
+            if follow_up.lower() in ['q', 'quit', 'exit', '']:
+                click.echo("\n" + "=" * 60)
+                click.echo("Exiting Flow-Claude. Goodbye!")
+                click.echo("=" * 60)
+                return
+
+            # User provided a follow-up request - continue with new request
+            click.echo(f"\n[NEW REQUEST] Starting new development round...")
+            click.echo(f"Request: {follow_up}\n")
+
+            # Recursively call run_development_session with the new request
+            # This preserves all the same settings but with a new user request
+            await run_development_session(
+                request=follow_up,
+                model=model,
+                max_turns=max_turns,
+                permission_mode=permission_mode,
+                enable_parallel=enable_parallel,
+                max_parallel=max_parallel,
+                verbose=verbose,
+                debug=debug,
+                orchestrator_prompt=orchestrator_prompt,
+                planner_prompt=planner_prompt,
+                worker_prompt=worker_prompt,
+                user_proxy_prompt=user_proxy_prompt,
+                num_workers=num_workers,
+                control_queue=control_queue,
+                logger=logger,
+                auto_mode=auto_mode,
+                resume_session_id=None,  # Start fresh session for follow-up
+                interactive=interactive  # Keep interactive mode enabled
+            )
 
     except Exception as e:
         click.echo(f"\nERROR: Error during development session: {e}", err=True)
