@@ -13,10 +13,15 @@ from datetime import datetime
 
 import click
 
+from .cli_rich_ui import RichUI
+
 # Global logging flags
 _verbose_logging = False
 _debug_logging = False
 _session_logger = None  # Optional logger for file logging
+
+# Global Rich UI instance
+_rich_ui = None
 
 # Track subagent identification (tool_use_id -> agent_name)
 _tool_id_to_agent = {}
@@ -526,7 +531,7 @@ async def run_development_session(
 
     This function runs a continuous session that processes the initial request
     and all subsequent follow-up requests from control_queue. It only returns
-    when the user explicitly quits via \quit command.
+    when the user explicitly quits via \\quit command.
 
     Args:
         initial_request: User's initial development request
@@ -553,35 +558,25 @@ async def run_development_session(
         V6.6 adds user agent for user confirmations and decision points.
     """
     # Store logging flags and logger globally for use in handle_agent_message
-    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent
+    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent, _rich_ui
     _verbose_logging = verbose
     _debug_logging = debug
     _session_logger = logger
     _tool_id_to_agent = {}  # Clear agent tracking for new session
 
-    # Print banner
-    click.echo("=" * 60)
-    click.echo("Flow-Claude V6.7 Persistent Session Starting...")
-    click.echo("=" * 60)
-    click.echo(f"\nInitial Request: {initial_request}")
-    click.echo(f"Session ID: {session_id}")
-    click.echo(f"Model: {model}")
-    click.echo(f"Architecture: V6.7 (Persistent Session + Orchestrator + Planner + Workers)")
-    click.echo(f"Working Directory: {os.getcwd()}")
-    click.echo(f"Execution Mode: {'Parallel' if enable_parallel else 'Sequential'}")
-    if enable_parallel:
-        click.echo(f"Max Parallel Workers: {max_parallel}")
+    # Initialize Rich UI
+    _rich_ui = RichUI(verbose=verbose, debug=debug)
 
-    # Show logging modes
-    logging_modes = []
-    if verbose:
-        logging_modes.append("Verbose")
-    if debug:
-        logging_modes.append("Debug")
-    if logging_modes:
-        click.echo(f"Logging: {', '.join(logging_modes)}")
+    # Show session header using Rich UI
+    _rich_ui.show_session_header(
+        session_id=session_id,
+        model=model,
+        num_workers=max_parallel if enable_parallel else 1,
+        base_branch="flow"
+    )
 
-    click.echo()
+    # Show initial request
+    _rich_ui.print_user_message(initial_request, is_followup=False)
 
     # Use passed session_id instead of generating new one
     plan_branch = f"plan/{session_id}"
@@ -895,8 +890,15 @@ The user agent is available for key decision points:
                     click.echo("\n[SHUTDOWN] User requested exit\n")
                     break
 
+                # Handle stop (interrupt) - only relevant during task execution
+                # If received while waiting, just ignore it
+                elif control.get("type") == "stop":
+                    if debug:
+                        click.echo("DEBUG: Stop signal received while idle, ignoring")
+                    continue
+
                 # Handle intervention (normal request)
-                if control.get("type") == "intervention":
+                elif control.get("type") == "intervention":
                     user_request = control.get("data", {}).get("requirement", "")
                     if not user_request:
                         click.echo("WARNING: Empty request received", err=True)
@@ -977,7 +979,7 @@ def handle_agent_message(msg):
         - UserMessage: User input
         - dict with "type": Legacy format
     """
-    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent, _current_session_id
+    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent, _current_session_id, _rich_ui
 
     timestamp = datetime.now().strftime("%H:%M:%S")
 
@@ -997,13 +999,12 @@ def handle_agent_message(msg):
             if hasattr(msg, 'session_id'):
                 _current_session_id = msg.session_id
                 if _debug_logging:
-                    click.echo(f"[{timestamp}] [SESSION] Captured session ID: {_current_session_id}")
+                    _rich_ui.print_info(f"Captured session ID: {_current_session_id}")
 
         # System message - show in debug mode
         if _debug_logging:
-            click.echo(f"[{timestamp}] [SYSTEM] {msg.content if hasattr(msg, 'content') else str(msg)}")
-            import sys
-            sys.stdout.flush()
+            content = msg.content if hasattr(msg, 'content') else str(msg)
+            _rich_ui.print_agent_message("system", content)
         return
 
     elif isinstance(msg, AssistantMessage):
@@ -1014,12 +1015,7 @@ def handle_agent_message(msg):
         if isinstance(content, str):
             # Simple string content
             if content:
-                if _debug_logging:
-                    safe_echo(f"[{timestamp}] {content}")
-                else:
-                    safe_echo(content)
-                import sys
-                sys.stdout.flush()
+                _rich_ui.print_agent_message(agent_name, content)
         elif isinstance(content, list):
             # List of content blocks (TextBlock, ToolUseBlock, etc.)
             for block in content:
@@ -1033,17 +1029,8 @@ def handle_agent_message(msg):
                         if _session_logger:
                             _session_logger.info(f"[{agent_name.upper()}] {text}")
 
-                        # Print to terminal with agent identification
-                        if _debug_logging:
-                            safe_echo(f"[{timestamp}] [{agent_name.upper()}] {text}")
-                        else:
-                            # Show agent name for subagents, hide for orchestrator to reduce noise
-                            if agent_name != "orchestrator":
-                                safe_echo(f"[{agent_name.upper()}] {text}")
-                            else:
-                                safe_echo(text)
-                        import sys
-                        sys.stdout.flush()
+                        # Print to terminal with agent identification using Rich UI
+                        _rich_ui.print_agent_message(agent_name, text)
 
                 elif block_type == 'ToolUseBlock':
                     # Tool call from agent
@@ -1085,65 +1072,31 @@ def handle_agent_message(msg):
                         else:
                             _session_logger.debug(f"[{agent_name.upper()}] TOOL: {tool_name}")
 
-                    # Always show tool name with agent identification
-                    click.echo(f"[{timestamp}] [{agent_name.upper()}] [TOOL] {tool_name}", nl=False)
-
-                    # Show tool detail on same line if available
-                    if tool_detail and tool_name != 'Task':  # Task has special display below
-                        click.echo(f" | {tool_detail}", nl=False)
-
-                    import sys
-                    sys.stdout.flush()
-
-                    if _debug_logging and tool_id:
-                        click.echo(f" (id: {tool_id[:12]})", nl=False)
-                        sys.stdout.flush()
-
-                    click.echo()  # Newline
-                    sys.stdout.flush()
-
-                    # Show subagent invocation for Task tool
-                    if tool_name == 'Task':
-                        subagent_type = tool_input.get('subagent_type', 'unknown')
-                        description = tool_input.get('description', '')
-                        click.echo(f"  -> Invoking {subagent_type}: {description}")
-                        sys.stdout.flush()
-
-                    # Show tool input in verbose/debug mode - FULL, NO TRUNCATION
-                    if (_verbose_logging or _debug_logging) and tool_input:
-                        import json
-                        input_str = json.dumps(tool_input, indent=2)
-                        click.echo(f"  Input: {input_str}")
-                        sys.stdout.flush()
+                    # Display tool usage with Rich UI
+                    _rich_ui.print_tool_use(tool_name, tool_input if _debug_logging else None, agent_name)
 
                 elif _debug_logging:
                     # Unknown block type
-                    click.echo(f"[{timestamp}] [BLOCK:{block_type}] {str(block)[:200]}")
+                    _rich_ui.print_warning(f"Unknown block type: {block_type}")
         else:
             # Unknown content type
             if _debug_logging:
-                click.echo(f"[{timestamp}] [CONTENT] {str(content)[:500]}")
+                _rich_ui.print_warning(f"Unknown content type: {str(content)[:500]}")
 
         return
 
     elif isinstance(msg, ResultMessage):
         # Tool result - show in verbose mode - FULL, NO TRUNCATION
         if _verbose_logging or _debug_logging:
-            click.echo(f"[{timestamp}] [RESULT] Tool execution completed")
-            import sys
-            sys.stdout.flush()
-            if _debug_logging and hasattr(msg, 'content'):
-                result_str = str(msg.content)
-                click.echo(f"  Output: {result_str}")
-                sys.stdout.flush()
+            content = msg.content if hasattr(msg, 'content') else None
+            _rich_ui.print_tool_result("Tool", success=True, message="Execution completed", result=content)
         return
 
     elif isinstance(msg, UserMessage):
         # User message - show in debug mode
         if _debug_logging:
-            safe_echo(f"[{timestamp}] [USER] {msg.content if hasattr(msg, 'content') else str(msg)}")
-            import sys
-            sys.stdout.flush()
+            content = msg.content if hasattr(msg, 'content') else str(msg)
+            _rich_ui.print_user_message(content)
         return
 
     # Handle dict format (fallback for backward compatibility)
@@ -1152,107 +1105,63 @@ def handle_agent_message(msg):
     else:
         # Unknown object type
         if _debug_logging:
-            click.echo(f"[{timestamp}] [UNKNOWN] {type(msg).__name__}: {str(msg)[:200]}")
+            _rich_ui.print_warning(f"Unknown message type: {type(msg).__name__}")
         return
 
     # Legacy dict handling below
-    timestamp = datetime.now().strftime("%H:%M:%S")
 
     if msg_type == "text":
         # Regular text output
         content = msg.get("content", "")
         if content:
-            if _debug_logging:
-                click.echo(f"[{timestamp}] {content}")
-            else:
-                click.echo(content)
+            _rich_ui.print_agent_message("system", content)
 
     elif msg_type == "tool_use":
         # Tool execution
         tool_name = msg.get("name", "unknown")
-        tool_id = msg.get("id", "")
         tool_input = msg.get("input", {})
 
-        # Always show tool name with timestamp
-        click.echo(f"[{timestamp}] [TOOL] {tool_name}", nl=False)
-
-        # Show tool ID in debug mode
-        if _debug_logging and tool_id:
-            click.echo(f" (id: {tool_id[:8]}...)", nl=False)
-
-        click.echo()  # Newline
-
-        # Show tool input in verbose mode
-        if _verbose_logging and tool_input:
-            import json
-            # Truncate long inputs
-            input_str = json.dumps(tool_input, indent=2)
-            if len(input_str) > 500:
-                input_str = input_str[:500] + "..."
-            click.echo(f"  Input: {input_str}")
+        # Display tool usage with Rich UI
+        _rich_ui.print_tool_use(tool_name, tool_input if _verbose_logging else None)
 
     elif msg_type == "tool_result":
         # Tool result
         if _verbose_logging:
-            tool_id = msg.get("tool_use_id", "")
             content = msg.get("content", "")
             is_error = msg.get("is_error", False)
 
-            status = "ERROR" if is_error else "SUCCESS"
-            click.echo(f"[{timestamp}] [RESULT] {status}", nl=False)
-
-            if _debug_logging and tool_id:
-                click.echo(f" (id: {tool_id[:8]}...)", nl=False)
-
-            click.echo()
-
-            # Show result content (truncated)
-            if content:
-                import json
-                if isinstance(content, str):
-                    result_str = content
-                else:
-                    result_str = json.dumps(content, indent=2)
-
-                # Show MORE output for errors and MCP tools (up to 1000 chars)
-                max_len = 1000 if (is_error or "mcp__git__" in str(tool_id)) else 300
-                if len(result_str) > max_len:
-                    result_str = result_str[:max_len] + "..."
-
-                click.echo(f"  Output: {result_str}")
+            _rich_ui.print_tool_result(
+                "Tool",
+                success=not is_error,
+                message="Success" if not is_error else "Error",
+                result=content if _debug_logging else None
+            )
 
     elif msg_type == "error":
         # Error message
         error = msg.get("error", "Unknown error")
-        click.echo(f"[{timestamp}] [ERROR] {error}", err=True)
-
-        # Show full error details in debug mode
+        details = None
         if _debug_logging:
             import json
-            click.echo(f"  Full error: {json.dumps(msg, indent=2)}", err=True)
+            details = json.dumps(msg, indent=2)
+
+        _rich_ui.print_error(error, details)
 
     elif msg_type == "agent_start":
         # Agent session started
         agent_name = msg.get("agent", "unknown")
-        click.echo(f"[{timestamp}] [AGENT] Starting: {agent_name}")
-
-        if _verbose_logging:
-            config = msg.get("config", {})
-            if config:
-                import json
-                click.echo(f"  Config: {json.dumps(config, indent=2)}")
+        _rich_ui.print_info(f"Starting agent: {agent_name}")
 
     elif msg_type == "agent_end":
         # Agent session ended
         agent_name = msg.get("agent", "unknown")
         status = msg.get("status", "unknown")
-        click.echo(f"[{timestamp}] [AGENT] Ended: {agent_name} (status: {status})")
+        _rich_ui.print_success(f"Agent {agent_name} completed (status: {status})")
 
     else:
         # Unknown message type
         if _debug_logging:
-            import json
-            click.echo(f"[{timestamp}] [UNKNOWN:{msg_type}] {json.dumps(msg, indent=2)}", err=True)
+            _rich_ui.print_warning(f"Unknown message type: {msg_type}")
 
 
 def main():
