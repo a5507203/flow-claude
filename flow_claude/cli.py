@@ -95,77 +95,99 @@ def check_claude_code_available() -> tuple[bool, str]:
                   "  npm install -g @anthropic-ai/claude-code")
 
 
-@click.group()
-@click.version_option(version="0.1.0-v6.2")
-def cli():
-    """Flow-Claude: Git-driven autonomous development using Claude agent SDK.
-
-    Flow-Claude V6.2: Test-Driven + Documentation-First + Continuous Monitoring
-
-    Decomposes development requests into fine-grained tasks (5-10 minutes each),
-    executes them autonomously via planning and worker agents, and stores
-    all metadata in git commits (no external files).
-
-    Example:
-        flow-claude develop "add user authentication with email and password"
-    """
-    pass
+# ============================================================================
+# NOTE: The CLI command interface below is DEPRECATED as of v6.7+
+#
+# Both `flow` and `flow-claude` commands now use SimpleCLI (flow_cli.py)
+# for a unified interactive session manager experience.
+#
+# This file now serves as a library module providing:
+# - run_development_session(): Core session execution function
+# - Helper functions used by SimpleCLI
+#
+# The click decorators are kept for backward compatibility but are not
+# actively used in the unified architecture.
+# ============================================================================
 
 
-@cli.command()
-@click.argument('request', type=str, required=True)
-@click.option(
-    '--model',
-    default='sonnet',
-    type=click.Choice(['sonnet', 'opus', 'haiku'], case_sensitive=False),
-    help='Claude model to use for agents'
-)
-@click.option(
-    '--max-turns',
-    default=100,
-    type=int,
-    help='Maximum conversation turns per agent'
-)
-@click.option(
-    '--permission-mode',
-    default='acceptEdits',
-    type=click.Choice(['acceptEdits', 'ask', 'deny'], case_sensitive=False),
-    help='Permission mode for tool usage'
-)
-@click.option(
-    '--max-parallel',
-    default=3,
-    type=int,
-    help='Maximum number of parallel workers (default: 3). Set to 1 for sequential execution.'
-)
-@click.option(
-    '--verbose',
-    is_flag=True,
-    default=False,
-    help='Enable verbose logging (show tool inputs/outputs, agent activity)'
-)
-@click.option(
-    '--debug',
-    is_flag=True,
-    default=False,
-    help='Enable debug mode (show all messages, connection details)'
-)
-@click.option(
-    '--interactive/--no-interactive',
-    default=True,
-    help='Enable multi-round conversation mode (default: enabled). Prompts for follow-up requests after completion.'
-)
-def develop(
+# @click.group()
+# @click.version_option(version="0.1.0-v6.2")
+# def cli():
+#     """Flow-Claude: Git-driven autonomous development using Claude agent SDK.
+#
+#     Flow-Claude V6.2: Test-Driven + Documentation-First + Continuous Monitoring
+#
+#     Decomposes development requests into fine-grained tasks (5-10 minutes each),
+#     executes them autonomously via planning and worker agents, and stores
+#     all metadata in git commits (no external files).
+#
+#     Example:
+#         flow-claude develop "add user authentication with email and password"
+#     """
+#     pass
+
+
+# ============================================================================
+# DEPRECATED: develop() function and CLI decorators
+#
+# This function is no longer used as a CLI command. It remains here for:
+# 1. Reference/documentation purposes
+# 2. Potential programmatic usage (though SimpleCLI is recommended)
+#
+# The function body has been kept but the CLI decorators are commented out.
+# Use SimpleCLI (flow_cli.py) for interactive session management.
+# ============================================================================
+
+# @cli.command()
+# @click.argument('request', type=str, required=True)
+# @click.option(
+#     '--model',
+#     default='sonnet',
+#     type=click.Choice(['sonnet', 'opus', 'haiku'], case_sensitive=False),
+#     help='Claude model to use for agents'
+# )
+# @click.option(
+#     '--max-turns',
+#     default=100,
+#     type=int,
+#     help='Maximum conversation turns per agent'
+# )
+# @click.option(
+#     '--permission-mode',
+#     default='acceptEdits',
+#     type=click.Choice(['acceptEdits', 'ask', 'deny'], case_sensitive=False),
+#     help='Permission mode for tool usage'
+# )
+# @click.option(
+#     '--max-parallel',
+#     default=3,
+#     type=int,
+#     help='Maximum number of parallel workers (default: 3). Set to 1 for sequential execution.'
+# )
+# @click.option(
+#     '--verbose',
+#     is_flag=True,
+#     default=False,
+#     help='Enable verbose logging (show tool inputs/outputs, agent activity)'
+# )
+# @click.option(
+#     '--debug',
+#     is_flag=True,
+#     default=False,
+#     help='Enable debug mode (show all messages, connection details)'
+# )
+def develop_DEPRECATED_DO_NOT_USE(
     request: str,
     model: str,
     max_turns: int,
     permission_mode: str,
     max_parallel: int,
     verbose: bool,
-    debug: bool,
-    interactive: bool
+    debug: bool
 ):
-    """Execute development request using planning and worker agents.
+    """DEPRECATED: Execute development request using planning and worker agents.
+
+    This function is deprecated as of v6.7+. Use SimpleCLI instead.
 
     This command starts a Flow-Claude development session:
     1. Planning agent analyzes request and creates execution plan
@@ -470,8 +492,7 @@ def develop(
             planner_prompt=planner_prompt,
             worker_prompt=worker_prompt,
             user_proxy_prompt=user_proxy_prompt,
-            num_workers=num_workers,
-            interactive=interactive
+            num_workers=num_workers
         ))
     except KeyboardInterrupt:
         click.echo("\n\nWARNING: Development session interrupted by user.", err=True)
@@ -482,7 +503,8 @@ def develop(
 
 
 async def run_development_session(
-    request: str,
+    initial_request: str,
+    session_id: str,
     model: str,
     max_turns: int,
     permission_mode: str,
@@ -498,17 +520,24 @@ async def run_development_session(
     control_queue: Optional[asyncio.Queue] = None,
     logger: Optional[object] = None,  # FlowClaudeLogger instance
     auto_mode: bool = True,  # Enable user agent for autonomous decisions
-    resume_session_id: Optional[str] = None,  # Resume from previous session
-    interactive: bool = True  # Enable multi-round conversation mode
-):
-    """Run development session with orchestrator, planner, user, and worker agents.
+    resume_session_id: Optional[str] = None  # Resume from previous session
+) -> bool:
+    """Run persistent development session handling all follow-ups internally.
+
+    This function runs a continuous session that processes the initial request
+    and all subsequent follow-up requests from control_queue. It only returns
+    when the user explicitly quits via \quit command.
 
     Args:
-        request: User's development request
+        initial_request: User's initial development request
+        session_id: Session ID for logging (persistent across requests)
         model: Claude model to use (sonnet/opus/haiku)
-        max_turns: Maximum conversation turns
+        max_turns: Maximum conversation turns per request
         permission_mode: Permission mode for tools
         enable_parallel: Enable parallel task execution
+
+    Returns:
+        True if user requested quit, False if session ended naturally
         max_parallel: Maximum number of parallel workers
         verbose: Enable verbose logging
         debug: Enable debug mode
@@ -529,13 +558,15 @@ async def run_development_session(
     _debug_logging = debug
     _session_logger = logger
     _tool_id_to_agent = {}  # Clear agent tracking for new session
+
     # Print banner
     click.echo("=" * 60)
-    click.echo("Flow-Claude V6.6 Development Session Starting...")
+    click.echo("Flow-Claude V6.7 Persistent Session Starting...")
     click.echo("=" * 60)
-    click.echo(f"\nRequest: {request}")
+    click.echo(f"\nInitial Request: {initial_request}")
+    click.echo(f"Session ID: {session_id}")
     click.echo(f"Model: {model}")
-    click.echo(f"Architecture: V6.6 (Orchestrator + Planner + User Proxy + Workers)")
+    click.echo(f"Architecture: V6.7 (Persistent Session + Orchestrator + Planner + Workers)")
     click.echo(f"Working Directory: {os.getcwd()}")
     click.echo(f"Execution Mode: {'Parallel' if enable_parallel else 'Sequential'}")
     if enable_parallel:
@@ -552,13 +583,11 @@ async def run_development_session(
 
     click.echo()
 
-    # V6.5: Generate unique session ID for timestamped plan branch
-    # Format: session-YYYYMMDD-HHMMSS (e.g., session-20250115-143000)
-    session_id = datetime.now().strftime("session-%Y%m%d-%H%M%S")
+    # Use passed session_id instead of generating new one
     plan_branch = f"plan/{session_id}"
 
     if debug:
-        safe_echo(f"DEBUG: Generated session ID: {session_id}")
+        safe_echo(f"DEBUG: Using session ID: {session_id}")
         safe_echo(f"DEBUG: Plan branch: {plan_branch}")
 
     # Set git config for current plan branch (required for mcp__git__read_plan_file tool)
@@ -750,11 +779,11 @@ async def run_development_session(
 - Execute tasks sequentially (one at a time)
 """
 
-    # Create initial query with session configuration
-    # The system prompt (orchestrator-minimal.md) is already loaded via @filepath in ClaudeAgentOptions
-    initial_prompt = f"""# Development Session Configuration (V6.6)
+    # Helper function to create query prompt for a request
+    def create_query_prompt(user_request: str) -> str:
+        return f"""# Development Session Configuration (V6.7)
 
-**User Request:** {request}
+**User Request:** {user_request}
 
 **Session Information (CRITICAL):**
 - Session ID: {session_id}
@@ -792,7 +821,7 @@ Task tool:
 
 Create execution plan and Wave 1 task branches for this request:
 
-**User Request:** {request}
+**User Request:** {user_request}
 
 **Session Information:**
 - Session ID: {session_id}
@@ -836,139 +865,99 @@ The user agent is available for key decision points:
 - At session completion (acknowledge results)
 ''' if auto_mode else ''}"""
 
-    # Start session
+    # Persistent session - processes ALL requests in a continuous loop
+    # Only exits when user sends shutdown signal
     try:
+        if not control_queue:
+            click.echo("ERROR: control_queue is required", err=True)
+            return
+
+        # Create SDK client ONCE - session persists across all requests
+        options = ClaudeAgentOptions(**options_kwargs)
+
+        if debug:
+            click.echo(f"DEBUG: Creating persistent ClaudeSDKClient session...")
+
         async with ClaudeSDKClient(options=options) as client:
-            # Send initial query to orchestrator
-            await client.query(initial_prompt)
+            if debug:
+                click.echo(f"DEBUG: SDK client session started")
 
-            # Multi-turn conversation loop
-            # The orchestrator needs to be able to send follow-up queries
-            # after processing responses (e.g., checking if planner created branches)
-            turn_number = 0
-
-            while turn_number < max_turns:
-                turn_number += 1
-
+            # Continuous loop - processes requests until shutdown
+            while True:
                 if debug:
-                    click.echo(f"\nDEBUG: Turn {turn_number}/{max_turns}")
+                    click.echo(f"\nDEBUG: Waiting for next request from control_queue...")
 
-                # Receive and process all messages for this turn
-                response_complete = False
-                pending_intervention = None
-                shutdown_requested = False
-                stop_immediately = False
+                # Wait for next request (blocks here)
+                control = await control_queue.get()
 
-                async for msg in client.receive_response():
-                    handle_agent_message(msg)
-
-                    # Check for interventions after each message for immediate response
-                    if control_queue and not pending_intervention:
-                        try:
-                            control = control_queue.get_nowait()
-                            control_type = control.get("type")
-
-                            if control_type == "intervention":
-                                # User typed a follow-up request - queue it for injection
-                                requirement = control.get("data", {}).get("requirement", "")
-                                if requirement:
-                                    pending_intervention = requirement
-                                    click.echo("\n[USER REQUEST] Queueing follow-up requirement...\n")
-                                    # Don't break - let current response complete naturally
-                                    # Intervention will be injected after this response
-
-                            elif control_type == "shutdown":
-                                # User pressed 'q' to quit
-                                shutdown_requested = True
-                                click.echo("\n[SHUTDOWN] Stopping execution...\n")
-                                # Break immediately
-                                break
-
-                        except asyncio.QueueEmpty:
-                            pass  # No intervention
-
-                    # Check if this is the last message in the response
-                    # (The SDK will stop yielding when response is complete)
-                    response_complete = True
-
-                if not response_complete:
-                    # No more messages, conversation ended naturally
+                # Handle shutdown
+                if control.get("type") == "shutdown":
+                    click.echo("\n[SHUTDOWN] User requested exit\n")
                     break
 
-                # Handle shutdown immediately
-                if shutdown_requested:
-                    break
+                # Handle intervention (normal request)
+                if control.get("type") == "intervention":
+                    user_request = control.get("data", {}).get("requirement", "")
+                    if not user_request:
+                        click.echo("WARNING: Empty request received", err=True)
+                        continue
 
-                # Inject pending intervention immediately
-                if pending_intervention:
-                    click.echo(f"[FOLLOW-UP] Injecting user requirement:\n  \"{pending_intervention}\"\n")
-                    # Inject as new query into conversation
-                    await client.query(f"IMPORTANT - User Follow-Up Request: {pending_intervention}\n\nPlease acknowledge this additional requirement and incorporate it into your current work. Consider the current state of the project and how to integrate this request smoothly.")
-                    # Clear the intervention
-                    pending_intervention = None
+                    click.echo(f"\n[REQUEST] Processing: {user_request}\n")
+                    if debug:
+                        click.echo(f"DEBUG: Sending query to SDK...")
 
-                # Note: The orchestrator system prompt should handle continuation
-                # It will use tools and self-direct its own next steps
-                # We just need to keep the conversation open for follow-ups
-                # The orchestrator will signal completion by not using any more tools
+                    # Send query
+                    prompt = create_query_prompt(user_request)
+                    await client.query(prompt)
 
-            if turn_number >= max_turns:
-                click.echo(f"\nWARNING: Reached maximum turns ({max_turns})", err=True)
+                    # Process response with interruption support
+                    interrupted = False
+                    async for msg in client.receive_response():
+                        handle_agent_message(msg)
 
-        # Session complete
-        click.echo("\n" + "=" * 60)
-        click.echo("SUCCESS: Development session complete!")
-        click.echo("=" * 60)
+                        # Check for interruptions during response processing
+                        if control_queue and not control_queue.empty():
+                            try:
+                                peek_control = control_queue.get_nowait()
 
-        # Multi-round conversation support
-        if interactive:
-            click.echo("\n" + "-" * 60)
-            click.echo("INTERACTIVE MODE: Enter a follow-up request to continue,")
-            click.echo("                  or type 'q' / 'quit' / 'exit' to finish.")
-            click.echo("-" * 60)
+                                if peek_control.get("type") == "stop":
+                                    # User requested stop - interrupt current task
+                                    click.echo("\n[STOP] Interrupting current task...\n")
+                                    await client.interrupt()
+                                    interrupted = True
+                                    break
 
-            # Prompt for follow-up request
-            follow_up = click.prompt(
-                "\nFollow-up request",
-                type=str,
-                default='',
-                show_default=False,
-                prompt_suffix=': '
-            ).strip()
+                                elif peek_control.get("type") == "intervention":
+                                    # Follow-up request - put back in queue for next iteration
+                                    await control_queue.put(peek_control)
+                                    if debug:
+                                        click.echo(f"DEBUG: Follow-up request queued")
 
-            # Check if user wants to quit
-            if follow_up.lower() in ['q', 'quit', 'exit', '']:
-                click.echo("\n" + "=" * 60)
-                click.echo("Exiting Flow-Claude. Goodbye!")
-                click.echo("=" * 60)
-                return
+                                elif peek_control.get("type") == "shutdown":
+                                    # Shutdown request - put back and break
+                                    await control_queue.put(peek_control)
+                                    break
 
-            # User provided a follow-up request - continue with new request
-            click.echo(f"\n[NEW REQUEST] Starting new development round...")
-            click.echo(f"Request: {follow_up}\n")
+                            except asyncio.QueueEmpty:
+                                pass
 
-            # Recursively call run_development_session with the new request
-            # This preserves all the same settings but with a new user request
-            await run_development_session(
-                request=follow_up,
-                model=model,
-                max_turns=max_turns,
-                permission_mode=permission_mode,
-                enable_parallel=enable_parallel,
-                max_parallel=max_parallel,
-                verbose=verbose,
-                debug=debug,
-                orchestrator_prompt=orchestrator_prompt,
-                planner_prompt=planner_prompt,
-                worker_prompt=worker_prompt,
-                user_proxy_prompt=user_proxy_prompt,
-                num_workers=num_workers,
-                control_queue=control_queue,
-                logger=logger,
-                auto_mode=auto_mode,
-                resume_session_id=None,  # Start fresh session for follow-up
-                interactive=interactive  # Keep interactive mode enabled
-            )
+                    if interrupted:
+                        click.echo("[STOP] Task interrupted. Waiting for next request...")
+                    else:
+                        click.echo("\n" + "=" * 60)
+                        click.echo("Request complete. Waiting for next request...")
+                        click.echo("=" * 60)
+
+                    # Loop back to wait for next request (same SDK session!)
+                    continue
+
+                # Unknown control type
+                else:
+                    click.echo(f"WARNING: Unknown control type: {control.get('type')}", err=True)
+                    continue
+
+            # Session ended
+            click.echo("\nSDK session ended")
 
     except Exception as e:
         click.echo(f"\nERROR: Error during development session: {e}", err=True)
@@ -1267,8 +1256,18 @@ def handle_agent_message(msg):
 
 
 def main():
-    """Main entry point for flow-claude CLI."""
-    cli()
+    """Main entry point for flow-claude CLI.
+
+    NOTE: As of v6.7+, this redirects to SimpleCLI for unified interactive experience.
+    Both 'flow' and 'flow-claude' commands use the same interactive session manager.
+    """
+    # Redirect to SimpleCLI instead of the deprecated click-based CLI
+    from flow_claude.commands.flow_cli import main as flow_main
+    print("\n" + "=" * 70)
+    print("NOTE: 'flow-claude' now uses the interactive session manager.")
+    print("      For the same experience, you can also use: flow")
+    print("=" * 70 + "\n")
+    flow_main()
 
 
 if __name__ == '__main__':

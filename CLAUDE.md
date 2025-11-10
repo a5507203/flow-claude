@@ -14,9 +14,10 @@ Flow-Claude is a git-driven autonomous development system that uses the Claude A
 # Install in development mode
 pip install -e .
 
-# The package provides two entry points:
-# - flow-claude: Main CLI (flow_claude/cli.py)
-# - flow: Alternative entry point (flow_claude/commands/flow_cli.py)
+# The package provides unified interactive CLI:
+# - flow: Interactive session manager (recommended)
+# - flow-claude: Alias to flow (same experience)
+# Both commands use SimpleCLI (flow_claude/commands/flow_cli.py)
 ```
 
 **Prerequisites**:
@@ -27,33 +28,35 @@ pip install -e .
 ## Common Commands
 
 ```bash
-# Development session (main command)
-flow-claude develop "your development request here"
+# Start interactive session (main command)
+flow
 
-# With different models
-flow-claude develop "request" --model opus
-flow-claude develop "request" --model haiku
+# Or use the alias
+flow-claude
 
-# Parallel execution (default: 3 workers)
-flow-claude develop "request" --max-parallel 5
+# The interactive CLI provides:
+# - Continuous session loop
+# - Enter development requests one after another
+# - Type \exit or \q to quit
+# - Type \help for available commands
+# - Keyboard shortcuts (ESC for follow-ups, q for quit)
 
-# Sequential execution
-flow-claude develop "request" --max-parallel 1
+# Configure session options
+flow --model opus              # Use different Claude model
+flow --max-parallel 5          # Parallel execution (default: 3 workers)
+flow --max-parallel 1          # Sequential execution
+flow --verbose                 # Verbose logging
+flow --debug                   # Debug mode with full details
 
-# Verbose/debug logging
-flow-claude develop "request" --verbose
-flow-claude develop "request" --debug
-
-# Interactive mode (default: enabled)
-# After completion, prompts for follow-up requests
-flow-claude develop "request" --interactive
-
-# Disable interactive mode for one-shot execution
-flow-claude develop "request" --no-interactive
-
-# Permission modes
-flow-claude develop "request" --permission-mode ask  # Confirm edits
-flow-claude develop "request" --permission-mode deny  # Dry run
+# Within interactive session, use backslash commands:
+# \parallel  - Set max parallel workers
+# \model     - Select Claude model
+# \verbose   - Toggle verbose output
+# \debug     - Toggle debug mode
+# \auto      - Toggle autonomous mode
+# \init      - Generate CLAUDE.md
+# \help      - Show help
+# \exit      - Exit Flow-Claude
 
 # Run tests
 pytest tests/test_parsers.py -v
@@ -274,7 +277,7 @@ See: flow_claude/cli.py:222-313
 New instruction files are auto-committed to main/master branch (flow_claude/cli.py:315-393)
 
 ### Interactive Mode
-After session completion, prompts for follow-up requests. Recursively calls `run_development_session()` with new request (flow_claude/cli.py:924-971)
+Managed by SimpleCLI (`cli_controller.py`). After each session completes, automatically prompts for the next development request. Maintains continuous session loop until user explicitly exits with `\exit` or `\q` (flow_claude/cli_controller.py:98-128)
 
 ### Safe Unicode Handling
 `safe_echo()` handles Windows console encoding issues with emojis (flow_claude/cli.py:28-41)
@@ -326,9 +329,15 @@ Dev dependencies (pyproject.toml:22-25):
 
 ### Debugging Sessions
 
-Use verbose/debug flags:
+Use verbose/debug flags when starting flow:
 ```bash
-flow-claude develop "request" --debug
+flow --debug
+```
+
+Or toggle within interactive session:
+```bash
+# Type \debug to toggle debug mode
+# Type \verbose to toggle verbose mode
 ```
 
 Debug output includes:

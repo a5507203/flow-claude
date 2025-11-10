@@ -26,8 +26,8 @@ dev = [
 ]
 
 [project.scripts]
-flow-claude = "flow_claude.cli:main"
 flow = "flow_claude.commands.flow_cli:main"
+flow-claude = "flow_claude.commands.flow_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -41,6 +41,7 @@ class SimpleCLI:
 
         # Logger (will be initialized in run())
         self.logger = None
+        self.session_id = None  # Persistent session ID for logging (stays same until \quit)
 
     def show_welcome_banner(self):
         """Show welcome banner once at CLI startup"""
@@ -82,7 +83,7 @@ class SimpleCLI:
         print("  Quit: Type '\\exit' or '\\q'")
 
     async def run(self):
-        """Main async CLI loop - supports continuous sessions"""
+        """Main async CLI loop - waits for user input and processes requests"""
         # Show welcome banner once at startup
         self.show_welcome_banner()
 
@@ -93,83 +94,89 @@ class SimpleCLI:
         await self.check_and_prompt_init()
         self.ensure_prompt_files()
 
-        # Main session loop - continue until user explicitly exits
-        is_first_request = True
-        while not self.should_exit_cli:
-            # Initialize NEW session
-            session_id = datetime.now().strftime("session-%Y%m%d-%H%M%S")
-            self.logger = get_logger(session_id)
-            self.logger.info(f"Starting new session (model={self.model}, max_parallel={self.max_parallel})")
+        # Generate session ID once (persistent for entire CLI session)
+        self.session_id = datetime.now().strftime("session-%Y%m%d-%H%M%S")
+        self.logger = get_logger(self.session_id)
+        self.logger.info(f"Starting Flow-Claude session (model={self.model}, max_parallel={self.max_parallel})")
 
-            try:
-                # Get development request from user
-                request = await self.get_request(show_banner=False, is_first_request=is_first_request)
-                is_first_request = False  # After first request, all subsequent are not first
-                if not request:
-                    # User requested exit via \exit or empty input handling
-                    break
+        # Initialize control_queue once
+        self.control_queue = asyncio.Queue()
 
-                self.logger.info(f"User request: {request}")
+        try:
+            # Get initial request from user
+            request = await self.get_request(show_banner=False, is_first_request=True)
 
-                # Print log file location
-                print(f"  Log file: {self.logger.log_file}")
-                print()
+            if not request:
+                # User requested exit before starting
+                print("\n  No request provided. Exiting...\n")
+                return
 
-                # Run the session
-                await self.run_session(request)
+            self.logger.info(f"Initial user request: {request}")
+            print(f"  Log file: {self.logger.log_file}")
+            print()
 
-                # Check if user pressed 'q' to exit entirely
-                if self.should_exit_cli:
-                    break
+            # Put initial request into control_queue
+            await self.control_queue.put({
+                "type": "intervention",
+                "data": {"requirement": request}
+            })
 
-                # Session completed successfully
-                print("\n  " + "=" * 76)
-                print("  Session complete. Enter another request or type \\exit to quit.")
-                print("  " + "=" * 76 + "\n")
+            # Run persistent session - it will handle ALL requests (initial + follow-ups)
+            # until user sends shutdown signal via \quit
+            # input_loop runs concurrently to accept follow-ups
+            await self.run_session(request)
 
-            except KeyboardInterrupt:
-                print("\n\nInterrupted by user (Ctrl+C)")
-                self.logger.warning("Session interrupted by Ctrl+C")
-                await self.cleanup()
-                break  # Exit CLI on Ctrl+C
+            # Session ended (user quit)
+            self.logger.info("Session ended")
 
-            except Exception as e:
-                print(f"\n\nError: {e}")
-                self.logger.exception(f"Fatal error: {e}")
-                if self.debug:
-                    import traceback
-                    traceback.print_exc()
-                await self.cleanup()
-                # Don't break - allow user to try another session
+        except KeyboardInterrupt:
+            print("\n\nInterrupted by user (Ctrl+C)")
+            self.logger.warning("Session interrupted by Ctrl+C")
+            await self.cleanup()
 
-            finally:
-                # Clean up current session
-                if self.logger:
-                    self.logger.close()
-                    self.logger = None
+        except Exception as e:
+            print(f"\n\nError: {e}")
+            self.logger.exception(f"Fatal error: {e}")
+            if self.debug:
+                import traceback
+                traceback.print_exc()
+            await self.cleanup()
+
+        finally:
+            # Clean up session
+            if self.logger:
+                self.logger.close()
+                self.logger = None
 
         # Final exit message
         print("\n  Exiting Flow-Claude...\n")
 
     async def run_session(self, request: str):
-        """Run a single development session"""
-        # Reset session state
+        """Run a single development session - process one request with concurrent input"""
+        # Run orchestrator AND input_loop concurrently
+        # This allows user to type follow-ups while agent is working
+        self.logger.info("Starting session for request")
         self.shutdown_requested = False
-        self.control_queue = asyncio.Queue()
 
-        # Start orchestrator in background
-        self.logger.info("Starting orchestrator task")
+        # Start orchestrator as background task
         self.orchestrator_task = asyncio.create_task(
             self.run_orchestrator(request)
         )
 
-        # Run input loop concurrently with orchestrator
-        self.logger.info("Starting concurrent tasks (input, orchestrator)")
-        await asyncio.gather(
-            self.input_loop(),       # Handle keyboard input (q/ESC/p)
-            self.orchestrator_task,  # Orchestrator execution
-            return_exceptions=True
-        )
+        try:
+            # Run input loop concurrently - allows typing during execution
+            await asyncio.gather(
+                self.input_loop(),
+                self.orchestrator_task,
+                return_exceptions=True
+            )
+        except asyncio.CancelledError:
+            self.logger.info("Session cancelled by user")
+            if self.orchestrator_task and not self.orchestrator_task.done():
+                self.orchestrator_task.cancel()
+        except Exception as e:
+            self.logger.exception(f"Session error: {e}")
+            raise
 
     async def run_orchestrator(self, request: str):
         """Run orchestrator directly (no subprocess) with control_queue for interventions"""
@@ -217,7 +224,8 @@ class SimpleCLI:
         try:
             # Call run_development_session directly with control_queue and logger
             await run_development_session(
-                request=request,
+                initial_request=request,
+                session_id=self.session_id,
                 model=self.model,
                 max_turns=100,
                 permission_mode="bypassPermissions",  # Non-interactive mode
@@ -258,28 +266,47 @@ class SimpleCLI:
                 traceback.print_exc()
 
     async def input_loop(self):
-        """Handle user input - always-available text input for follow-up requests"""
+        """Handle user input - ESC to interrupt, text for follow-ups"""
         loop = asyncio.get_event_loop()
         self.logger.debug("Input loop started")
 
         # Show initial prompt with top border
         print("\n" + "-" * 78)
+        print("  Press ESC to interrupt current task | Type text for follow-up | \\q to quit")
+        print("-" * 78)
 
         while not self.shutdown_requested:
             try:
-                # Show prompt
-                print("  > ", end="", flush=True)
-
-                # Read full line of input asynchronously
-                user_input = await loop.run_in_executor(
+                # Check for ESC key press (non-blocking)
+                esc_pressed = await loop.run_in_executor(
                     None,
-                    lambda: input().strip()
+                    self._check_for_esc_or_input
                 )
 
-                # Print bottom border immediately on next line, then blank line
-                print("-" * 78, flush=True)  # Force immediate flush to prevent race condition
-                print(flush=True)  # Blank line, also flushed
-                await asyncio.sleep(0.01)  # Give border time to render (10ms)
+                if esc_pressed == "ESC":
+                    # ESC pressed - interrupt current task
+                    self.logger.info("User pressed ESC - interrupting task")
+                    print("\n  [ESC] Interrupting current task...")
+
+                    # Send stop signal to run_development_session for interrupt
+                    await self.control_queue.put({
+                        "type": "stop"
+                    })
+
+                    print("  Task will be interrupted. Type new request or \\q to quit.")
+                    print("-" * 78)
+                    continue
+
+                elif esc_pressed is None:
+                    # No input, wait a bit and check again
+                    await asyncio.sleep(0.1)
+                    continue
+
+                # Got text input
+                user_input = esc_pressed.strip()
+
+                # Print bottom border
+                print("-" * 78)
 
                 # Handle different input types
                 if not user_input:
@@ -288,72 +315,34 @@ class SimpleCLI:
                     continue
 
                 elif user_input in ['\\q', '\\exit', 'q']:
-                    # Quit entire CLI
+                    # Quit entire CLI - send shutdown to control_queue
                     self.logger.info("User requested quit")
                     print("\n  Shutting down... Please wait.")
                     self.shutdown_requested = True
                     self.should_exit_cli = True
 
-                    # Cancel orchestrator
-                    if self.orchestrator_task:
-                        self.orchestrator_task.cancel()
+                    # Send shutdown signal to run_development_session
+                    await self.control_queue.put({
+                        "type": "shutdown"
+                    })
 
                     break
 
-                elif user_input in ['\\stop', 'stop']:
-                    # Hard cancel - stops ALL agents immediately
-                    # Session ID preserved for resume
-                    self.logger.info("User requested stop (will resume session)")
-                    print("\n  [STOP] Stopping all agents...")
-
-                    # Cancel orchestrator task (kills all agents including subagents)
-                    if self.orchestrator_task and not self.orchestrator_task.done():
-                        self.orchestrator_task.cancel()
-
-                        # Wait for task to actually stop (with timeout)
-                        try:
-                            await asyncio.wait_for(self.orchestrator_task, timeout=2.0)
-                        except asyncio.CancelledError:
-                            pass
-                        except asyncio.TimeoutError:
-                            self.logger.warning("Orchestrator task did not stop within timeout")
-                        except Exception as e:
-                            self.logger.warning(f"Error waiting for orchestrator to stop: {e}")
-
-                    # Session ID already captured in CancelledError handler
-                    print("  Stopped. Session will resume when you continue.")
-                    print("  Type new request to continue, or \\q to quit.")
-                    print()
-                    print("-" * 78)
-                    # Loop will show prompt again
-                    # Don't break - stay in input loop for follow-up
-
                 else:
-                    # User typed a follow-up request
+                    # User typed a follow-up request - queue to control_queue
                     self.logger.info(f"User follow-up request: {user_input}")
 
-                    # Check if orchestrator is still running
-                    if self.orchestrator_task and not self.orchestrator_task.done():
-                        # Orchestrator is running - queue intervention
-                        await self.control_queue.put({
-                            "type": "intervention",
-                            "data": {
-                                "requirement": user_input,
-                                "timestamp": datetime.now().isoformat()
-                            }
-                        })
-                        print("  ✓ Request queued, agents will adjust")
-                    else:
-                        # Orchestrator was stopped - restart with resume
-                        print("  ✓ Resuming session...")
-                        self.orchestrator_task = asyncio.create_task(
-                            self.run_orchestrator(user_input)
-                        )
-                        # Note: run_orchestrator will use self.orchestrator_session_id for resume
-
-                    print()
+                    # Queue intervention - will be processed after current request completes
+                    await self.control_queue.put({
+                        "type": "intervention",
+                        "data": {
+                            "requirement": user_input,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    })
+                    print("  ✓ Request queued. Will process after current task completes.")
                     print("-" * 78)
-                    # Loop will show prompt again
+                    # Loop continues - user can keep typing more requests
 
             except asyncio.CancelledError:
                 self.logger.debug("Input loop cancelled")
@@ -365,10 +354,75 @@ class SimpleCLI:
                 self.shutdown_requested = True
                 self.should_exit_cli = True
 
-                if self.orchestrator_task:
-                    self.orchestrator_task.cancel()
-
+                await self.control_queue.put({"type": "shutdown"})
                 break
+
+    def _check_for_esc_or_input(self) -> Optional[str]:
+        """Check for ESC key press or read line input. Returns 'ESC', text, or None."""
+        import sys
+
+        if sys.platform == 'win32':
+            import msvcrt
+            # Check if key is available
+            if msvcrt.kbhit():
+                first_char = msvcrt.getch()
+
+                # Check for ESC (0x1b)
+                if first_char == b'\x1b':
+                    return "ESC"
+
+                # Check for special keys (arrows, etc) - ignore them
+                if first_char == b'\xe0' or first_char == b'\x00':
+                    # Read and discard the second byte
+                    msvcrt.getch()
+                    return None
+
+                # Regular character - start line input
+                print(f"  > {first_char.decode('utf-8', errors='ignore')}", end="", flush=True)
+                rest = input().strip()
+                return first_char.decode('utf-8', errors='ignore') + rest
+
+            return None  # No input available
+
+        else:
+            # Unix/Linux - use select for non-blocking input
+            import select
+            import termios
+            import tty
+
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+
+            try:
+                tty.setcbreak(fd)
+
+                # Check if input is available (0.1s timeout)
+                rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+
+                if rlist:
+                    first_char = sys.stdin.read(1)
+
+                    # Check for ESC
+                    if first_char == '\x1b':
+                        # Might be escape sequence, check for more
+                        rlist2, _, _ = select.select([sys.stdin], [], [], 0.05)
+                        if rlist2:
+                            # It's an escape sequence (arrow key, etc), discard
+                            sys.stdin.read(2)
+                            return None
+                        # It's just ESC
+                        return "ESC"
+
+                    # Regular character - switch to line mode
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                    print(f"  > {first_char}", end="", flush=True)
+                    rest = input().strip()
+                    return first_char + rest
+
+                return None  # No input
+
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     def read_key_with_timeout(self) -> Optional[str]:
         """Read single key with timeout (blocking with short timeout)"""
