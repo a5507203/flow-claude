@@ -4,541 +4,354 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Flow-Claude** is a git-first autonomous development system using the Claude agent SDK. It orchestrates multi-agent collaboration with a ping-pong pattern to decompose development requests into fine-grained tasks (5-10 minutes each), execute them via planning and worker agents, and store all metadata in git commits.
+Flow-Claude is a git-driven autonomous development system that uses the Claude Agent SDK to decompose development requests into fine-grained tasks and execute them autonomously. All state is stored in git commits - no external files or databases.
 
-### Core Philosophy
+**Key Innovation**: Git is the single source of truth. Plans, tasks, progress, and results are all stored as structured commit messages in git branches.
 
-**Git as Single Source of Truth**: All task metadata, execution plans, and state are stored in git commits and branches. No external configuration files. The entire system state can be reconstructed from git history alone.
-
-
-## Commands
-
-### Setup and Installation
+## Installation & Setup
 
 ```bash
 # Install in development mode
 pip install -e .
 
-# Install with dev dependencies
-pip install -e ".[dev]"
+# The package provides two entry points:
+# - flow-claude: Main CLI (flow_claude/cli.py)
+# - flow: Alternative entry point (flow_claude/commands/flow_cli.py)
 ```
 
-### Running Flow-Claude
+**Prerequisites**:
+- Python 3.10+
+- Claude Code CLI installed and authenticated (`claude auth login`)
+- Git repository (will auto-initialize if missing)
 
-Flow-Claude runs INSIDE other git repositories (not from its own directory):
+## Common Commands
 
 ```bash
-# Navigate to your project's git repository
-cd /path/to/your/project
+# Development session (main command)
+flow-claude develop "your development request here"
 
-# Run interactive CLI (recommended)
-python -m flow_claude.commands.flow_cli
+# With different models
+flow-claude develop "request" --model opus
+flow-claude develop "request" --model haiku
 
-# Or single-shot mode with specific request
-python -m flow_claude.cli develop "your development request" --verbose --debug
+# Parallel execution (default: 3 workers)
+flow-claude develop "request" --max-parallel 5
 
-# If installed as package
-flow "your request"
-```
+# Sequential execution
+flow-claude develop "request" --max-parallel 1
 
-### Interactive Features (New in V6.7)
+# Verbose/debug logging
+flow-claude develop "request" --verbose
+flow-claude develop "request" --debug
 
-**Command Autocomplete**: When typing at the prompt, slash commands show an autocomplete dropdown:
+# Interactive mode (default: enabled)
+# After completion, prompts for follow-up requests
+flow-claude develop "request" --interactive
 
-```
-  > \
+# Disable interactive mode for one-shot execution
+flow-claude develop "request" --no-interactive
 
-  ↓ Dropdown appears:
+# Permission modes
+flow-claude develop "request" --permission-mode ask  # Confirm edits
+flow-claude develop "request" --permission-mode deny  # Dry run
 
-    \parallel - Set maximum number of parallel workers
-    \model - Select Claude model (sonnet/opus/haiku)
-    \verbose - Toggle verbose output
-    \debug - Toggle debug mode
-    \auto - Toggle user agent (autonomous decisions)
-    \init - Generate CLAUDE.md template
-    \help - Show help message
-    \exit - Exit Flow-Claude
-```
-
-**Usage:**
-- Type `\` to see all commands
-- Type `\mo` to filter to `\model`
-- Use arrow keys (↑/↓) to navigate
-- Press Enter to execute
-- Just type normally for development requests (autocomplete doesn't interfere)
-
-See `AUTOCOMPLETE_DEMO.md` for visual examples.
-
-### Flow Branch Workflow
-
-**New in V6.7:** Flow-Claude uses a dedicated "flow" branch for all development work, keeping your main/master branch clean.
-
-```bash
-# First time in a project
-$ python -m flow_claude.commands.flow_cli
-
-==============================================================
-FLOW BRANCH SETUP
-==============================================================
-
-Flow-Claude uses a dedicated 'flow' branch for development work.
-This keeps your work isolated until you're ready to merge.
-
-Select base branch for flow branch:
-
-  → main (current)
-    develop
-    feature-xyz
-
-(Use arrow keys, j/k, or Enter to select)
-
-Creating 'flow' branch from 'main'...
-✓ Flow branch created from 'main'
-
-[... development proceeds ...]
-```
-
-**Interactive Selection (New)**: Arrow-key menu for branch selection instead of typing numbers.
-
-**How it works:**
-- **First run**: Prompts you to select a base branch, then creates "flow" branch
-- **Subsequent runs**: Automatically uses existing flow branch (no prompt)
-- **All work accumulates on flow branch** across multiple sessions
-- **When ready**: Manually merge flow → your base branch
-
-**Branch isolation:**
-- Plan branches created from flow (e.g., `plan/session-*`)
-- Task branches created from flow (e.g., `task/001-*`)
-- Workers merge completed tasks to flow
-- Your main/master branch remains untouched
-
-**Merging flow branch when ready:**
-```bash
-# After Flow-Claude completes work
-git checkout main
-git merge flow
-git push
-```
-
-### Multi-Round Conversations
-
-**New in V6.7:** Flow-Claude now supports multi-round conversations! After completing a development request, you can provide follow-up requests to continue building.
-
-```bash
-# Start Flow-Claude in interactive mode (default)
-$ flow-claude develop "Create a blog backend API"
-
-[... executes waves, builds backend ...]
-
-============================================================
-SUCCESS: Development session complete!
-============================================================
-
-------------------------------------------------------------
-INTERACTIVE MODE: Enter a follow-up request to continue,
-                  or type 'q' / 'quit' / 'exit' to finish.
-------------------------------------------------------------
-
-Follow-up request: Create a React frontend for this backend
-
-[NEW REQUEST] Starting new development round...
-Request: Create a React frontend for this backend
-
-[... executes new waves, builds frontend ...]
-
-============================================================
-SUCCESS: Development session complete!
-============================================================
-
-------------------------------------------------------------
-INTERACTIVE MODE: Enter a follow-up request to continue,
-                  or type 'q' / 'quit' / 'exit' to finish.
-------------------------------------------------------------
-
-Follow-up request: q
-
-============================================================
-Exiting Flow-Claude. Goodbye!
-============================================================
-```
-
-**How it works:**
-- After completing all waves, Flow-Claude prompts for a follow-up request
-- Each follow-up creates a new session with a new plan branch
-- All work accumulates on the main branch across sessions
-- The orchestrator builds on existing codebase state
-- No limit on number of follow-ups
-
-**Use cases:**
-- **Iterative development**: Build backend → Add frontend → Add features → Refactor
-- **Incremental features**: Core functionality → Admin panel → Analytics → Reports
-- **Exploration**: Try approach A → Try approach B → Combine best parts
-- **Bug fixes**: Initial implementation → Fix discovered issues → Add tests
-
-### Testing
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run specific test file
+# Run tests
 pytest tests/test_parsers.py -v
 
-# Run with coverage
-pytest tests/ --cov=flow_claude --cov-report=html
+# Lint
+ruff check flow_claude/
 ```
 
-### Code Quality
+## Architecture (V6.6+)
+
+### Four-Agent Hierarchy
+
+1. **Orchestrator** (main agent)
+   - Coordinates wave-based ping-pong execution
+   - Spawns planner and worker subagents
+   - Manages git worktrees for parallel execution
+   - Cannot directly create branches (SDK constraint)
+
+2. **Planner** (subagent)
+   - Creates execution plans on `plan/session-*` branches
+   - Creates task branches using MCP git tools
+   - Updates plans between waves
+   - Cannot spawn workers (only orchestrator can spawn subagents)
+
+3. **User Proxy** (subagent, optional)
+   - Handles user confirmations and decisions
+   - Only registered if `auto_mode=True`
+   - Uses fast `haiku` model
+
+4. **Workers** (subagents, 1-N)
+   - Execute individual tasks on `task/*` branches
+   - Run in git worktrees for parallel execution
+   - Signal completion via commits
+
+### Branch Structure
+
+```
+main/master     # Production code
+├── flow        # Base branch for development sessions
+│   └── plan/session-YYYYMMDD-HHMMSS  # Plan branch (session metadata)
+│       ├── task/001-description      # Task branch 1
+│       ├── task/002-description      # Task branch 2
+│       └── task/003-description      # Task branch 3
+```
+
+**Critical**: The `flow` branch is created on first run and serves as the base for all sessions. Users select which branch to use as the base when `flow` is first created.
+
+### Wave-Based Execution Pattern
+
+The orchestrator coordinates a **ping-pong loop** between planner and workers:
+
+1. **Orchestrator → Planner**: "Create plan and Wave 1 branches"
+2. **Planner returns**: Creates branches, returns to orchestrator
+3. **Orchestrator**: Creates git worktrees for parallel execution
+4. **Orchestrator → Workers**: Spawns all workers in parallel (one message)
+5. **Workers return**: Complete tasks, merge to flow, return to orchestrator
+6. **Orchestrator → Planner**: "Wave N complete. Prepare Wave N+1."
+7. Repeat until all waves complete
+
+**Why**: The planner cannot spawn workers (SDK constraint). Only the orchestrator can spawn subagents.
+
+### Git Worktrees for Parallelization
+
+To avoid branch checkout conflicts, workers use git worktrees:
 
 ```bash
-# Lint with ruff
-ruff check flow_claude/
+# Orchestrator creates worktrees before spawning workers
+git worktree add .worktrees/worker-1 task/001-description
+git worktree add .worktrees/worker-2 task/002-description
 
-# Format code
-ruff format flow_claude/
+# Each worker works in its own worktree (no conflicts!)
 
-# Check formatting
-ruff format flow_claude/ --check
+# Orchestrator cleans up after wave completes
+git worktree remove .worktrees/worker-1
+git worktree remove .worktrees/worker-2
 ```
 
-## Architecture
+## MCP Git Tools
 
-### The Prompt-Driven Design
+Custom MCP tools provide structured git operations:
 
-**99% of workflow logic lives in system prompts** (`prompts/`), not Python code. The Python code (`flow_claude/`) is minimal glue:
+**Read Operations**:
+- `mcp__git__parse_task`: Parse task metadata from branch's first commit
+- `mcp__git__parse_plan`: Parse execution plan from plan branch's latest commit
+- `mcp__git__parse_worker_commit`: Parse worker's progress (design + TODO)
+- `mcp__git__get_provides`: Query completed task capabilities from flow branch
 
-- `cli.py` (~860 lines): CLI entry point, creates agent YAML files dynamically in `.claude/agents/`
-- `agents.py` (~50 lines): Agent definition helpers, loads prompts from `prompts/`
-- `git_tools.py` (~120 lines): Custom MCP tools for git operations
-- `parsers.py` (~150 lines): Parse structured git commit messages
+**Write Operations** (planner only):
+- `mcp__git__create_plan_branch`: Create plan branch with metadata commit + instruction files
+- `mcp__git__create_task_branch`: Create task branch with metadata commit + instruction files
+- `mcp__git__update_plan_branch`: Update plan with completed tasks, new wave tasks
 
-**System prompts** (the real brains):
-- `prompts/orchestrator.md` (~200 lines): Main agent workflow, ping-pong coordinator
-- `prompts/planner.md` (~1200 lines): Planning workflow, breaks down requests, creates tasks
-- `prompts/worker.md` (~1000 lines): Worker workflow, implements individual tasks
+**Architecture Note**: V6.7+ uses commit-only architecture. Plans, tasks, and progress are stored exclusively in commit messages. No `plan.yaml`, `design.md`, or `todo.md` files.
 
-### Agent Architecture (V6.7 - Ping-Pong Pattern)
+## Commit Message Formats
 
+All metadata follows structured formats defined in `flow_claude/parsers.py`:
+
+### Task Metadata (first commit on task branch)
 ```
-Main Orchestrator (prompts/orchestrator.md)
-  ├─→ Planner Subagent (prompts/planner.md)
-  │    Round 1: Creates plan branch + Wave 1 task branches → returns
-  │    Round N: Updates docs + creates Wave N task branches → returns
-  │
-  └─→ Worker Subagents (prompts/worker.md)
-       worker-1, worker-2, worker-3...
-       Execute individual tasks in parallel → return when complete
-```
-
-**Critical SDK Constraint**: The main orchestrator is the only agent that can spawn subagents. The planner cannot spawn workers. This creates a "ping-pong" pattern where control bounces between orchestrator, planner, and workers.
-
-**Agent files**: Dynamically created in `.claude/agents/` with YAML frontmatter during each session (see `cli.py` lines 277-318).
-
-### Git-Based Data Model
-
-All data lives in git branches and commits:
-
-**Plan Branch** (`plan/session-YYYYMMDD-HHMMSS`):
-- Contains `plan.md` (task list with status tracking)
-- Contains `system-overview.md` (architecture and design decisions)
-- Updated after each wave completes
-
-**Task Branches** (`task/001-description`):
-- Initial commit: Task metadata (ID, description, preconditions, provides) in EXACT format for `parsers.py`
-- Subsequent commits: Implementation work
-- Final commit: `TASK_COMPLETE` signal
-
-**Main Branch**:
-- Merge commits contain task results and "Provides" metadata
-- Merge messages include design decisions from worker's work
-- Clean state after each wave
-
-### Git Worktrees for Parallel Execution (V6.7)
-
-**Critical for parallel workers**: Each worker operates in an isolated git worktree to avoid checkout conflicts.
-
-**Orchestrator workflow** (see `cli.py` lines 577-599):
-1. Planner creates task branches
-2. Orchestrator creates worktrees:
-   ```bash
-   git worktree add .worktrees/worker-1 task/001-description
-   git worktree add .worktrees/worker-2 task/002-description
-   ```
-3. Orchestrator spawns workers with worktree paths in their prompts
-4. Workers execute in isolation (no `git checkout` needed - already on correct branch)
-5. After wave completes, orchestrator cleans up:
-   ```bash
-   git worktree remove .worktrees/worker-1
-   git worktree remove .worktrees/worker-2
-   ```
-
-### Custom MCP Tools
-
-Seven custom tools exposed to agents via MCP protocol (`flow_claude/git_tools.py`):
-
-**Query Tools** (read git state):
-1. **`mcp__git__parse_task`**: Extracts task metadata from first commit on task branch
-2. **`mcp__git__parse_plan`**: Parses execution plan from plan branch commit
-3. **`mcp__git__get_provides`**: Queries available preconditions from main branch merges
-4. **`mcp__git__parse_worker_commit`**: Parses worker's latest commit (design + TODO progress)
-
-**Creation Tools** (atomically create branches):
-5. **`mcp__git__create_plan_branch`**: Creates plan branch with instruction files + metadata commit
-6. **`mcp__git__create_task_branch`**: Creates task branch with instruction files + metadata commit
-7. **`mcp__git__update_plan_branch`**: Updates plan commit with completed tasks + new wave tasks
-
-**Why creation tools are critical:**
-- **Instruction files always included**: All 4 instruction files (ORCHESTRATOR_INSTRUCTIONS.md, PLANNER_INSTRUCTIONS.md, WORKER_INSTRUCTIONS.md, USER_PROXY_INSTRUCTIONS.md) are automatically copied from `flow_claude/prompts/` to every branch
-- **Metadata format guaranteed**: Commit messages follow exact `parsers.py` format (no agent errors)
-- **Atomic operations**: Branch creation + file copy + commit happen atomically (rollback on error)
-- **Performance**: Reduces planner tool calls from ~10 per wave to 1-2 (5-10x faster)
-
-These tools allow agents to query git history and create branches without complex subprocess orchestration in prompts.
-
-### Parsing Utilities
-
-`flow_claude/parsers.py` provides functions to parse structured commit messages:
-
-- `parse_commit_message()`: Splits commit into `## Section` blocks
-- `parse_task_metadata()`: Extracts ID, description, preconditions, provides, files
-- `parse_plan_commit()`: Extracts execution plan details
-- `extract_provides_from_merge_commits()`: Queries what's available on main
-
-## Key Workflows
-
-### Planning Phase (planner.md)
-
-When orchestrator invokes planner:
-
-**Round 1 (Initial):**
-1. Analyze codebase (reads README, source files)
-2. Create `plan/session-*` branch with `plan.md` and `system-overview.md`
-3. Break request into 5-10 minute tasks with dependency tracking
-4. Create Wave 1 task branches (tasks with `Preconditions: []`)
-5. Commit task metadata using EXACT format (required by parsers.py)
-6. Return control to orchestrator with list of created branches
-
-**Round N (Subsequent):**
-1. Update `plan.md` with completed tasks
-2. Update `system-overview.md` with learnings
-3. Identify Wave N tasks (dependencies now satisfied)
-4. Create Wave N task branches with proper metadata
-5. Return control to orchestrator
-
-**Critical Fix (2025-01-06):** Planner MUST commit metadata immediately after creating each task branch to avoid git checkout conflicts. See `prompts/planner.md` lines 412-465 for explicit git workflow.
-
-### Worker Execution (worker.md)
-
-Each worker follows this workflow:
-
-1. Navigate to assigned worktree (`.worktrees/worker-N`)
-2. Read task metadata from first commit
-3. Understand session context from plan branch
-4. Read preconditions from main branch
-5. Create `design.md` (design decisions BEFORE coding)
-6. Create `todo.md` (implementation checklist)
-7. Implement incrementally (commit after EACH todo item)
-8. Run tests and validate
-9. Signal completion with `TASK_COMPLETE` commit
-10. Return control to orchestrator
-
-**Workers work in isolated worktrees** - no `git checkout` needed, branch is already checked out.
-
-### Orchestrator Phase (orchestrator.md)
-
-Main agent coordinates everything:
-
-**The Wave-Based Loop:**
-1. Invoke planner for Wave N
-2. Read created task branches
-3. Create git worktrees (one per task)
-4. Spawn workers IN ONE MESSAGE for parallelization (with worktree paths)
-5. Wait for workers to complete
-6. Clean up worktrees
-7. Check if more waves remain (read `plan.md`)
-8. If yes: Invoke planner again (go to step 1)
-9. If no: Report final results
-
-## Commit Message Structure
-
-Flow-Claude uses structured commit messages parsed by `parsers.py`:
-
-```
-Initialize task/001-user-model
+Initialize task/001-description
 
 ## Task Metadata
 ID: 001
-Description: Create User model with email and password fields
+Description: Create User model
 Status: pending
 
 ## Dependencies
-Preconditions: []
+Preconditions:
+  - Database connection established
 Provides:
   - User model class
-  - User.email field (unique, indexed)
-  - User.password_hash field
+  - User.email field
 
 ## Files
 Files to modify:
-  - src/auth/models.py (create)
-  - tests/test_models.py (create)
+  - src/models/user.py
 
 ## Context
 Session Goal: Add user authentication
-Session ID: session-20250115-103000
-Plan Branch: plan/session-20250115-103000
+Session ID: session-20250106-140530
+Plan Branch: plan/session-20250106-140530
 Plan Version: v1
 Depends on: []
-Enables:
-  - task-002 (auth service needs User model)
+Enables: ['002', '003']
 
 ## Estimates
 Estimated Time: 8 minutes
 Priority: high
 ```
 
-**Critical format details** (see `prompts/planner.md` lines 30-80):
-- NO `Title:` field (parser ignores it)
-- `## Dependencies` section with both `Preconditions:` and `Provides:`
-- `## Files` section with `Files to modify:` subheading (exact phrase!)
-- `## Estimates` as separate section
-- Structured `Context` fields: `Depends on:`, `Enables:`
+### Plan Commit (on plan branch)
+```
+Initialize execution plan v1
 
-### Prompts
+## Session Information
+Session ID: session-20250106-140530
+User Request: Add user authentication
+Plan Version: v1
 
-When revise agents prompts, the prompts should be clear and precise
+## Architecture
+System uses MVC pattern with SQLAlchemy ORM...
 
-## Important Design Constraints
+## Design Patterns
+Repository pattern for data access...
 
-### Task Granularity
+## Technology Stack
+Python 3.10, Flask, SQLAlchemy, bcrypt
 
-Tasks MUST be 5-10 minutes each:
-- Too small (< 5 min): Overhead not worth it
-- Too large (> 10 min): Loses atomicity and parallelization benefits
-- Sweet spot: 6-8 minutes
+## Tasks
+### Task 001
+ID: 001
+Description: Create User model
+Preconditions: []
+Provides:
+  - User model class
+Files:
+  - src/models/user.py
+Estimated Time: 8 minutes
+Priority: high
 
-### Wave-Based Branch Creation
+## Estimates
+Estimated Total Time: 45 minutes
+Total Tasks: 5
 
-**Only Wave 1 branches are created initially.** Subsequent wave branches are created dynamically after dependencies are satisfied and merged to main. This is intentional to support dynamic replanning.
-
-### Agent File Discovery
-
-The SDK auto-discovers agents from `.claude/agents/` directory. Each agent file must have YAML frontmatter:
-
-```markdown
----
-name: worker-1
-description: Executes individual development tasks
-tools: Bash, Read, Write, Edit, Grep
----
-
-[Agent system prompt here...]
+## Dependency Graph
+Wave 1: [001, 002] (parallel)
+Wave 2: [003] (depends on 001, 002)
 ```
 
-The CLI (`cli.py`) dynamically creates these files at runtime based on `--max-parallel` flag (default: 3 workers).
+## Agent Instruction Files
 
-## Modifying Behavior
+Agents load prompts from instruction files. These are auto-created in the working directory on first run:
 
-### To change planning logic:
-Edit `prompts/planner.md` (1200 lines of workflow instructions)
+- `ORCHESTRATOR_INSTRUCTIONS.md` ← `flow_claude/prompts/orchestrator.md`
+- `PLANNER_INSTRUCTIONS.md` ← `flow_claude/prompts/planner.md`
+- `WORKER_INSTRUCTIONS.md` ← `flow_claude/prompts/worker.md`
+- `USER_PROXY_INSTRUCTIONS.md` ← `flow_claude/prompts/user.md`
 
-### To change worker behavior:
-Edit `prompts/worker.md` (1000 lines of implementation workflow)
+**Customization**: Users can modify these files per-project to customize agent behavior. Changes persist in the git repository.
 
-### To change orchestration:
-Edit `prompts/orchestrator.md` (200 lines of coordination logic)
+## Key Code Locations
 
-### To change CLI behavior:
-Edit `flow_claude/cli.py`, but most logic should stay in prompts
+### Entry Points & CLI
+- `flow_claude/cli.py:develop()` - Main command implementation (flow_claude/cli.py:158)
+- `flow_claude/cli.py:run_development_session()` - Session orchestration (flow_claude/cli.py:484)
+- `flow_claude/cli.py:handle_agent_message()` - Message processing and logging (flow_claude/cli.py:978)
 
-**Important**: The `initial_prompt` in `cli.py` (lines 577-599) takes precedence over file-based prompts. If orchestrator isn't following instructions in `orchestrator.md`, check the `initial_prompt`.
+### Git Operations
+- `flow_claude/git_tools.py` - MCP tool definitions for git operations
+- `flow_claude/parsers.py` - Commit message parsing utilities
+- `flow_claude/git_tools.py:create_git_tools_server()` - MCP server factory (flow_claude/git_tools.py:1340)
 
-### To add new MCP tools:
-1. Add function in `flow_claude/git_tools.py` with `@tool` decorator
-2. Add tool to `create_git_tools_server()` tools list
-3. Update agent frontmatter in `cli.py` to include new tool
+### Agent Definitions
+- `flow_claude/agents.py:create_planning_agent()` - Planner agent factory (flow_claude/agents.py:47)
+- `flow_claude/agents.py:create_worker_agent()` - Worker agent factory (flow_claude/agents.py:108)
 
-## Common Pitfalls
+### Core Logic
+- Agent definitions: `flow_claude/cli.py:636` (planner), `flow_claude/cli.py:668` (workers)
+- ClaudeAgentOptions setup: `flow_claude/cli.py:691`
+- Session loop with interventions: `flow_claude/cli.py:850`
+- Multi-round conversation: `flow_claude/cli.py:924`
 
-1. **Running flow-claude from flow-claude repo**: Flow-Claude is meant to be run FROM other git repositories, not from its own repo. Create a test directory with `git init` and run from there.
+## Important Implementation Details
 
-2. **Modifying Python when you should modify prompts**: 99% of behavior changes belong in `prompts/`, not Python files.
+### Session ID Generation
+Sessions use timestamped IDs: `session-YYYYMMDD-HHMMSS` (flow_claude/cli.py:557)
 
-3. **Missing .claude/agents/ files**: The CLI creates these dynamically. If missing, check `cli.py` lines 277-318.
+### Flow Branch Setup
+On first run, if `flow` branch doesn't exist:
+1. Shows available branches
+2. Prompts user to select base branch
+3. Creates `flow` branch from selected base
+4. Subsequent sessions use existing `flow` branch
+See: flow_claude/cli.py:222-313
 
-4. **Planner creating wrong metadata for Wave 2+ branches**: If Wave 2+ branches have wrong metadata or git checkout conflicts, check that `prompts/planner.md` lines 412-465 have explicit git workflow with `git commit` and `git checkout main` after EACH branch creation.
+### Auto-Commit Instruction Files
+New instruction files are auto-committed to main/master branch (flow_claude/cli.py:315-393)
 
-5. **Workers not using worktrees**: If workers use `git checkout`, worktree isolation is broken. Check that `cli.py` initial_prompt includes worktree instructions (lines 577-599).
+### Interactive Mode
+After session completion, prompts for follow-up requests. Recursively calls `run_development_session()` with new request (flow_claude/cli.py:924-971)
 
-## File Locations Reference
+### Safe Unicode Handling
+`safe_echo()` handles Windows console encoding issues with emojis (flow_claude/cli.py:28-41)
 
+### Agent Message Tracking
+Maps `tool_use_id` to agent names for proper attribution in logs (flow_claude/cli.py:1000-1003, flow_claude/cli.py:1066-1068)
+
+## Testing
+
+- Parser tests should be in `tests/test_parsers.py`
+- No tests currently exist in the repository
+- When adding tests, use pytest with asyncio support (configured in pyproject.toml)
+
+## Development Notes
+
+- **DO NOT** use Write/Edit tools in planner prompts - planner uses commit-only architecture
+- Workers use Read/Write/Edit freely for implementation
+- All git state queries should use MCP tools, not raw git commands (when possible)
+- Session state is recoverable from git history - no need for state files
+- Windows compatibility: handles cmd.exe path length limits via SDK (flow_claude/cli.py:635)
+
+## Dependencies
+
+Core dependencies (pyproject.toml:14-19):
+- `claude-agent-sdk>=0.1.0` - Claude Agent SDK
+- `click>=8.1.0` - CLI framework
+- `psutil>=5.9.0` - Process utilities
+- `questionary>=2.1.0` - Interactive prompts (flow branch selection)
+
+Dev dependencies (pyproject.toml:22-25):
+- `pytest>=7.0.0`
+- `pytest-asyncio>=0.21.0`
+- `ruff>=0.1.0` - Linting
+
+## Common Workflows
+
+### Adding a New MCP Tool
+
+1. Define tool in `flow_claude/git_tools.py` using `@tool` decorator
+2. Add to `create_git_tools_server()` tools list (flow_claude/git_tools.py:1362-1374)
+3. Add tool name to agent's `tools` list in `flow_claude/cli.py` (around lines 642-653 for planner, 672-677 for workers)
+4. Update `allowed_tools` if needed (flow_claude/cli.py:694-706)
+
+### Modifying Agent Behavior
+
+1. Edit prompt files in `flow_claude/prompts/` directory
+2. Changes apply to NEW sessions (instruction files copied on branch creation)
+3. For existing projects: edit `*_INSTRUCTIONS.md` files in working directory
+
+### Debugging Sessions
+
+Use verbose/debug flags:
+```bash
+flow-claude develop "request" --debug
 ```
-flow-claude/
-├── flow_claude/          # Python package (minimal glue)
-│   ├── cli.py           # CLI entry, creates .claude/agents/ files
-│   ├── agents.py        # Agent definition helpers
-│   ├── git_tools.py     # Custom MCP tools
-│   └── parsers.py       # Git commit parsing
-│
-├── prompts/             # System prompts (THE BRAINS)
-│   ├── orchestrator.md  # Main agent (ping-pong coordinator)
-│   ├── planner.md       # Planning agent workflow
-│   └── worker.md        # Worker agent workflow
-│
-├── tests/               # Test suite
-│   ├── test_parsers.py  # Unit tests for parsing
-│   ├── test_git_tools.py
-│   └── test_cli.py
-│
-├── QUICKSTART.md        # User-facing getting started guide
-└── pyproject.toml       # Package configuration
-```
 
-## Understanding Git State
+Debug output includes:
+- Tool inputs (JSON, no truncation)
+- Tool outputs (full, no truncation for errors/MCP tools)
+- Agent identification in logs
+- Git operations and branch creation
 
-All state is queryable via git:
+### Examining Session State
 
 ```bash
-# View execution plan
-git log plan/session-* --oneline
+# View plan
+git log plan/session-YYYYMMDD-HHMMSS --format=%B -n 1
 
 # View task metadata
-git log task/001-* --reverse --format=%B -n 1
+git log task/001-description --reverse --format=%B -n 1
 
-# View available provides
-git log main --merges --format=%B | grep -A 20 "## Provides"
+# View completed tasks on flow branch
+git log flow --merges --format=%B
 
-# Check task status
-git log --all --branches='task/*' --grep="TASK_COMPLETE"
+# List all task branches
+git branch --list 'task/*'
 
-# Check if worktrees exist
-git worktree list
+# Check current plan branch (stored in git config)
+git config --get flow-claude.current-plan
 ```
-
-## Debugging Tips
-
-### Check orchestrator workflow
-If orchestrator isn't creating worktrees or following ping-pong pattern, check `cli.py` lines 577-599 for the `initial_prompt`.
-
-### Check planner branch creation
-If Wave 2+ branches have wrong metadata:
-1. Check `prompts/planner.md` lines 412-465
-2. Ensure explicit `git commit` and `git checkout main` after EACH branch
-3. Look for git checkout conflicts in logs
-
-### Check worker isolation
-If workers conflict on same files:
-1. Verify worktrees created: `git worktree list`
-2. Check worker prompts include worktree paths
-3. Verify workers use `cd <worktree-path>`, not `git checkout`
-
-## Version History
-
-- **V6.1**: Initial git-first design
-- **V6.2**: Added test-driven development, documentation-first workflow
-- **V6.5**: Full autonomy, planner handles everything
-- **V6.7** (current): Ping-pong pattern + git worktrees for parallel execution
-  - Orchestrator coordinates planner and workers
-  - Wave-based dynamic branch creation
-  - Git worktree isolation for parallel workers
-  - Fixed: Planner metadata commit workflow for Wave 2+
