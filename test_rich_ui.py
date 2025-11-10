@@ -58,6 +58,43 @@ def test_rich_ui():
     print("\nTesting separator...")
     ui.show_separator()
 
+    # Test highlighted messages (key actions)
+    print("\nTesting highlighted key actions...")
+    ui.print_agent_message("planner", "Creating plan with 5 tasks across 3 waves")
+    ui.print_agent_message("planner", "Created branch task/001-setup-database")
+    ui.print_agent_message("orchestrator", "Starting wave 1 with tasks [001, 002]")
+    ui.print_agent_message("worker", "Task complete: Database setup finished")
+
+    # Test task info display
+    print("\nTesting task display...")
+    ui.print_task_info("001", "Setup database schema", "completed")
+    ui.print_task_info("002", "Create API endpoints", "in_progress")
+    ui.print_task_info("003", "Add authentication", "pending")
+
+    # Test wave info
+    print("\nTesting wave display...")
+    ui.print_wave_info(1, ["001", "002"])
+    ui.print_wave_info(2, ["003"])
+
+    # Test git operations
+    print("\nTesting git operation display...")
+    ui.print_git_operation("create", "task/001-setup-database", "from flow")
+    ui.print_git_operation("merge", "task/001-setup-database", "into flow")
+
+    # Test progress summary
+    print("\nTesting progress summary...")
+    ui.print_progress_summary(2, 5, "Implementing API endpoints")
+
+    # Test git tool display
+    print("\nTesting git MCP tool display...")
+    ui.print_tool_use("mcp__git__create_task_branch", {
+        "task_id": "001",
+        "description": "Setup PostgreSQL database with initial schema"
+    }, "planner")
+    ui.print_tool_use("mcp__git__create_plan_branch", {
+        "session_id": "session-20251111-120000"
+    }, "planner")
+
     print("\n[OK] All Rich UI tests completed!")
 
 if __name__ == "__main__":

@@ -904,7 +904,13 @@ The user agent is available for key decision points:
                         click.echo("WARNING: Empty request received", err=True)
                         continue
 
-                    click.echo(f"\n[REQUEST] Processing: {user_request}\n")
+                    # Use Rich UI to print request processing
+                    if _rich_ui:
+                        _rich_ui.console.print()
+                        _rich_ui.print_user_message(user_request, is_followup=False)
+                    else:
+                        click.echo(f"\n[REQUEST] Processing: {user_request}\n")
+
                     if debug:
                         click.echo(f"DEBUG: Sending query to SDK...")
 

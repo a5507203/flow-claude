@@ -14,6 +14,7 @@ from rich.text import Text
 from rich.live import Live
 from rich.layout import Layout
 from rich import box
+import sys
 
 
 class RichUI:
@@ -67,7 +68,6 @@ class RichUI:
             debug: Show debug information
         """
         # Use safe_width and force_terminal for better Windows compatibility
-        import sys
         self.console = Console(
             force_terminal=True,
             legacy_windows=True if sys.platform == 'win32' else False
@@ -76,6 +76,8 @@ class RichUI:
         self.debug = debug
         self.current_status = "Initializing..."
         self.session_info = {}
+        self.fixed_footer_enabled = False
+        self.footer_text = ""
 
     def safe_print(self, *args, **kwargs):
         """Safely print with emoji handling for Windows"""
@@ -170,6 +172,11 @@ class RichUI:
         icon = self.AGENT_ICONS.get(agent_type.lower(), "🤖")
         color = self.COLORS.get(agent_type.lower(), "white")
 
+        # Check for structured information patterns
+        if self._should_highlight_message(message):
+            self._print_highlighted_message(agent_type, message, color)
+            return
+
         # Format agent name
         agent_name = Text()
         agent_name.append(f"{icon} ", style=color)
@@ -182,11 +189,47 @@ class RichUI:
         # Combine
         full_text = agent_name + message_text
 
-        self.console.print(full_text)
+        self.print_with_footer(full_text)
 
         # Show details if verbose
         if self.verbose and details:
             self._print_details(details)
+
+    def _should_highlight_message(self, message: str) -> bool:
+        """Check if message contains key information that should be highlighted"""
+        keywords = [
+            "Creating plan",
+            "Created plan",
+            "Creating task branch",
+            "Created branch",
+            "Starting wave",
+            "Wave complete",
+            "Task complete",
+            "Merging",
+            "All tasks complete",
+            "Plan created",
+            "branches created",
+        ]
+        return any(keyword.lower() in message.lower() for keyword in keywords)
+
+    def _print_highlighted_message(self, agent_type: str, message: str, color: str):
+        """Print important messages in a highlighted panel"""
+        icon = self.AGENT_ICONS.get(agent_type.lower(), "🤖")
+
+        # Create styled text
+        title_text = Text()
+        title_text.append(f"{icon} {agent_type.title()}", style=f"bold {color}")
+
+        # Create panel with message
+        panel = Panel(
+            message,
+            title=title_text,
+            border_style=color,
+            box=box.ROUNDED,
+            padding=(0, 2)
+        )
+
+        self.print_with_footer(panel)
 
     def print_tool_use(
         self,
@@ -202,19 +245,27 @@ class RichUI:
             tool_input: Tool input parameters (shown in debug mode)
             agent_type: Agent using the tool
         """
-        if not self.verbose:
+        # Always show git MCP tools (key operations)
+        is_git_tool = tool_name.startswith("mcp__git__")
+
+        if not self.verbose and not is_git_tool:
             return
 
         import sys
         icon = "[TOOL]" if sys.platform == 'win32' else "🔧"
         color = self.COLORS.get(agent_type.lower(), "magenta")
 
+        # For git tools, extract key information
+        if is_git_tool and tool_input:
+            self._print_git_tool(tool_name, tool_input, agent_type)
+            return
+
         text = Text()
         text.append(f"{icon} ", style=color)
         text.append("Tool: ", style="dim")
         text.append(tool_name, style=f"bold {color}")
 
-        self.console.print(text)
+        self.print_with_footer(text)
 
         # Show input in debug mode
         if self.debug and tool_input:
@@ -260,7 +311,7 @@ class RichUI:
         if message:
             text.append(f" - {message}", style="dim")
 
-        self.console.print(text)
+        self.print_with_footer(text)
 
         # Show result in debug mode
         if self.debug and result:
@@ -288,7 +339,7 @@ class RichUI:
         text.append(prefix, style="bold red")
         text.append(message, style="red")
 
-        self.console.print(text)
+        self.print_with_footer(text)
 
         if details:
             self.console.print(
@@ -314,7 +365,7 @@ class RichUI:
         text.append(prefix, style="bold yellow")
         text.append(message, style="yellow")
 
-        self.console.print(text)
+        self.print_with_footer(text)
 
     def print_success(self, message: str):
         """
@@ -330,7 +381,7 @@ class RichUI:
         text.append(prefix, style="bold green")
         text.append(message, style="green")
 
-        self.console.print(text)
+        self.print_with_footer(text)
 
     def print_info(self, message: str):
         """
@@ -346,7 +397,7 @@ class RichUI:
         text.append(prefix, style="cyan")
         text.append(message, style="cyan")
 
-        self.console.print(text)
+        self.print_with_footer(text)
 
     def print_user_message(self, message: str, is_followup: bool = False):
         """
@@ -366,8 +417,9 @@ class RichUI:
         text.append(prefix, style="bold white")
         text.append(message, style="white")
 
-        self.console.print(text)
-        self.console.print()
+        self.print_with_footer(text)
+        if not self.fixed_footer_enabled:
+            self.console.print()
 
     def update_status(self, status: str):
         """
@@ -395,31 +447,12 @@ class RichUI:
         Args:
             is_initial: Whether this is the initial request prompt
         """
-        import sys
         if is_initial:
-            prompt_text = Text()
-            if sys.platform == 'win32':
-                prompt_text.append("Enter your development request", style="bold cyan")
-            else:
-                prompt_text.append("💭 Enter your development request", style="bold cyan")
-            prompt_text.append("\n   (or ", style="dim")
-            prompt_text.append("\\q", style="bold")
-            prompt_text.append(" to quit)", style="dim")
-
-            self.console.print()
-            self.console.print(
-                Panel(
-                    prompt_text,
-                    border_style="cyan",
-                    box=box.ROUNDED,
-                    padding=(1, 2)
-                )
-            )
+            # Simple, clean prompt without box
+            self.console.print("Enter your development request (or \\q to quit):", style="bold cyan")
         else:
             # During session - show inline prompt
             prompt_text = Text()
-            if sys.platform != 'win32':
-                prompt_text.append("💡 ", style="cyan")
             prompt_text.append("Press ", style="dim")
             prompt_text.append("ESC", style="bold yellow")
             prompt_text.append(" to interrupt | Type for follow-up | ", style="dim")
@@ -448,6 +481,68 @@ class RichUI:
         """Clear the console"""
         self.console.clear()
 
+    def enable_fixed_footer(self, footer_text: str):
+        """
+        Enable fixed footer mode with given text
+
+        Args:
+            footer_text: Text to display in the fixed footer
+        """
+        self.fixed_footer_enabled = True
+        self.footer_text = footer_text
+        # Print newline first to separate from previous content
+        self.console.print()
+        self._print_footer()
+
+    def disable_fixed_footer(self):
+        """Disable fixed footer mode"""
+        if self.fixed_footer_enabled:
+            self._clear_footer()
+        self.fixed_footer_enabled = False
+        self.footer_text = ""
+
+    def update_footer(self, footer_text: str):
+        """
+        Update the footer text
+
+        Args:
+            footer_text: New footer text
+        """
+        if self.fixed_footer_enabled:
+            self._clear_footer()
+            self.footer_text = footer_text
+            self._print_footer()
+
+    def _clear_footer(self):
+        """Clear the current footer line using ANSI escape codes"""
+        # Move cursor up one line and clear it
+        if self.footer_text:
+            # Count number of lines the footer takes
+            lines = self.footer_text.count('\n') + 1
+            for _ in range(lines):
+                # Move cursor up and clear line
+                self.console.file.write('\033[1A\033[2K')
+            self.console.file.flush()
+
+    def _print_footer(self):
+        """Print the footer at the bottom"""
+        if self.footer_text:
+            self.console.print(self.footer_text, style="dim")
+
+    def print_with_footer(self, *args, **kwargs):
+        """
+        Print content while maintaining fixed footer
+
+        This clears the footer, prints the content, then reprints the footer
+        """
+        if self.fixed_footer_enabled:
+            self._clear_footer()
+
+        self.console.print(*args, **kwargs)
+
+        if self.fixed_footer_enabled:
+            self._print_footer()
+
     def _print_details(self, details: Dict[str, Any]):
         """
         Print additional details in a formatted way
@@ -457,3 +552,148 @@ class RichUI:
         """
         for key, value in details.items():
             self.console.print(f"  {key}: {value}", style="dim")
+
+    def print_task_info(self, task_id: str, description: str, status: str = "pending"):
+        """
+        Print task information in a formatted way
+
+        Args:
+            task_id: Task ID
+            description: Task description
+            status: Task status (pending, in_progress, completed)
+        """
+        status_colors = {
+            "pending": "yellow",
+            "in_progress": "cyan",
+            "completed": "green",
+            "failed": "red"
+        }
+
+        import sys
+        status_icons = {
+            "pending": "[ ]" if sys.platform == 'win32' else "○",
+            "in_progress": "[~]" if sys.platform == 'win32' else "◐",
+            "completed": "[X]" if sys.platform == 'win32' else "●",
+            "failed": "[!]" if sys.platform == 'win32' else "✗"
+        }
+
+        color = status_colors.get(status, "white")
+        icon = status_icons.get(status, "?")
+
+        text = Text()
+        text.append(f"{icon} ", style=color)
+        text.append(f"Task {task_id}", style=f"bold {color}")
+        text.append(f": {description}", style="white")
+
+        self.console.print(text)
+
+    def print_wave_info(self, wave_num: int, task_ids: list):
+        """
+        Print wave execution information
+
+        Args:
+            wave_num: Wave number
+            task_ids: List of task IDs in this wave
+        """
+        table = Table(show_header=False, box=box.SIMPLE, padding=(0, 1))
+        table.add_column("Info", style="cyan")
+        table.add_column("Value", style="white")
+
+        table.add_row("Wave", f"{wave_num}")
+        table.add_row("Tasks", ", ".join(task_ids))
+        table.add_row("Execution", "Parallel" if len(task_ids) > 1 else "Sequential")
+
+        panel = Panel(
+            table,
+            title=f"[bold cyan]Wave {wave_num} Execution",
+            border_style="cyan",
+            box=box.ROUNDED
+        )
+
+        self.console.print(panel)
+
+    def print_git_operation(self, operation: str, branch_name: str, details: str = ""):
+        """
+        Print git operation information
+
+        Args:
+            operation: Git operation (create, merge, checkout, etc.)
+            branch_name: Branch name
+            details: Additional details
+        """
+        import sys
+        icon = "[GIT]" if sys.platform == 'win32' else "⎇"
+
+        text = Text()
+        text.append(f"{icon} ", style="magenta")
+        text.append(f"{operation.title()}: ", style="bold magenta")
+        text.append(branch_name, style="bold white")
+
+        if details:
+            text.append(f" - {details}", style="dim")
+
+        self.console.print(text)
+
+    def print_progress_summary(self, completed: int, total: int, current_task: str = ""):
+        """
+        Print overall progress summary
+
+        Args:
+            completed: Number of completed tasks
+            total: Total number of tasks
+            current_task: Current task description
+        """
+        progress_pct = (completed / total * 100) if total > 0 else 0
+
+        table = Table(show_header=False, box=box.SIMPLE, padding=(0, 1))
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="white")
+
+        table.add_row("Progress", f"{completed}/{total} ({progress_pct:.0f}%)")
+        if current_task:
+            table.add_row("Current", current_task)
+
+        self.console.print(table)
+        self.console.print()
+
+    def _print_git_tool(self, tool_name: str, tool_input: Dict[str, Any], agent_type: str):
+        """
+        Print git MCP tool usage with formatted key information
+
+        Args:
+            tool_name: Git tool name (e.g., mcp__git__create_task_branch)
+            tool_input: Tool input parameters
+            agent_type: Agent using the tool
+        """
+        import sys
+        icon = "[GIT]" if sys.platform == 'win32' else "⎇"
+        color = self.COLORS.get(agent_type.lower(), "magenta")
+
+        # Extract operation type from tool name
+        operation = tool_name.replace("mcp__git__", "").replace("_", " ").title()
+
+        text = Text()
+        text.append(f"{icon} ", style="magenta")
+        text.append(f"{operation}", style="bold magenta")
+
+        # Add key details based on tool type
+        if "create_plan_branch" in tool_name:
+            session_id = tool_input.get("session_id", "")
+            text.append(f" - {session_id}", style="white")
+
+        elif "create_task_branch" in tool_name:
+            task_id = tool_input.get("task_id", "")
+            description = tool_input.get("description", "")
+            text.append(f" - Task {task_id}: {description[:50]}", style="white")
+
+        elif "update_plan_branch" in tool_name:
+            wave_num = tool_input.get("wave_num", "")
+            text.append(f" - Wave {wave_num}", style="white")
+
+        elif "parse" in tool_name.lower():
+            # Don't show parse operations (too noisy)
+            if not self.debug:
+                return
+            text.append(" (reading metadata)", style="dim")
+
+        self.console.print(text)

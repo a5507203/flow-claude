@@ -270,10 +270,10 @@ class SimpleCLI:
         loop = asyncio.get_event_loop()
         self.logger.debug("Input loop started")
 
-        # Show initial prompt using Rich UI
-        self.rich_ui.console.print()
-        self.rich_ui.show_input_prompt(is_initial=False)
-        self.rich_ui.show_separator()
+        # Don't enable footer yet - will enable after first input
+        # This way the footer appears below the input line
+        footer_enabled = False
+        footer_text = "Press ESC to interrupt | Type for follow-up | \\q to quit"
 
         while not self.shutdown_requested:
             try:
@@ -286,7 +286,12 @@ class SimpleCLI:
                 if esc_pressed == "ESC":
                     # ESC pressed - interrupt current task
                     self.logger.info("User pressed ESC - interrupting task")
-                    self.rich_ui.console.print()
+
+                    # Enable footer if not already enabled
+                    if not footer_enabled:
+                        footer_enabled = True
+                        self.rich_ui.enable_fixed_footer(footer_text)
+
                     self.rich_ui.print_warning("Interrupting current task...")
 
                     # Send stop signal to run_development_session for interrupt
@@ -295,7 +300,6 @@ class SimpleCLI:
                     })
 
                     self.rich_ui.print_info("Task will be interrupted. Type new request or \\q to quit.")
-                    self.rich_ui.show_separator()
                     continue
 
                 elif esc_pressed is None:
@@ -306,18 +310,20 @@ class SimpleCLI:
                 # Got text input
                 user_input = esc_pressed.strip()
 
-                # Show separator
-                self.rich_ui.show_separator()
-
                 # Handle different input types
                 if not user_input:
-                    # Empty input - show separator and prompt again
-                    self.rich_ui.show_separator()
+                    # Empty input - continue waiting
                     continue
 
-                elif user_input in ['\\q', '\\exit', 'q']:
+                # Enable footer after receiving actual input (not empty)
+                if not footer_enabled:
+                    footer_enabled = True
+                    self.rich_ui.enable_fixed_footer(footer_text)
+
+                if user_input in ['\\q', '\\exit', 'q']:
                     # Quit entire CLI - send shutdown to control_queue
                     self.logger.info("User requested quit")
+                    self.rich_ui.disable_fixed_footer()
                     self.rich_ui.console.print()
                     self.rich_ui.print_info("Shutting down... Please wait.")
                     self.shutdown_requested = True
@@ -343,7 +349,6 @@ class SimpleCLI:
                         }
                     })
                     self.rich_ui.print_success("Request queued. Will process after current task completes.")
-                    self.rich_ui.show_separator()
                     # Loop continues - user can keep typing more requests
 
             except asyncio.CancelledError:
@@ -352,6 +357,7 @@ class SimpleCLI:
             except KeyboardInterrupt:
                 # Ctrl+C - quit CLI
                 self.logger.info("Keyboard interrupt - quitting")
+                self.rich_ui.disable_fixed_footer()
                 self.rich_ui.console.print()
                 self.rich_ui.print_warning("Interrupted. Quitting...")
                 self.shutdown_requested = True
@@ -359,6 +365,9 @@ class SimpleCLI:
 
                 await self.control_queue.put({"type": "shutdown"})
                 break
+
+        # Disable fixed footer when exiting input loop
+        self.rich_ui.disable_fixed_footer()
 
     def _check_for_esc_or_input(self) -> Optional[str]:
         """Check for ESC key press or read line input. Returns 'ESC', text, or None."""
@@ -945,15 +954,14 @@ Added agent instruction files for Flow-Claude v6.7
         use_questionary = is_interactive
         questionary_failed = False
 
-        # Show input border (once per get_request call)
+        # Show simple prompt using Rich UI
         if is_first_request:
-            print("\n" + "=" * 78)
-            print("  Enter your request below (or use \\help for commands):")
-            print("=" * 78)
+            self.rich_ui.console.print()
+            self.rich_ui.show_input_prompt(is_initial=True)
         else:
-            print("\n" + "-" * 78)
-            print("  Next request:")
-            print("-" * 78)
+            self.rich_ui.console.print()
+            prompt_text = "Enter your next request (or \\q to quit)"
+            self.rich_ui.console.print(prompt_text, style="cyan")
 
         while True:
 
