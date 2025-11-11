@@ -35,6 +35,27 @@ def main(model, max_parallel, verbose, debug, textual):
         # Use Textual TUI
         try:
             from flow_claude.textual_cli import FlowCLI
+            from flow_claude.setup_ui import run_setup_ui
+
+            # Run setup UI first (flow branch + CLAUDE.md)
+            # Note: CLAUDE.md generation happens inside the UI with progress display
+            try:
+                setup_results = run_setup_ui()
+                # Print summary of what was set up
+                if setup_results.get("flow_branch_created"):
+                    print(f"\n  ✓ Created 'flow' branch from '{setup_results.get('base_branch')}'")
+                if setup_results.get("claude_md_generated"):
+                    print("  ✓ CLAUDE.md created and committed to flow branch")
+                if setup_results.get("flow_branch_created") or setup_results.get("claude_md_generated"):
+                    print()  # Add spacing before main UI only if setup happened
+            except Exception as e:
+                # If setup UI fails, continue with main UI anyway
+                print(f"\n  Warning: Setup UI failed: {e}\n")
+                if debug:
+                    import traceback
+                    traceback.print_exc()
+
+            # Launch main FlowCLI app
             app = FlowCLI(
                 model=model,
                 max_parallel=max_parallel,

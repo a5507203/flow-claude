@@ -90,7 +90,9 @@ class SimpleCLI:
         # Cleanup old logs once at startup
         cleanup_old_logs()
 
-        # One-time initialization checks (CLAUDE.md, prompts)
+        # One-time initialization checks (flow branch, CLAUDE.md)
+        # Uses questionary prompts for plain CLI mode
+        await self.setup_flow_branch()
         await self.check_and_prompt_init()
         self.ensure_prompt_files()
 
@@ -798,15 +800,12 @@ Added agent instruction files for Flow-Claude v6.7
                 self.logger.error(f"Unexpected error in flow branch setup: {e}")
 
     async def check_and_prompt_init(self):
-        """Check if directory needs CLAUDE.md initialization and flow branch setup"""
+        """Check if directory needs CLAUDE.md initialization"""
         from pathlib import Path
         import subprocess
 
         cwd = Path.cwd()
         claude_md = cwd / "CLAUDE.md"
-
-        # First: Setup flow branch if needed
-        await self.setup_flow_branch()
 
         # Check if CLAUDE.md already exists
         if claude_md.exists():
@@ -833,66 +832,27 @@ Added agent instruction files for Flow-Claude v6.7
 
             if response in ['y', 'yes']:
                 if self.logger:
-                    self.logger.info("User chose to initialize CLAUDE.md with Claude Code")
+                    self.logger.info("User chose to initialize CLAUDE.md")
                 print()
-                print("  Initializing CLAUDE.md with Claude Code...")
+                print("  Creating CLAUDE.md template...")
                 print()
 
-                # Try to run claude code to create CLAUDE.md
-                try:
-                    # Check if claude command exists
-                    # On Windows, need shell=True to find .cmd files
-                    result = subprocess.run(
-                        'claude --version',
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
+                # Generate CLAUDE.md from template
+                self.generate_claude_md()
 
-                    if result.returncode == 0:
-                        # Claude Code is available, create CLAUDE.md automatically
-                        print("  Creating CLAUDE.md with Claude Code...")
-                        print()
-
-                        # Use echo to pipe prompt to claude code --print with --dangerously-skip-permissions
-                        # This allows non-interactive file creation
-                        prompt = "Please create a CLAUDE.md file for this project with proper documentation structure. Write the file now."
-                        init_result = subprocess.run(
-                            f'echo {prompt} | claude code --print --dangerously-skip-permissions',
-                            shell=True,
-                            cwd=str(cwd),
-                            capture_output=True,
-                            text=True,
-                            timeout=180  # 3 minutes for Claude Code to analyze and generate CLAUDE.md
-                        )
-
-                        # Check if CLAUDE.md was created
-                        if claude_md.exists():
-                            print("  ✓ CLAUDE.md created successfully!")
-                            print()
-                            if self.logger:
-                                self.logger.info("CLAUDE.md initialized successfully with Claude Code")
-                        else:
-                            print("  ✗ CLAUDE.md creation failed.")
-                            print("  You can run 'claude code' and use \\init manually.")
-                            print()
-                            if self.logger:
-                                self.logger.warning("CLAUDE.md file not found after initialization")
-                    else:
-                        raise FileNotFoundError()
-
-                except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
-                    # Claude Code not available
-                    print("  ✗ Claude Code CLI not found.")
-                    print()
-                    print("  To install Claude Code, visit:")
-                    print("  https://docs.claude.com/en/docs/claude-code")
-                    print()
-                    print("  Or run 'claude code' and use \\init slash command manually.")
+                if claude_md.exists():
+                    print("  ✓ CLAUDE.md created successfully!")
                     print()
                     if self.logger:
-                        self.logger.warning(f"Claude Code CLI not available: {e}")
+                        self.logger.info("CLAUDE.md initialized successfully")
+
+                    # Commit to flow branch
+                    self.commit_claude_md_to_flow()
+                else:
+                    print("  ✗ CLAUDE.md creation failed.")
+                    print()
+                    if self.logger:
+                        self.logger.warning("CLAUDE.md file not found after generation")
 
                 break
 
@@ -1154,3 +1114,48 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
         with open('CLAUDE.md', 'w') as f:
             f.write(template)
+
+    def commit_claude_md_to_flow(self):
+        """Commit CLAUDE.md to flow branch and stay on flow branch."""
+        import subprocess
+
+        try:
+            # Checkout flow branch
+            subprocess.run(
+                ['git', 'checkout', 'flow'],
+                capture_output=True,
+                check=True,
+                timeout=5
+            )
+
+            # Add CLAUDE.md
+            subprocess.run(
+                ['git', 'add', 'CLAUDE.md'],
+                capture_output=True,
+                check=True,
+                timeout=5
+            )
+
+            # Commit with message
+            commit_message = "Initialize CLAUDE.md for Flow-Claude"
+            subprocess.run(
+                ['git', 'commit', '-m', commit_message],
+                capture_output=True,
+                check=True,
+                timeout=10
+            )
+
+            print("  ✓ CLAUDE.md committed to flow branch")
+            if self.logger:
+                self.logger.info("CLAUDE.md committed to flow branch")
+
+            # Stay on flow branch (do not switch back)
+
+        except subprocess.CalledProcessError as e:
+            print(f"  Warning: Could not commit CLAUDE.md to flow branch")
+            if self.logger:
+                self.logger.warning(f"Failed to commit CLAUDE.md: {e}")
+        except Exception as e:
+            print(f"  Warning: Could not commit CLAUDE.md: {e}")
+            if self.logger:
+                self.logger.warning(f"Unexpected error committing CLAUDE.md: {e}")

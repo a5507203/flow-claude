@@ -189,8 +189,9 @@ class FlowCLI(App):
 
         self.control_queue = asyncio.Queue()
 
-        # Check initialization
-        await self.check_and_prompt_init()
+        # Setup (flow branch + CLAUDE.md) is already handled by run_setup_ui()
+        # in flow_cli.py before this app is launched
+        # Just ensure prompt files exist
         self.ensure_prompt_files()
 
         # Focus input for user to start
@@ -512,10 +513,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
     async def check_and_prompt_init(self):
         """Check for CLAUDE.md and prompt to initialize."""
-        # Simplified version - just check if file exists
-        if not os.path.exists('CLAUDE.md'):
-            log = self.query_one(RichLog)
-            self._log("[yellow]CLAUDE.md not found. Use \\init to generate it.[/yellow]")
+        # Setup (flow branch + CLAUDE.md) is handled by run_setup_ui() in flow_cli.py
+        # This method is kept for backwards compatibility but does nothing
+        pass
 
     def ensure_prompt_files(self):
         """Ensure prompt files exist."""
