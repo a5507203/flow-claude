@@ -928,7 +928,7 @@ The user agent is available for key decision points:
                                     click.echo("\n[STOP] Interrupting current task...\n")
                                     await client.interrupt()
                                     interrupted = True
-                                    break
+                                
 
                                 elif peek_control.get("type") == "intervention":
                                     # Follow-up request - put back in queue for next iteration
