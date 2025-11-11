@@ -8,8 +8,8 @@ from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Footer, RichLog, TextArea, Label, Static
-from textual.containers import Container
+from textual.widgets import Footer, RichLog, TextArea, Label, Static, Button
+from textual.containers import Container, Horizontal
 from textual import on
 from textual.events import Key
 
@@ -154,13 +154,25 @@ class FlowCLI(App):
     #suggestions.visible {
         display: block;
     }
+
+    #button-row {
+        height: auto;
+        width: 100%;
+        padding: 0 1;
+        background: $surface;
+    }
+
+    #submit-button {
+        width: 20;
+        margin-right: 1;
+    }
     """
 
     BINDINGS = [
         Binding("q", "quit", "Quit", show=True),
         Binding("escape", "interrupt", "Interrupt", show=True),
         Binding("h", "help", "Help", show=True),
-        Binding("ctrl+enter", "submit_request", "Submit", show=True),
+        Binding("ctrl+s", "submit_request", "Submit", show=True),
     ]
 
     def __init__(self, model: str = 'sonnet', max_parallel: int = 3,
@@ -211,10 +223,10 @@ class FlowCLI(App):
             highlight=True
         )
         with Container(id="input-container"):
-            yield Label("Ctrl+Enter to submit  |  Type \\ for command suggestions", id="input-hint")
+            yield Label("Click Submit or press Ctrl+S  |  Type \\ for commands", id="input-hint")
             yield Static("", id="suggestions")
             text_area = TextArea(id="main-input")
-            text_area.border_subtitle = "Ctrl+Enter to submit"
+            text_area.border_subtitle = "Multi-line input"
             yield text_area
         yield Footer()
 
@@ -272,6 +284,11 @@ class FlowCLI(App):
         log.write(text)
         log.scroll_end(animate=False)
 
+    def _show_current_settings(self) -> None:
+        """Display current settings summary."""
+        settings = f"[dim]Settings: Model=[cyan]{self.model}[/cyan] | Parallel=[cyan]{self.max_parallel}[/cyan] | Verbose=[cyan]{'ON' if self.verbose_mode else 'OFF'}[/cyan] | Debug=[cyan]{'ON' if self.debug_mode else 'OFF'}[/cyan] | Auto=[cyan]{'ON' if self.auto_mode else 'OFF'}[/cyan][/dim]"
+        self._log(settings)
+
     async def show_welcome(self) -> None:
         """Show welcome banner."""
         banner = f"""[bold cyan]Flow-Claude v6.7[/bold cyan]
@@ -292,12 +309,31 @@ class FlowCLI(App):
             self._log(line)
         self._log("")
 
+    async def on_key(self, event: Key) -> None:
+        """Handle key presses - intercept Enter to submit."""
+        # Only handle Enter key when TextArea is focused
+        if event.key == "enter":
+            text_area = self.query_one("#main-input", TextArea)
+            if text_area.has_focus:
+                # Check if Ctrl is pressed - allow Ctrl+Enter for new line
+                if not event.ctrl:
+                    # Plain Enter - submit the request
+                    event.prevent_default()
+                    event.stop()
+                    self.action_submit_request()
+
     def action_submit_request(self) -> None:
-        """Handle Ctrl+Enter to submit request from TextArea."""
+        """Submit request from TextArea."""
         # Get text from TextArea
         text_area = self.query_one("#main-input", TextArea)
         request = text_area.text.strip()
         text_area.text = ""  # Clear text area immediately
+        text_area.styles.height = 3  # Reset to minimum height
+
+        # Clear suggestions
+        suggestions_widget = self.query_one("#suggestions", Static)
+        suggestions_widget.update("")
+        suggestions_widget.remove_class("visible")
 
         if not request:
             return
@@ -307,12 +343,20 @@ class FlowCLI(App):
 
     @on(TextArea.Changed, "#main-input")
     def update_slash_command_suggestions(self, event: TextArea.Changed) -> None:
-        """Update suggestions based on current text in TextArea."""
+        """Update suggestions and auto-resize TextArea based on content."""
         text = event.text_area.text
         suggestions_widget = self.query_one("#suggestions", Static)
+        text_area = event.text_area
+
+        # Auto-resize TextArea based on line count
+        lines = text.split('\n')
+        line_count = len(lines)
+
+        # Calculate height: min 3, max 20
+        new_height = max(3, min(line_count, 20))
+        text_area.styles.height = new_height
 
         # Get the last line (where user is currently typing)
-        lines = text.split('\n')
         current_line = lines[-1].strip() if lines else ""
 
         # Only show suggestions if current line starts with backslash
@@ -461,15 +505,18 @@ class FlowCLI(App):
             return True
         elif cmd == '\\verbose':
             self.verbose_mode = not self.verbose_mode
-            self._log(f"[green]Verbose mode: {'ON' if self.verbose_mode else 'OFF'}[/green]")
+            self._log(f"[green]✓ Verbose mode: {'ON' if self.verbose_mode else 'OFF'}[/green]")
+            self._show_current_settings()
             return True
         elif cmd == '\\debug':
             self.debug_mode = not self.debug_mode
-            self._log(f"[green]Debug mode: {'ON' if self.debug_mode else 'OFF'}[/green]")
+            self._log(f"[green]✓ Debug mode: {'ON' if self.debug_mode else 'OFF'}[/green]")
+            self._show_current_settings()
             return True
         elif cmd == '\\auto':
             self.auto_mode = not self.auto_mode
-            self._log(f"[green]Autonomous mode: {'ON' if self.auto_mode else 'OFF'}[/green]")
+            self._log(f"[green]✓ Autonomous mode: {'ON' if self.auto_mode else 'OFF'}[/green]")
+            self._show_current_settings()
             return True
         elif cmd == '\\parallel':
             # Set max parallel workers
@@ -477,7 +524,8 @@ class FlowCLI(App):
                 new_value = int(cmd_parts[1])
                 if 1 <= new_value <= 10:
                     self.max_parallel = new_value
-                    self._log(f"[green]Max parallel workers set to {self.max_parallel}[/green]")
+                    self._log(f"[green]✓ Max parallel workers set to {self.max_parallel}[/green]")
+                    self._show_current_settings()
                 else:
                     self._log(f"[yellow]Invalid value. Must be between 1 and 10.[/yellow]")
             else:
@@ -489,8 +537,9 @@ class FlowCLI(App):
                 new_model = cmd_parts[1].lower()
                 if new_model in ['sonnet', 'opus', 'haiku']:
                     self.model = new_model
-                    self._log(f"[green]Model set to {self.model}[/green]")
+                    self._log(f"[green]✓ Model set to {self.model}[/green]")
                     self._log(f"[yellow]Note: Model change will apply to next session[/yellow]")
+                    self._show_current_settings()
                 else:
                     self._log(f"[yellow]Invalid model. Choose: sonnet, opus, haiku[/yellow]")
             else:
