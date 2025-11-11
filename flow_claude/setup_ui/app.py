@@ -45,7 +45,22 @@ class SetupUI(App):
         self.run_setup()
 
     def run_setup(self) -> None:
-        """Run setup process: flow branch, then CLAUDE.md."""
+        """Run setup process: git init (if needed), flow branch, then CLAUDE.md."""
+        # Step 0: Check if directory is a git repo
+        if not git_utils.check_is_git_repo():
+            # Not a git repo - initialize with flow branch
+            success, error = git_utils.initialize_git_repo()
+            if success:
+                self.setup_results["flow_branch_created"] = True
+                self.setup_results["base_branch"] = "main"
+                # Flow branch already created during init, skip to CLAUDE.md
+                self.check_and_prompt_claude_md()
+            else:
+                # Failed to initialize - exit setup
+                # TODO: Show error to user
+                self.exit(result=self.setup_results)
+            return
+
         # Step 1: Check if flow branch exists
         if not git_utils.check_flow_branch_exists():
             self.setup_flow_branch()
@@ -90,22 +105,28 @@ class SetupUI(App):
         """
         # Check if CLAUDE.md exists in flow branch
         if git_utils.check_claude_md_in_flow_branch():
-            # CLAUDE.md already exists in flow branch - exit setup
+            # CLAUDE.md already exists in flow branch - checkout flow and exit
+            git_utils.checkout_flow_branch()
             self.exit(result=self.setup_results)
             return
 
         # Check if directory is empty (only non-hidden files)
         files = [f for f in Path.cwd().iterdir() if not f.name.startswith('.')]
         if not files:
-            # Empty directory, skip prompt
+            # Empty directory, skip prompt but checkout flow branch
+            git_utils.checkout_flow_branch()
             self.exit(result=self.setup_results)
             return
 
         # Show CLAUDE.md prompt screen
         def handle_claude_md_selection(result):
             # Screen already handled generation and commit synchronously
+            # (which includes checkout to flow branch)
             if result and result.get("generate_claude_md"):
                 self.setup_results["claude_md_generated"] = True
+            else:
+                # User skipped CLAUDE.md, still need to checkout flow
+                git_utils.checkout_flow_branch()
 
             # Exit setup
             self.exit(result=self.setup_results)

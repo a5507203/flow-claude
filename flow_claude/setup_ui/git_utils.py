@@ -8,6 +8,114 @@ from pathlib import Path
 from typing import Optional
 
 
+def check_is_git_repo() -> bool:
+    """Check if current directory is a git repository.
+
+    Returns:
+        bool: True if git repo exists, False otherwise
+    """
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--git-dir'],
+            capture_output=True,
+            timeout=5
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def initialize_git_repo() -> tuple[bool, str]:
+    """Initialize git repository and create initial commit with flow branch.
+
+    Creates:
+    1. Git repository (git init)
+    2. Initial .gitignore file
+    3. Initial commit on main branch
+    4. Flow branch from main
+
+    Returns:
+        tuple: (success: bool, error_message: str)
+    """
+    try:
+        # Initialize git repo
+        subprocess.run(
+            ['git', 'init'],
+            capture_output=True,
+            check=True,
+            timeout=5
+        )
+
+        # Create initial .gitignore
+        gitignore_content = """# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Flow-Claude
+.worktrees/
+"""
+        gitignore_path = Path.cwd() / ".gitignore"
+        with open(gitignore_path, 'w') as f:
+            f.write(gitignore_content)
+
+        # Add .gitignore
+        subprocess.run(
+            ['git', 'add', '.gitignore'],
+            capture_output=True,
+            check=True,
+            timeout=5
+        )
+
+        # Create initial commit on main branch
+        subprocess.run(
+            ['git', 'commit', '-m', 'Initial commit'],
+            capture_output=True,
+            check=True,
+            timeout=10
+        )
+
+        # Ensure we're on main branch (git init might create master)
+        subprocess.run(
+            ['git', 'branch', '-M', 'main'],
+            capture_output=True,
+            check=True,
+            timeout=5
+        )
+
+        # Create flow branch from main
+        subprocess.run(
+            ['git', 'branch', 'flow', 'main'],
+            capture_output=True,
+            check=True,
+            timeout=5
+        )
+
+        return True, ""
+
+    except subprocess.CalledProcessError as e:
+        return False, f"Git command failed: {e}"
+    except Exception as e:
+        return False, str(e)
+
+
 def check_flow_branch_exists() -> bool:
     """Check if flow branch exists in the repository.
 
@@ -21,6 +129,24 @@ def check_flow_branch_exists() -> bool:
             timeout=5
         )
         return result.returncode == 0
+    except Exception:
+        return False
+
+
+def checkout_flow_branch() -> bool:
+    """Checkout flow branch.
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        subprocess.run(
+            ['git', 'checkout', 'flow'],
+            capture_output=True,
+            check=True,
+            timeout=5
+        )
+        return True
     except Exception:
         return False
 
