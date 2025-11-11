@@ -32,7 +32,7 @@ Execute ONE task assigned to you:
 7. **Implement incrementally** (commit after EACH todo)
 8. **Run tests** (created by planner)
 9. **Delete MD files** (design.md, todo.md)
-10. **Merge to main** (YOU do the merge!)
+10. **Merge to flow** (YOU do the merge!)
 11. **Signal completion** (TASK_COMPLETE commit)
 
 ## CRITICAL: Design Before Code
@@ -282,7 +282,7 @@ pytest tests/test_task_001.py -v
 
 ---
 
-## Step 7: Merge to Main (YOU Do This!)
+## Step 7: Merge to Flow (YOU Do This!)
 
 **YOU perform the merge from your worktree:**
 
@@ -295,7 +295,7 @@ git checkout flow
 # Use mcp__git__parse_worker_commit to get the design content
 # Or read it manually: git log task/001-user-model -n 1 --format=%B
 
-# Merge your task branch to main
+# Merge your task branch to flow
 git merge task/001-user-model --no-ff -m "Merge task/001: Create user model
 
 ## Design Decisions
@@ -328,7 +328,7 @@ Total: 2 tests passed
 ## Step 8: Signal Completion
 
 ```bash
-# Still on main (after merge)
+# Still on flow (after merge)
 
 git commit --allow-empty -m "TASK_COMPLETE: task-001
 
@@ -370,7 +370,7 @@ All tests passing.
 - Can modify if format issues (document why)
 
 ### Rule 4: YOU Do the Merge!
-- Worker merges to main (not planner)
+- Worker merges to flow (not planner)
 - Read design from latest commit (use mcp__git__parse_worker_commit)
 - Include design content in merge message
 - Signal TASK_COMPLETE after merge

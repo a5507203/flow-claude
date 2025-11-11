@@ -1127,7 +1127,7 @@ async def update_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             check=True,
             timeout=5
         )
-        current_branch = current_branch_result.stdout.strip() or "main"
+        current_branch = current_branch_result.stdout.strip() or "flow"
 
         # Checkout plan branch
         subprocess.run(

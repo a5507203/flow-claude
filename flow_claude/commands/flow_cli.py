@@ -1,14 +1,12 @@
 """
 Flow CLI Entry Point
 
-Simple interactive CLI for Flow-Claude development sessions.
+Interactive Textual UI for Flow-Claude development sessions.
 Just type `flow` to start an interactive session.
 """
 
-import asyncio
 import sys
 import click
-from flow_claude.cli_controller import SimpleCLI
 
 
 @click.command()
@@ -20,70 +18,53 @@ from flow_claude.cli_controller import SimpleCLI
               help='Enable verbose output')
 @click.option('--debug', is_flag=True,
               help='Enable debug mode')
-@click.option('--textual', is_flag=True,
-              help='Use Textual TUI instead of plain terminal')
-def main(model, max_parallel, verbose, debug, textual):
+def main(model, max_parallel, verbose, debug):
     """
     Flow-Claude Interactive CLI
 
     Launch an interactive development session where you can:
     - Enter development requests
     - See real-time execution progress
-    - Press 'q' to quit, ESC to add requirements
+    - Press 'q' to quit, ESC to interrupt, H for help
     """
-    if textual:
-        # Use Textual TUI
+    try:
+        from flow_claude.textual_cli import FlowCLI
+        from flow_claude.setup_ui import run_setup_ui
+
+        # Run setup UI first (flow branch + CLAUDE.md)
+        # Note: CLAUDE.md generation happens inside the UI with progress display
         try:
-            from flow_claude.textual_cli import FlowCLI
-            from flow_claude.setup_ui import run_setup_ui
+            setup_results = run_setup_ui()
+            # Print summary of what was set up
+            if setup_results.get("flow_branch_created"):
+                base_branch = setup_results.get('base_branch')
+                print(f"\n  ✓ Created 'flow' branch from '{base_branch}'")
+            if setup_results.get("claude_md_generated"):
+                print("  ✓ CLAUDE.md created and committed to flow branch")
+            if setup_results.get("flow_branch_created") or setup_results.get("claude_md_generated"):
+                print()  # Add spacing before main UI only if setup happened
+        except Exception as e:
+            # If setup UI fails, continue with main UI anyway
+            print(f"\n  Warning: Setup UI failed: {e}\n")
+            if debug:
+                import traceback
+                traceback.print_exc()
 
-            # Run setup UI first (flow branch + CLAUDE.md)
-            # Note: CLAUDE.md generation happens inside the UI with progress display
-            try:
-                setup_results = run_setup_ui()
-                # Print summary of what was set up
-                if setup_results.get("flow_branch_created"):
-                    print(f"\n  ✓ Created 'flow' branch from '{setup_results.get('base_branch')}'")
-                if setup_results.get("claude_md_generated"):
-                    print("  ✓ CLAUDE.md created and committed to flow branch")
-                if setup_results.get("flow_branch_created") or setup_results.get("claude_md_generated"):
-                    print()  # Add spacing before main UI only if setup happened
-            except Exception as e:
-                # If setup UI fails, continue with main UI anyway
-                print(f"\n  Warning: Setup UI failed: {e}\n")
-                if debug:
-                    import traceback
-                    traceback.print_exc()
-
-            # Launch main FlowCLI app
-            app = FlowCLI(
-                model=model,
-                max_parallel=max_parallel,
-                verbose=verbose,
-                debug=debug
-            )
-            try:
-                app.run()
-            except KeyboardInterrupt:
-                print("\n\nExiting...")
-        except ImportError as e:
-            print(f"ERROR: Textual UI not available: {e}", file=sys.stderr)
-            print("Install textual with: pip install textual", file=sys.stderr)
-            sys.exit(1)
-    else:
-        # Use plain terminal CLI
-        cli = SimpleCLI(
+        # Launch main FlowCLI app
+        app = FlowCLI(
             model=model,
             max_parallel=max_parallel,
             verbose=verbose,
             debug=debug
         )
-
         try:
-            # Run async event loop
-            asyncio.run(cli.run())
+            app.run()
         except KeyboardInterrupt:
             print("\n\nExiting...")
+    except ImportError as e:
+        print(f"ERROR: Textual UI not available: {e}", file=sys.stderr)
+        print("Install textual with: pip install textual", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

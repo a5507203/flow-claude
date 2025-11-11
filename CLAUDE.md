@@ -17,7 +17,7 @@ pip install -e .
 # The package provides unified interactive CLI:
 # - flow: Interactive session manager (recommended)
 # - flow-claude: Alias to flow (same experience)
-# Both commands use SimpleCLI (flow_claude/commands/flow_cli.py)
+# Both commands use TextualCLI (flow_claude/commands/flow_cli.py)
 ```
 
 **Prerequisites**:
@@ -277,7 +277,7 @@ See: flow_claude/cli.py:222-313
 New instruction files are auto-committed to main/master branch (flow_claude/cli.py:315-393)
 
 ### Interactive Mode
-Managed by SimpleCLI (`cli_controller.py`). After each session completes, automatically prompts for the next development request. Maintains continuous session loop until user explicitly exits with `\exit` or `\q` (flow_claude/cli_controller.py:98-128)
+Managed by TextualCLI (`textual_cli.py`). After each session completes, automatically prompts for the next development request. Maintains continuous session loop until user explicitly exits with `\exit` or `\q`.
 
 ### Safe Unicode Handling
 `safe_echo()` handles Windows console encoding issues with emojis (flow_claude/cli.py:28-41)

@@ -124,7 +124,7 @@ Flow-Claude will:
 3. **Validate and Merge**
    - Planning agent validates completed tasks
    - Runs tests and linting
-   - Merges to main with structured commit
+   - Merges to flow with structured commit
 
 4. **Complete Session**
    - All tasks merged
@@ -164,7 +164,7 @@ $ flow-claude develop "add user authentication"
 [Planning Agent: Phase 3]
 ✅ Detected completion: task/001
 ✅ Validated (tests pass, linting pass)
-✅ Merged to main
+✅ Merged to flow
 
 ... continues for all tasks ...
 
@@ -185,14 +185,14 @@ Summary:
 Check git history:
 
 ```bash
-# See main branch commits
-git log main --oneline --graph
+# See flow branch commits
+git log flow --oneline --graph
 
 # See plan branch
 git log plan/session-20250101-120000 --format=%B -n 1
 
 # See merge commits with provides
-git log main --merges --format=%B
+git log flow --merges --format=%B
 ```
 
 ---
@@ -278,7 +278,7 @@ After a session:
 
 ```
 your-repo/
-├── main branch
+├── flow branch
 │   └── Merge commits (3 tasks merged)
 │
 ├── plan/session-20250101-120000
@@ -293,7 +293,7 @@ your-repo/
 **All metadata in commits:**
 - Task metadata: First commit on task branch
 - Plan: Commits on plan branch
-- Results: Merge commits on main
+- Results: Merge commits on flow
 
 **No external files created!**
 

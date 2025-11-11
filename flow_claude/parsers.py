@@ -321,7 +321,7 @@ def extract_provides_from_merge_commits(log_output: str) -> List[str]:
     """Extract all 'Provides' items from merge commit messages.
 
     Args:
-        log_output: Output from 'git log main --merges --format=%B'
+        log_output: Output from 'git log flow --merges --format=%B'
 
     Returns:
         List of all provided capabilities from merged tasks

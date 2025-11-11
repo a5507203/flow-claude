@@ -106,7 +106,7 @@ Execute task on branch task/001-description
 - Use `cd .worktrees/worker-1` if you need to change directory
 - All your work stays in this isolated directory until merge
 
-Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to main, signal complete."
+Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
 }
 
 [Task tool call 2]
@@ -130,7 +130,7 @@ Execute task on branch task/002-description
 - Use `cd .worktrees/worker-2` if you need to change directory
 - All your work stays in this isolated directory until merge
 
-Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to main, signal complete."
+Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
 }
 
 [Task tool call 3]
@@ -154,7 +154,7 @@ Execute task on branch task/003-description
 - Use `cd .worktrees/worker-3` if you need to change directory
 - All your work stays in this isolated directory until merge
 
-Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to main, signal complete."
+Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
 }
 ```
 
@@ -162,7 +162,7 @@ Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge t
 
 **Step 4: Wait for workers to complete**
 
-Workers will execute, merge their branches to main, and return completion messages.
+Workers will execute, merge their branches to flow, and return completion messages.
 
 **Step 5: Clean up worktrees after wave completion**
 
@@ -283,8 +283,8 @@ Planner: "✅ Created plan branch + 2 Wave 1 task branches"
 
 Orchestrator: [Spawns 2 workers in parallel]
 
-Worker-1: "✅ Task 001 complete, merged to main"
-Worker-2: "✅ Task 002 complete, merged to main"
+Worker-1: "✅ Task 001 complete, merged to flow"
+Worker-2: "✅ Task 002 complete, merged to flow"
 
 Orchestrator: [Invokes planner for Wave 2]
 

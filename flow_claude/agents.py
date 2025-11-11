@@ -111,7 +111,7 @@ def create_worker_agent(model: str = "sonnet") -> AgentDefinition:
     The worker agent is responsible for:
     - Reading task metadata from git commits
     - Understanding task context and session goals
-    - Reading preconditions from main branch
+    - Reading preconditions from flow branch
     - Implementing the task using Read/Write/Edit/Bash
     - Testing the implementation
     - Signaling completion/blocked/failed status

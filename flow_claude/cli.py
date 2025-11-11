@@ -101,12 +101,12 @@ def check_claude_code_available() -> tuple[bool, str]:
 # ============================================================================
 # NOTE: The CLI command interface below is DEPRECATED as of v6.7+
 #
-# Both `flow` and `flow-claude` commands now use SimpleCLI (flow_cli.py)
+# Both `flow` and `flow-claude` commands now use TextualCLI (flow_cli.py)
 # for a unified interactive session manager experience.
 #
 # This file now serves as a library module providing:
 # - run_development_session(): Core session execution function
-# - Helper functions used by SimpleCLI
+# - Helper functions used by TextualCLI
 #
 # The click decorators are kept for backward compatibility but are not
 # actively used in the unified architecture.
@@ -135,10 +135,10 @@ def check_claude_code_available() -> tuple[bool, str]:
 #
 # This function is no longer used as a CLI command. It remains here for:
 # 1. Reference/documentation purposes
-# 2. Potential programmatic usage (though SimpleCLI is recommended)
+# 2. Potential programmatic usage (though TextualCLI is recommended)
 #
 # The function body has been kept but the CLI decorators are commented out.
-# Use SimpleCLI (flow_cli.py) for interactive session management.
+# Use TextualCLI (flow_cli.py) for interactive session management.
 # ============================================================================
 
 # @cli.command()
@@ -190,7 +190,7 @@ def develop_DEPRECATED_DO_NOT_USE(
 ):
     """DEPRECATED: Execute development request using planning and worker agents.
 
-    This function is deprecated as of v6.7+. Use SimpleCLI instead.
+    This function is deprecated as of v6.7+. Use TextualCLI instead.
 
     This command starts a Flow-Claude development session:
     1. Planning agent analyzes request and creates execution plan
@@ -338,7 +338,7 @@ def develop_DEPRECATED_DO_NOT_USE(
         sys.exit(1)
 
     def _commit_instruction_files(created_files: list, debug_mode: bool):
-        """Helper to commit newly created instruction files to main branch."""
+        """Helper to commit newly created instruction files to flow branch."""
         import subprocess
         from pathlib import Path
 
@@ -359,10 +359,10 @@ def develop_DEPRECATED_DO_NOT_USE(
                 )
                 current_branch = result.stdout.strip()
 
-                # If there's a current branch and it's not main/master, skip
-                if current_branch and current_branch not in ['main', 'master']:
+                # If there's a current branch and it's not flow, skip
+                if current_branch and current_branch != 'flow':
                     if debug_mode:
-                        click.echo(f"DEBUG: Not on main/master branch ({current_branch}) - skipping auto-commit")
+                        click.echo(f"DEBUG: Not on flow branch ({current_branch}) - skipping auto-commit")
                     return
             except Exception:
                 # If we can't determine branch, assume it's safe (probably fresh repo)
@@ -405,7 +405,7 @@ def develop_DEPRECATED_DO_NOT_USE(
             )
 
             if debug_mode:
-                click.echo(f"DEBUG: ✓ Committed instruction files to main branch")
+                click.echo(f"DEBUG: ✓ Committed instruction files to flow branch")
 
         except subprocess.TimeoutExpired:
             if debug_mode:
@@ -454,7 +454,7 @@ def develop_DEPRECATED_DO_NOT_USE(
     worker_prompt_file = get_prompt_file('WORKER_INSTRUCTIONS.md', 'worker.md')
     user_proxy_prompt_file = get_prompt_file('USER_PROXY_INSTRUCTIONS.md', 'user.md')
 
-    # Auto-commit newly created instruction files to main branch
+    # Auto-commit newly created instruction files to flow branch
     if created_instruction_files:
         _commit_instruction_files(created_instruction_files, debug)
 
@@ -1097,36 +1097,60 @@ def handle_agent_message(msg):
                         else:
                             _session_logger.debug(f"[{agent_name.upper()}] TOOL: {tool_name}")
 
-                    # Always show tool name with agent identification
-                    click.echo(f"[{timestamp}] [{agent_name.upper()}] [TOOL] {tool_name}", nl=False)
-
-                    # Show tool detail on same line if available
-                    if tool_detail and tool_name != 'Task':  # Task has special display below
-                        click.echo(f" | {tool_detail}", nl=False)
-
-                    import sys
-                    sys.stdout.flush()
-
+                    # Build tool message
+                    tool_msg = f"[TOOL] {tool_name}"
+                    if tool_detail and tool_name != 'Task':
+                        tool_msg += f" | {tool_detail}"
                     if _debug_logging and tool_id:
-                        click.echo(f" (id: {tool_id[:12]})", nl=False)
+                        tool_msg += f" (id: {tool_id[:12]})"
+
+                    # Send to Textual UI if available, otherwise print to terminal
+                    if _message_handler:
+                        # Textual UI mode - delegate to message handler
+                        _message_handler.write_message(
+                            message=tool_msg,
+                            agent=agent_name,
+                            timestamp=timestamp if _debug_logging else None
+                        )
+
+                        # Show subagent invocation for Task tool
+                        if tool_name == 'Task':
+                            subagent_type = tool_input.get('subagent_type', 'unknown')
+                            description = tool_input.get('description', '')
+                            _message_handler.write_message(
+                                message=f"  -> Invoking {subagent_type}: {description}",
+                                agent=agent_name,
+                                timestamp=None
+                            )
+
+                        # Show tool input in verbose/debug mode
+                        if (_verbose_logging or _debug_logging) and tool_input:
+                            import json
+                            input_str = json.dumps(tool_input, indent=2)
+                            _message_handler.write_message(
+                                message=f"  Input: {input_str}",
+                                agent=agent_name,
+                                timestamp=None
+                            )
+                    else:
+                        # Terminal mode - print with agent identification
+                        click.echo(f"[{timestamp}] [{agent_name.upper()}] {tool_msg}")
+                        import sys
                         sys.stdout.flush()
 
-                    click.echo()  # Newline
-                    sys.stdout.flush()
+                        # Show subagent invocation for Task tool
+                        if tool_name == 'Task':
+                            subagent_type = tool_input.get('subagent_type', 'unknown')
+                            description = tool_input.get('description', '')
+                            click.echo(f"  -> Invoking {subagent_type}: {description}")
+                            sys.stdout.flush()
 
-                    # Show subagent invocation for Task tool
-                    if tool_name == 'Task':
-                        subagent_type = tool_input.get('subagent_type', 'unknown')
-                        description = tool_input.get('description', '')
-                        click.echo(f"  -> Invoking {subagent_type}: {description}")
-                        sys.stdout.flush()
-
-                    # Show tool input in verbose/debug mode - FULL, NO TRUNCATION
-                    if (_verbose_logging or _debug_logging) and tool_input:
-                        import json
-                        input_str = json.dumps(tool_input, indent=2)
-                        click.echo(f"  Input: {input_str}")
-                        sys.stdout.flush()
+                        # Show tool input in verbose/debug mode
+                        if (_verbose_logging or _debug_logging) and tool_input:
+                            import json
+                            input_str = json.dumps(tool_input, indent=2)
+                            click.echo(f"  Input: {input_str}")
+                            sys.stdout.flush()
 
                 elif _debug_logging:
                     # Unknown block type
@@ -1141,13 +1165,35 @@ def handle_agent_message(msg):
     elif isinstance(msg, ResultMessage):
         # Tool result - show in verbose mode - FULL, NO TRUNCATION
         if _verbose_logging or _debug_logging:
-            click.echo(f"[{timestamp}] [RESULT] Tool execution completed")
-            import sys
-            sys.stdout.flush()
-            if _debug_logging and hasattr(msg, 'content'):
-                result_str = str(msg.content)
-                click.echo(f"  Output: {result_str}")
+            result_msg = "[RESULT] Tool execution completed"
+            
+            # Send to Textual UI if available, otherwise print to terminal
+            if _message_handler:
+                # Textual UI mode - delegate to message handler
+                _message_handler.write_message(
+                    message=result_msg,
+                    agent=agent_name,
+                    timestamp=timestamp if _debug_logging else None
+                )
+                
+                # Show result output in debug mode
+                if _debug_logging and hasattr(msg, 'content'):
+                    result_str = str(msg.content)
+                    _message_handler.write_message(
+                        message=f"  Output: {result_str}",
+                        agent=agent_name,
+                        timestamp=None
+                    )
+            else:
+                # Terminal mode - print to console
+                click.echo(f"[{timestamp}] {result_msg}")
+                import sys
                 sys.stdout.flush()
+                
+                if _debug_logging and hasattr(msg, 'content'):
+                    result_str = str(msg.content)
+                    click.echo(f"  Output: {result_str}")
+                    sys.stdout.flush()
         return
 
     elif isinstance(msg, UserMessage):
@@ -1270,10 +1316,10 @@ def handle_agent_message(msg):
 def main():
     """Main entry point for flow-claude CLI.
 
-    NOTE: As of v6.7+, this redirects to SimpleCLI for unified interactive experience.
+    NOTE: As of v6.7+, this redirects to TextualCLI for unified interactive experience.
     Both 'flow' and 'flow-claude' commands use the same interactive session manager.
     """
-    # Redirect to SimpleCLI instead of the deprecated click-based CLI
+    # Redirect to TextualCLI instead of the deprecated click-based CLI
     from flow_claude.commands.flow_cli import main as flow_main
     print("\n" + "=" * 70)
     print("NOTE: 'flow-claude' now uses the interactive session manager.")
