@@ -16,6 +16,7 @@ dependencies = [
     "click>=8.1.0",
     "psutil>=5.9.0",
     "questionary>=2.1.0",
+    "textual>=0.40.0",
 ]
 
 [project.optional-dependencies]

@@ -47,11 +47,12 @@ class TextualStdout:
                 if line.strip():  # Skip empty lines
                     try:
                         self.app.call_from_thread(self._write_to_log, line)
-                    except:
+                    except Exception:
                         # Fallback if app not ready
                         try:
                             self.original_stdout.write(line + '\n')
-                        except:
+                        except Exception:
+                            # Silently fail if both methods don't work
                             pass
 
         return len(text)
@@ -62,7 +63,8 @@ class TextualStdout:
             log = self.app.query_one(RichLog)
             log.write(text)
             log.scroll_end(animate=False)
-        except:
+        except Exception:
+            # Silently fail if log widget not available
             pass
 
     def flush(self):
@@ -71,7 +73,8 @@ class TextualStdout:
             try:
                 self.app.call_from_thread(self._write_to_log, self._buffer)
                 self._buffer = ""
-            except:
+            except Exception:
+                # Silently fail if app not available
                 pass
 
     def fileno(self):
@@ -96,7 +99,8 @@ class TextualStderr(TextualStdout):
             log = self.app.query_one(RichLog)
             log.write(f"[red]{text}[/red]")
             log.scroll_end(animate=False)
-        except:
+        except Exception:
+            # Silently fail if log widget not available
             pass
 
 
@@ -144,6 +148,7 @@ class FlowCLI(App):
         # Input handling
         self._interrupt_event = asyncio.Event()
         self._awaiting_initial_request = True
+        self._orchestrator_start_lock = asyncio.Lock()  # Prevent race condition on startup
 
     def compose(self) -> ComposeResult:
         """Create child widgets."""
@@ -252,28 +257,29 @@ class FlowCLI(App):
                 return
             # If not handled, fall through to send as request
 
-        # First request - start orchestrator
-        if self._awaiting_initial_request:
-            self._awaiting_initial_request = False
-            self._log(f"[dim]Log file: {self.logger.log_file}[/dim]")
-            self._log("")
+        # First request - start orchestrator (with lock to prevent race condition)
+        async with self._orchestrator_start_lock:
+            if self._awaiting_initial_request:
+                self._awaiting_initial_request = False
+                self._log(f"[dim]Log file: {self.logger.log_file}[/dim]")
+                self._log("")
 
-            # Queue initial request
-            await self.control_queue.put({
-                "type": "intervention",
-                "data": {"requirement": request}
-            })
+                # Queue initial request
+                await self.control_queue.put({
+                    "type": "intervention",
+                    "data": {"requirement": request}
+                })
 
-            # Start orchestrator in background (don't await!)
-            self.orchestrator_task = asyncio.create_task(self.run_orchestrator(request))
+                # Start orchestrator in background (don't await!)
+                self.orchestrator_task = asyncio.create_task(self.run_orchestrator(request))
 
-        else:
-            # Follow-up request while orchestrator is running
-            self._log("[yellow]Queuing follow-up request...[/yellow]")
-            await self.control_queue.put({
-                "type": "intervention",
-                "data": {"requirement": request}
-            })
+            else:
+                # Follow-up request while orchestrator is running
+                self._log("[yellow]Queuing follow-up request...[/yellow]")
+                await self.control_queue.put({
+                    "type": "intervention",
+                    "data": {"requirement": request}
+                })
 
     async def run_orchestrator(self, request: str):
         """Run the orchestrator session (runs in background)."""
@@ -348,7 +354,8 @@ class FlowCLI(App):
 
     async def handle_slash_command(self, command: str) -> bool:
         """Handle slash commands. Returns True if handled."""
-        cmd = command.strip().lower()
+        cmd_parts = command.strip().split()
+        cmd = cmd_parts[0].lower()
         log = self.query_one(RichLog)
 
         if cmd in ['\\exit', '\\q']:
@@ -369,8 +376,88 @@ class FlowCLI(App):
             self.auto_mode = not self.auto_mode
             self._log(f"[green]Autonomous mode: {'ON' if self.auto_mode else 'OFF'}[/green]")
             return True
-        # TODO: Add other commands (\parallel, \model, \init)
+        elif cmd == '\\parallel':
+            # Set max parallel workers
+            if len(cmd_parts) > 1 and cmd_parts[1].isdigit():
+                new_value = int(cmd_parts[1])
+                if 1 <= new_value <= 10:
+                    self.max_parallel = new_value
+                    self._log(f"[green]Max parallel workers set to {self.max_parallel}[/green]")
+                else:
+                    self._log(f"[yellow]Invalid value. Must be between 1 and 10.[/yellow]")
+            else:
+                self._log(f"[yellow]Usage: \\parallel <number> (current: {self.max_parallel})[/yellow]")
+            return True
+        elif cmd == '\\model':
+            # Select Claude model
+            if len(cmd_parts) > 1:
+                new_model = cmd_parts[1].lower()
+                if new_model in ['sonnet', 'opus', 'haiku']:
+                    self.model = new_model
+                    self._log(f"[green]Model set to {self.model}[/green]")
+                    self._log(f"[yellow]Note: Model change will apply to next session[/yellow]")
+                else:
+                    self._log(f"[yellow]Invalid model. Choose: sonnet, opus, haiku[/yellow]")
+            else:
+                self._log(f"[yellow]Usage: \\model <name> (current: {self.model})[/yellow]")
+                self._log(f"[dim]Available: sonnet, opus, haiku[/dim]")
+            return True
+        elif cmd == '\\init':
+            # Generate CLAUDE.md template
+            self._log("[dim]Generating CLAUDE.md...[/dim]")
+            try:
+                self.generate_claude_md()
+                self._log("[green]✓ CLAUDE.md created successfully[/green]")
+            except Exception as e:
+                self._log(f"[red]Error generating CLAUDE.md: {e}[/red]")
+            return True
         return False
+
+    def generate_claude_md(self):
+        """Generate CLAUDE.md template in current directory"""
+        template = """# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+[Describe your project here]
+
+## Architecture
+
+[Describe the architecture and key components]
+
+## Development Workflow
+
+[Describe how to develop, test, and deploy]
+
+## Key Files
+
+[List important files and their purposes]
+
+## Coding Standards
+
+[Describe coding standards and conventions]
+
+## Common Tasks
+
+### Running the project
+```bash
+# Add commands here
+```
+
+### Running tests
+```bash
+# Add commands here
+```
+
+## Important Notes
+
+[Any important notes or gotchas for Claude to be aware of]
+"""
+
+        with open('CLAUDE.md', 'w') as f:
+            f.write(template)
 
     def action_quit(self) -> None:
         """Quit the application."""
@@ -383,12 +470,28 @@ class FlowCLI(App):
 
     def action_interrupt(self) -> None:
         """Handle interrupt (ESC) - interrupts current task."""
-        self._interrupt_event.set()
         log = self.query_one(RichLog)
         self._log("\n[bold yellow][ESC] Interrupting current task...[/bold yellow]")
 
-        # Send stop signal to control queue
+        # Clean all pending follow-up instructions, then send stop signal
         if self.control_queue:
+            # Drain intervention messages from queue
+            discarded = 0
+            while not self.control_queue.empty():
+                try:
+                    msg = self.control_queue.get_nowait()
+                    if msg.get("type") == "intervention":
+                        discarded += 1  # Discard follow-up instructions
+                    else:
+                        # Keep stop/shutdown messages
+                        asyncio.create_task(self.control_queue.put(msg))
+                except Exception:
+                    break
+
+            if discarded > 0:
+                self._log(f"[dim]Cleared {discarded} pending follow-up(s)[/dim]")
+
+            # Send stop signal
             asyncio.create_task(self.control_queue.put({"type": "stop"}))
 
         self._log("[dim]Task will be interrupted. Type new request to continue.[/dim]\n")
@@ -428,7 +531,7 @@ class FlowCLI(App):
         try:
             # Try to call from thread (in case called from SDK thread)
             self.call_from_thread(self._write_message_internal, message, agent, timestamp)
-        except:
+        except Exception:
             # If not in async context or app not running, call directly
             self._write_message_internal(message, agent, timestamp)
 

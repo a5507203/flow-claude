@@ -24,6 +24,9 @@ _tool_id_to_agent = {}
 # SDK session ID for resume capability
 _current_session_id = None
 
+# Hook for Textual UI integration (textual_cli.py)
+_message_handler = None
+
 
 def safe_echo(text: str, nl: bool = True, **kwargs):
     """Safely print text handling Unicode/emoji on Windows.
@@ -977,7 +980,7 @@ def handle_agent_message(msg):
         - UserMessage: User input
         - dict with "type": Legacy format
     """
-    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent, _current_session_id
+    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent, _current_session_id, _message_handler
 
     timestamp = datetime.now().strftime("%H:%M:%S")
 
@@ -1033,17 +1036,26 @@ def handle_agent_message(msg):
                         if _session_logger:
                             _session_logger.info(f"[{agent_name.upper()}] {text}")
 
-                        # Print to terminal with agent identification
-                        if _debug_logging:
-                            safe_echo(f"[{timestamp}] [{agent_name.upper()}] {text}")
+                        # Send to Textual UI if available, otherwise print to terminal
+                        if _message_handler:
+                            # Textual UI mode - delegate to message handler
+                            _message_handler.write_message(
+                                message=text,
+                                agent=agent_name,
+                                timestamp=timestamp if _debug_logging else None
+                            )
                         else:
-                            # Show agent name for subagents, hide for orchestrator to reduce noise
-                            if agent_name != "orchestrator":
-                                safe_echo(f"[{agent_name.upper()}] {text}")
+                            # Terminal mode - print with agent identification
+                            if _debug_logging:
+                                safe_echo(f"[{timestamp}] [{agent_name.upper()}] {text}")
                             else:
-                                safe_echo(text)
-                        import sys
-                        sys.stdout.flush()
+                                # Show agent name for subagents, hide for orchestrator to reduce noise
+                                if agent_name != "orchestrator":
+                                    safe_echo(f"[{agent_name.upper()}] {text}")
+                                else:
+                                    safe_echo(text)
+                            import sys
+                            sys.stdout.flush()
 
                 elif block_type == 'ToolUseBlock':
                     # Tool call from agent
