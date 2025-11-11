@@ -18,7 +18,6 @@ from typing import Optional
 import questionary
 
 from flow_claude.logging_config import get_logger, cleanup_old_logs
-from flow_claude.cli_rich_ui import RichUI
 
 
 class SimpleCLI:
@@ -29,9 +28,6 @@ class SimpleCLI:
         self.max_parallel = max_parallel
         self.verbose = verbose
         self.debug = debug
-
-        # Rich UI instance
-        self.rich_ui = RichUI(verbose=verbose, debug=debug)
 
         # Control queue for interventions (ESC, shutdown)
         self.control_queue = None
@@ -49,32 +45,42 @@ class SimpleCLI:
 
     def show_welcome_banner(self):
         """Show welcome banner once at CLI startup"""
-        # Use Rich UI to display banner
-        self.rich_ui.show_banner()
+        import sys
 
-        # Show help information using Rich
-        from rich.table import Table
-        from rich import box
+        # Clear screen for cleaner look
+        print("\n" * 2)
 
-        help_table = Table(show_header=False, box=box.SIMPLE, padding=(0, 1))
-        help_table.add_column("Command", style="bold cyan", width=15)
-        help_table.add_column("Description", style="dim")
+        # Header with box drawing - use ASCII for Windows compatibility
+        if sys.platform == 'win32':
+            print("+" + "-" * 78 + "+")
+            print("|" + " " * 78 + "|")
+            print("|" + "  Flow-Claude v6.7".ljust(78) + "|")
+            print("|" + "  Git-First Autonomous Development System".ljust(78) + "|")
+            print("|" + " " * 78 + "|")
+            print("+" + "-" * 78 + "+")
+        else:
+            print("┌" + "─" * 78 + "┐")
+            print("│" + " " * 78 + "│")
+            print("│" + "  Flow-Claude v6.7".ljust(78) + "│")
+            print("│" + "  Git-First Autonomous Development System".ljust(78) + "│")
+            print("│" + " " * 78 + "│")
+            print("└" + "─" * 78 + "┘")
+        print()
 
-        help_table.add_row("\\parallel", "Set max parallel workers")
-        help_table.add_row("\\model", "Select Claude model")
-        help_table.add_row("\\verbose", "Toggle verbose output")
-        help_table.add_row("\\debug", "Toggle debug mode")
-        help_table.add_row("\\auto", "Toggle autonomous mode")
-        help_table.add_row("\\init", "Generate CLAUDE.md")
-        help_table.add_row("\\help", "Show help")
-        help_table.add_row("\\exit", "Exit Flow-Claude")
-
-        self.rich_ui.console.print("\n[bold]Available Commands:[/bold]")
-        self.rich_ui.console.print(help_table)
-
-        self.rich_ui.console.print()
-        self.rich_ui.console.print("[dim]Tip: Press ESC to interrupt | Type follow-up requests | \\q to quit[/dim]")
-        self.rich_ui.console.print()
+        # Instructions with better formatting
+        print("  Available Commands:")
+        print("    \\parallel  - Set max parallel workers")
+        print("    \\model     - Select Claude model")
+        print("    \\verbose   - Toggle verbose output")
+        print("    \\debug     - Toggle debug mode")
+        print("    \\auto      - Toggle autonomous mode")
+        print("    \\init      - Generate CLAUDE.md")
+        print("    \\help      - Show help")
+        print("    \\exit      - Exit Flow-Claude")
+        print()
+        print("  Tip: Type '\\' to see autocomplete suggestions (in terminal)")
+        print("  While agents work: Type follow-up requests or '\\stop' to cancel")
+        print("  Quit: Type '\\exit' or '\\q'")
 
     async def run(self):
         """Main async CLI loop - waits for user input and processes requests"""
@@ -102,14 +108,12 @@ class SimpleCLI:
 
             if not request:
                 # User requested exit before starting
-                self.rich_ui.console.print()
-                self.rich_ui.print_info("No request provided. Exiting...")
-                self.rich_ui.console.print()
+                print("\n  No request provided. Exiting...\n")
                 return
 
             self.logger.info(f"Initial user request: {request}")
-            self.rich_ui.print_info(f"Log file: {self.logger.log_file}")
-            self.rich_ui.console.print()
+            print(f"  Log file: {self.logger.log_file}")
+            print()
 
             # Put initial request into control_queue
             await self.control_queue.put({
@@ -126,14 +130,12 @@ class SimpleCLI:
             self.logger.info("Session ended")
 
         except KeyboardInterrupt:
-            self.rich_ui.console.print()
-            self.rich_ui.print_warning("Interrupted by user (Ctrl+C)")
+            print("\n\nInterrupted by user (Ctrl+C)")
             self.logger.warning("Session interrupted by Ctrl+C")
             await self.cleanup()
 
         except Exception as e:
-            self.rich_ui.console.print()
-            self.rich_ui.print_error(str(e))
+            print(f"\n\nError: {e}")
             self.logger.exception(f"Fatal error: {e}")
             if self.debug:
                 import traceback
@@ -147,9 +149,7 @@ class SimpleCLI:
                 self.logger = None
 
         # Final exit message
-        self.rich_ui.console.print()
-        self.rich_ui.print_info("Exiting Flow-Claude...")
-        self.rich_ui.console.print()
+        print("\n  Exiting Flow-Claude...\n")
 
     async def run_session(self, request: str):
         """Run a single development session - process one request with concurrent input"""
@@ -270,10 +270,10 @@ class SimpleCLI:
         loop = asyncio.get_event_loop()
         self.logger.debug("Input loop started")
 
-        # Don't enable footer yet - will enable after first input
-        # This way the footer appears below the input line
-        footer_enabled = False
-        footer_text = "Press ESC to interrupt | Type for follow-up | \\q to quit"
+        # Show initial prompt with top border
+        print("\n" + "-" * 78)
+        print("  Press ESC to interrupt current task | Type text for follow-up | \\q to quit")
+        print("-" * 78)
 
         while not self.shutdown_requested:
             try:
@@ -286,20 +286,15 @@ class SimpleCLI:
                 if esc_pressed == "ESC":
                     # ESC pressed - interrupt current task
                     self.logger.info("User pressed ESC - interrupting task")
-
-                    # Enable footer if not already enabled
-                    if not footer_enabled:
-                        footer_enabled = True
-                        self.rich_ui.enable_fixed_footer(footer_text)
-
-                    self.rich_ui.print_warning("Interrupting current task...")
+                    print("\n  [ESC] Interrupting current task...")
 
                     # Send stop signal to run_development_session for interrupt
                     await self.control_queue.put({
                         "type": "stop"
                     })
 
-                    self.rich_ui.print_info("Task will be interrupted. Type new request or \\q to quit.")
+                    print("  Task will be interrupted. Type new request or \\q to quit.")
+                    print("-" * 78)
                     continue
 
                 elif esc_pressed is None:
@@ -310,22 +305,19 @@ class SimpleCLI:
                 # Got text input
                 user_input = esc_pressed.strip()
 
+                # Print bottom border
+                print("-" * 78)
+
                 # Handle different input types
                 if not user_input:
-                    # Empty input - continue waiting
+                    # Empty input - show top border and prompt again
+                    print("-" * 78)
                     continue
 
-                # Enable footer after receiving actual input (not empty)
-                if not footer_enabled:
-                    footer_enabled = True
-                    self.rich_ui.enable_fixed_footer(footer_text)
-
-                if user_input in ['\\q', '\\exit', 'q']:
+                elif user_input in ['\\q', '\\exit', 'q']:
                     # Quit entire CLI - send shutdown to control_queue
                     self.logger.info("User requested quit")
-                    self.rich_ui.disable_fixed_footer()
-                    self.rich_ui.console.print()
-                    self.rich_ui.print_info("Shutting down... Please wait.")
+                    print("\n  Shutting down... Please wait.")
                     self.shutdown_requested = True
                     self.should_exit_cli = True
 
@@ -348,7 +340,8 @@ class SimpleCLI:
                             "timestamp": datetime.now().isoformat()
                         }
                     })
-                    self.rich_ui.print_success("Request queued. Will process after current task completes.")
+                    print("  ✓ Request queued. Will process after current task completes.")
+                    print("-" * 78)
                     # Loop continues - user can keep typing more requests
 
             except asyncio.CancelledError:
@@ -357,17 +350,12 @@ class SimpleCLI:
             except KeyboardInterrupt:
                 # Ctrl+C - quit CLI
                 self.logger.info("Keyboard interrupt - quitting")
-                self.rich_ui.disable_fixed_footer()
-                self.rich_ui.console.print()
-                self.rich_ui.print_warning("Interrupted. Quitting...")
+                print("\n\n  Interrupted. Quitting...")
                 self.shutdown_requested = True
                 self.should_exit_cli = True
 
                 await self.control_queue.put({"type": "shutdown"})
                 break
-
-        # Disable fixed footer when exiting input loop
-        self.rich_ui.disable_fixed_footer()
 
     def _check_for_esc_or_input(self) -> Optional[str]:
         """Check for ESC key press or read line input. Returns 'ESC', text, or None."""
@@ -954,14 +942,15 @@ Added agent instruction files for Flow-Claude v6.7
         use_questionary = is_interactive
         questionary_failed = False
 
-        # Show simple prompt using Rich UI
+        # Show input border (once per get_request call)
         if is_first_request:
-            self.rich_ui.console.print()
-            self.rich_ui.show_input_prompt(is_initial=True)
+            print("\n" + "=" * 78)
+            print("  Enter your request below (or use \\help for commands):")
+            print("=" * 78)
         else:
-            self.rich_ui.console.print()
-            prompt_text = "Enter your next request (or \\q to quit)"
-            self.rich_ui.console.print(prompt_text, style="cyan")
+            print("\n" + "-" * 78)
+            print("  Next request:")
+            print("-" * 78)
 
         while True:
 
