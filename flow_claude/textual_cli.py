@@ -9,6 +9,7 @@ from typing import Optional
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.widgets import Footer, Input, RichLog
+from textual.suggester import Suggester
 from textual import on
 
 from flow_claude.logging_config import get_logger, cleanup_old_logs
@@ -104,6 +105,40 @@ class TextualStderr(TextualStdout):
             pass
 
 
+class SlashCommandSuggester(Suggester):
+    """Autocomplete suggester for slash commands."""
+
+    def __init__(self):
+        """Initialize with slash command list."""
+        self.commands = [
+            "\\parallel",
+            "\\model",
+            "\\verbose",
+            "\\debug",
+            "\\auto",
+            "\\init",
+            "\\help",
+            "\\exit",
+            "\\q"
+        ]
+        super().__init__(case_sensitive=False)
+
+    async def get_suggestion(self, value: str) -> str | None:
+        """Get suggestion for current input value.
+
+        Returns the first matching command that starts with the typed value.
+        """
+        if not value or not value.startswith("\\"):
+            return None
+
+        value_lower = value.lower()
+        for cmd in self.commands:
+            if cmd.lower().startswith(value_lower) and len(cmd) > len(value):
+                return cmd
+
+        return None
+
+
 class FlowCLI(App):
     """Textual UI for Flow-Claude interactive sessions."""
 
@@ -160,7 +195,11 @@ class FlowCLI(App):
             markup=True,
             highlight=True
         )
-        yield Input(id="main-input", placeholder="Enter your request...")
+        yield Input(
+            id="main-input",
+            placeholder="Enter your request...",
+            suggester=SlashCommandSuggester()
+        )
         yield Footer()
 
     async def on_mount(self) -> None:

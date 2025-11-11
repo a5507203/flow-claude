@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python:*)",
       "Bash(ruff check:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "WebSearch",
+      "WebFetch(domain:textual.textualize.io)"
     ],
     "deny": [],
     "ask": []
