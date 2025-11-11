@@ -892,19 +892,19 @@ The user agent is available for key decision points:
 
                 # Handle shutdown
                 if control.get("type") == "shutdown":
-                    output_message("\nUser requested exit\n", agent="SHUTDOWN")
+                    click.echo("\n[SHUTDOWN] User requested exit\n")
                     break
 
                 # Handle intervention (normal request)
                 if control.get("type") == "intervention":
                     user_request = control.get("data", {}).get("requirement", "")
                     if not user_request:
-                        output_message("Empty request received", agent="WARNING")
+                        click.echo("WARNING: Empty request received", err=True)
                         continue
 
-                    output_message(f"\nProcessing: {user_request}\n", agent="REQUEST")
+                    click.echo(f"\n[REQUEST] Processing: {user_request}\n")
                     if debug:
-                        output_message("Sending query to SDK...", agent="DEBUG")
+                        click.echo(f"DEBUG: Sending query to SDK...")
 
                     # Send query
                     prompt = create_query_prompt(user_request)
@@ -922,7 +922,7 @@ The user agent is available for key decision points:
 
                                 if peek_control.get("type") == "stop":
                                     # User requested stop - interrupt current task
-                                    output_message("\nInterrupting current task...\n", agent="STOP")
+                                    click.echo("\n[STOP] Interrupting current task...\n")
                                     await client.interrupt()
                                     interrupted = True
                                     break
@@ -931,7 +931,7 @@ The user agent is available for key decision points:
                                     # Follow-up request - put back in queue for next iteration
                                     await control_queue.put(peek_control)
                                     if debug:
-                                        output_message("Follow-up request queued", agent="DEBUG")
+                                        click.echo(f"DEBUG: Follow-up request queued")
 
                                 elif peek_control.get("type") == "shutdown":
                                     # Shutdown request - put back and break
@@ -942,22 +942,22 @@ The user agent is available for key decision points:
                                 pass
 
                     if interrupted:
-                        output_message("Task interrupted. Waiting for next request...", agent="STOP")
+                        click.echo("[STOP] Task interrupted. Waiting for next request...")
                     else:
-                        output_message("\n" + "=" * 60)
-                        output_message("Request complete. Waiting for next request...")
-                        output_message("=" * 60)
+                        click.echo("\n" + "=" * 60)
+                        click.echo("Request complete. Waiting for next request...")
+                        click.echo("=" * 60)
 
                     # Loop back to wait for next request (same SDK session!)
                     continue
 
                 # Unknown control type
                 else:
-                    output_message(f"Unknown control type: {control.get('type')}", agent="WARNING")
+                    click.echo(f"WARNING: Unknown control type: {control.get('type')}", err=True)
                     continue
 
             # Session ended
-            output_message("\nSDK session ended")
+            click.echo("\nSDK session ended")
 
     except Exception as e:
         click.echo(f"\nERROR: Error during development session: {e}", err=True)

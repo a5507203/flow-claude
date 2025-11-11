@@ -67,19 +67,12 @@ class TextualStdout:
 
     def flush(self):
         """Flush buffered content."""
-        if self._buffer:
+        if self._buffer.strip():
             try:
-                # Write any remaining buffer content
                 self.app.call_from_thread(self._write_to_log, self._buffer)
-            except:
-                try:
-                    # Fallback to original stdout
-                    self.original_stdout.write(self._buffer)
-                    self.original_stdout.flush()
-                except:
-                    pass
-            finally:
                 self._buffer = ""
+            except:
+                pass
 
     def fileno(self):
         """Return invalid file descriptor to prevent real file operations."""
@@ -281,12 +274,6 @@ class FlowCLI(App):
                 "type": "intervention",
                 "data": {"requirement": request}
             })
-            if self.debug_mode:
-                self._log(f"[dim]DEBUG: Intervention queued: {request[:50]}...[/dim]")
-
-            # Ensure UI is responsive
-            log = self.query_one(RichLog)
-            log.scroll_end(animate=False)
 
     async def run_orchestrator(self, request: str):
         """Run the orchestrator session (runs in background)."""
@@ -400,20 +387,9 @@ class FlowCLI(App):
         log = self.query_one(RichLog)
         self._log("\n[bold yellow][ESC] Interrupting current task...[/bold yellow]")
 
-        # Flush any buffered output before interrupt
-        if hasattr(sys.stdout, 'flush'):
-            try:
-                sys.stdout.flush()
-                if hasattr(sys.stderr, 'flush'):
-                    sys.stderr.flush()
-            except:
-                pass
-
         # Send stop signal to control queue
         if self.control_queue:
             asyncio.create_task(self.control_queue.put({"type": "stop"}))
-            if self.debug_mode:
-                self._log("[dim]DEBUG: Stop signal queued[/dim]")
 
         self._log("[dim]Task will be interrupted. Type new request to continue.[/dim]\n")
 
