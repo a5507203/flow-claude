@@ -219,8 +219,11 @@ class FlowCLI(App):
 
     async def show_welcome(self) -> None:
         """Show welcome banner."""
-        banner = """[bold cyan]Flow-Claude v6.7[/bold cyan]
+        banner = f"""[bold cyan]Flow-Claude v6.7[/bold cyan]
 [dim]Git-First Autonomous Development System[/dim]
+
+[bold]Current Settings:[/bold]
+  Model: [cyan]{self.model}[/cyan]  |  Parallel: [cyan]{self.max_parallel}[/cyan]  |  Verbose: [cyan]{'ON' if self.verbose_mode else 'OFF'}[/cyan]  |  Debug: [cyan]{'ON' if self.debug_mode else 'OFF'}[/cyan]  |  Auto: [cyan]{'ON' if self.auto_mode else 'OFF'}[/cyan]
 
 [bold]Commands:[/bold]
   \\parallel  - Set max parallel workers    \\model     - Select Claude model
@@ -404,15 +407,53 @@ class FlowCLI(App):
                 self._log(f"[dim]Available: sonnet, opus, haiku[/dim]")
             return True
         elif cmd == '\\init':
-            # Generate CLAUDE.md template
+            # Generate CLAUDE.md with Claude Code (or template fallback)
+            # Run in background to keep UI responsive
             self._log("[dim]Generating CLAUDE.md...[/dim]")
-            try:
-                self.generate_claude_md()
-                self._log("[green]✓ CLAUDE.md created successfully[/green]")
-            except Exception as e:
-                self._log(f"[red]Error generating CLAUDE.md: {e}[/red]")
+            self.run_worker(self._generate_claude_md_worker, thread=True)
             return True
         return False
+
+    def _generate_claude_md_worker(self) -> None:
+        """Worker function to generate CLAUDE.md in background thread."""
+        from pathlib import Path
+        from flow_claude.setup_ui import claude_generator
+
+        try:
+            # Check if Claude Code is available
+            if claude_generator.check_claude_code_available():
+                self.app.call_from_thread(
+                    self._log, "[yellow]Analyzing project with Claude Code...[/yellow]"
+                )
+                self.app.call_from_thread(
+                    self._log, "[dim]This may take up to 3 minutes...[/dim]"
+                )
+            else:
+                self.app.call_from_thread(
+                    self._log, "[yellow]Claude Code not found, using template...[/yellow]"
+                )
+
+            # Generate (tries Claude Code first, falls back to template)
+            success, method, error = claude_generator.generate_claude_md(Path.cwd())
+
+            if success:
+                if method == "claude_code":
+                    self.app.call_from_thread(
+                        self._log, "[green]✓ CLAUDE.md generated with AI[/green]"
+                    )
+                else:
+                    self.app.call_from_thread(
+                        self._log, "[green]✓ CLAUDE.md created from template[/green]"
+                    )
+            else:
+                self.app.call_from_thread(
+                    self._log, f"[red]Error: {error}[/red]"
+                )
+
+        except Exception as e:
+            self.app.call_from_thread(
+                self._log, f"[red]Error generating CLAUDE.md: {e}[/red]"
+            )
 
     def generate_claude_md(self):
         """Generate CLAUDE.md template in current directory"""
@@ -505,9 +546,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 \\verbose     - Toggle verbose output
 \\debug       - Toggle debug mode
 \\auto        - Toggle autonomous mode
-\\init        - Generate CLAUDE.md template
+\\init        - Generate CLAUDE.md with Claude Code
 \\help        - Show this help
-\\exit, \\q   - Exit Flow-Claude"""
+\\exit, \\q   - Exit Flow-Claude
+
+[dim]Note: Settings changes apply immediately for new requests.[/dim]"""
         log = self.query_one(RichLog)
         self._log(help_text)
 
