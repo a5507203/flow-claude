@@ -8,9 +8,10 @@ from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Footer, Input, RichLog
-from textual.suggester import Suggester
+from textual.widgets import Footer, RichLog, TextArea, Label, Static
+from textual.containers import Container
 from textual import on
+from textual.events import Key
 
 from flow_claude.logging_config import get_logger, cleanup_old_logs
 
@@ -105,40 +106,6 @@ class TextualStderr(TextualStdout):
             pass
 
 
-class SlashCommandSuggester(Suggester):
-    """Autocomplete suggester for slash commands."""
-
-    def __init__(self):
-        """Initialize with slash command list."""
-        self.commands = [
-            "\\parallel",
-            "\\model",
-            "\\verbose",
-            "\\debug",
-            "\\auto",
-            "\\init",
-            "\\help",
-            "\\exit",
-            "\\q"
-        ]
-        super().__init__(case_sensitive=False)
-
-    async def get_suggestion(self, value: str) -> str | None:
-        """Get suggestion for current input value.
-
-        Returns the first matching command that starts with the typed value.
-        """
-        if not value or not value.startswith("\\"):
-            return None
-
-        value_lower = value.lower()
-        for cmd in self.commands:
-            if cmd.lower().startswith(value_lower) and len(cmd) > len(value):
-                return cmd
-
-        return None
-
-
 class FlowCLI(App):
     """Textual UI for Flow-Claude interactive sessions."""
 
@@ -148,10 +115,44 @@ class FlowCLI(App):
         background: $surface;
         border: solid $panel;
     }
-    #main-input {
+
+    #input-container {
         dock: bottom;
+        height: auto;
+        background: $surface;
+        padding: 0;
+    }
+
+    #input-hint {
+        width: 100%;
+        height: 1;
+        color: $text-muted;
+        background: $panel;
+        padding: 0 1;
+        text-style: italic;
+    }
+
+    #main-input {
+        min-height: 3;
+        max-height: 20;
+        height: auto;
         background: $surface;
         border: solid $panel;
+        margin-top: 0;
+    }
+
+    #suggestions {
+        width: 100%;
+        height: auto;
+        max-height: 3;
+        color: $accent;
+        background: $panel;
+        padding: 0 1;
+        display: none;
+    }
+
+    #suggestions.visible {
+        display: block;
     }
     """
 
@@ -159,6 +160,7 @@ class FlowCLI(App):
         Binding("q", "quit", "Quit", show=True),
         Binding("escape", "interrupt", "Interrupt", show=True),
         Binding("h", "help", "Help", show=True),
+        Binding("ctrl+enter", "submit_request", "Submit", show=True),
     ]
 
     def __init__(self, model: str = 'sonnet', max_parallel: int = 3,
@@ -185,6 +187,19 @@ class FlowCLI(App):
         self._awaiting_initial_request = True
         self._orchestrator_start_lock = asyncio.Lock()  # Prevent race condition on startup
 
+        # Slash command autocomplete
+        self.slash_commands = {
+            "\\parallel": "Set max parallel workers (1-10)",
+            "\\model": "Select Claude model (sonnet/opus/haiku)",
+            "\\verbose": "Toggle verbose output",
+            "\\debug": "Toggle debug mode",
+            "\\auto": "Toggle autonomous mode",
+            "\\init": "Generate CLAUDE.md",
+            "\\help": "Show help",
+            "\\exit": "Exit Flow-Claude",
+            "\\q": "Exit Flow-Claude"
+        }
+
     def compose(self) -> ComposeResult:
         """Create child widgets."""
         yield RichLog(
@@ -195,11 +210,12 @@ class FlowCLI(App):
             markup=True,
             highlight=True
         )
-        yield Input(
-            id="main-input",
-            placeholder="Enter your request...",
-            suggester=SlashCommandSuggester()
-        )
+        with Container(id="input-container"):
+            yield Label("Ctrl+Enter to submit  |  Type \\ for command suggestions", id="input-hint")
+            yield Static("", id="suggestions")
+            text_area = TextArea(id="main-input")
+            text_area.border_subtitle = "Ctrl+Enter to submit"
+            yield text_area
         yield Footer()
 
     async def on_mount(self) -> None:
@@ -234,7 +250,7 @@ class FlowCLI(App):
         self.ensure_prompt_files()
 
         # Focus input for user to start
-        input_widget = self.query_one("#main-input", Input)
+        input_widget = self.query_one("#main-input", TextArea)
         input_widget.focus()
 
     async def on_unmount(self) -> None:
@@ -276,15 +292,51 @@ class FlowCLI(App):
             self._log(line)
         self._log("")
 
-    @on(Input.Submitted)
-    async def handle_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle input submission - works concurrently with orchestrator."""
-        request = event.input.value.strip()
-        event.input.value = ""  # Clear input immediately
+    def action_submit_request(self) -> None:
+        """Handle Ctrl+Enter to submit request from TextArea."""
+        # Get text from TextArea
+        text_area = self.query_one("#main-input", TextArea)
+        request = text_area.text.strip()
+        text_area.text = ""  # Clear text area immediately
 
         if not request:
             return
 
+        # Run async handler in event loop
+        asyncio.create_task(self._handle_request_async(request))
+
+    @on(TextArea.Changed, "#main-input")
+    def update_slash_command_suggestions(self, event: TextArea.Changed) -> None:
+        """Update suggestions based on current text in TextArea."""
+        text = event.text_area.text
+        suggestions_widget = self.query_one("#suggestions", Static)
+
+        # Get the last line (where user is currently typing)
+        lines = text.split('\n')
+        current_line = lines[-1].strip() if lines else ""
+
+        # Only show suggestions if current line starts with backslash
+        if not current_line or not current_line.startswith('\\'):
+            suggestions_widget.update("")
+            suggestions_widget.remove_class("visible")
+            return
+
+        # Find matching commands
+        matches = []
+        for cmd, desc in self.slash_commands.items():
+            if cmd.startswith(current_line.lower()) or cmd.startswith(current_line):
+                matches.append(f"[cyan]{cmd}[/cyan] - {desc}")
+
+        if matches:
+            suggestions_text = " | ".join(matches[:3])  # Show max 3 suggestions
+            suggestions_widget.update(suggestions_text)
+            suggestions_widget.add_class("visible")
+        else:
+            suggestions_widget.update("")
+            suggestions_widget.remove_class("visible")
+
+    async def _handle_request_async(self, request: str) -> None:
+        """Async handler for request submission."""
         log = self.query_one(RichLog)
         self._log(f"[bold cyan]> {request}[/bold cyan]")
 
