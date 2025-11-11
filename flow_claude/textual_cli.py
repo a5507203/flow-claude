@@ -492,7 +492,11 @@ class FlowCLI(App):
         prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
 
         def get_prompt_file(local_name, fallback_name):
-            local_path = os.path.join(working_dir, local_name)
+            # Store prompt files in .flow-claude/ directory
+            flow_claude_dir = os.path.join(working_dir, '.flow-claude')
+            os.makedirs(flow_claude_dir, exist_ok=True)
+
+            local_path = os.path.join(flow_claude_dir, local_name)
             default_path = os.path.join(prompts_dir, fallback_name)
             if not os.path.exists(local_path):
                 import shutil

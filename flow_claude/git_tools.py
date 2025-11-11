@@ -552,8 +552,11 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             timeout=10
         )
 
-        # Copy instruction files from flow_claude/prompts/
+        # Copy instruction files from flow_claude/prompts/ to .flow-claude/
         prompts_dir = Path(__file__).parent / "prompts"
+        flow_claude_dir = Path.cwd() / ".flow-claude"
+        flow_claude_dir.mkdir(exist_ok=True)
+
         instruction_files = [
             ("orchestrator.md", "ORCHESTRATOR_INSTRUCTIONS.md"),
             ("planner.md", "PLANNER_INSTRUCTIONS.md"),
@@ -564,9 +567,10 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
         copied_files = []
         for source_file, dest_file in instruction_files:
             source_path = prompts_dir / source_file
+            dest_path = flow_claude_dir / dest_file
             if source_path.exists():
-                shutil.copy2(source_path, dest_file)
-                copied_files.append(dest_file)
+                shutil.copy2(source_path, dest_path)
+                copied_files.append(str(dest_path.relative_to(Path.cwd())))
             else:
                 # Rollback on error
                 subprocess.run(['git', 'checkout', current_branch], capture_output=True, timeout=5)
@@ -884,8 +888,11 @@ async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             timeout=10
         )
 
-        # Copy instruction files from flow_claude/prompts/
+        # Copy instruction files from flow_claude/prompts/ to .flow-claude/
         prompts_dir = Path(__file__).parent / "prompts"
+        flow_claude_dir = Path.cwd() / ".flow-claude"
+        flow_claude_dir.mkdir(exist_ok=True)
+
         instruction_files = [
             ("orchestrator.md", "ORCHESTRATOR_INSTRUCTIONS.md"),
             ("planner.md", "PLANNER_INSTRUCTIONS.md"),
@@ -896,9 +903,10 @@ async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
         copied_files = []
         for source_file, dest_file in instruction_files:
             source_path = prompts_dir / source_file
+            dest_path = flow_claude_dir / dest_file
             if source_path.exists():
-                shutil.copy2(source_path, dest_file)
-                copied_files.append(dest_file)
+                shutil.copy2(source_path, dest_path)
+                copied_files.append(str(dest_path.relative_to(Path.cwd())))
             else:
                 # Rollback on error
                 subprocess.run(['git', 'checkout', current_branch], capture_output=True, timeout=5)

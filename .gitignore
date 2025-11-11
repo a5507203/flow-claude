@@ -1,2 +1,3 @@
 /flow_claude/commands/__pycache__
 /flow_claude/__pycache__
+*.pyc
