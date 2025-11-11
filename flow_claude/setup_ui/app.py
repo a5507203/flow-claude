@@ -65,7 +65,7 @@ class SetupUI(App):
         if not git_utils.check_flow_branch_exists():
             self.setup_flow_branch()
         else:
-            # Flow branch exists, skip to CLAUDE.md check
+            # Flow branch exists - skip to CLAUDE.md check
             self.check_and_prompt_claude_md()
 
     def setup_flow_branch(self) -> None:

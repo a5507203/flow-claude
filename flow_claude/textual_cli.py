@@ -4,16 +4,80 @@ import asyncio
 import os
 import sys
 from datetime import datetime
+from time import sleep
 from typing import Optional
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.widgets import Footer, RichLog, TextArea, Label, Static, Button
+from textual.widgets import Footer, RichLog, Label, Static, Button
 from textual.containers import Container, Horizontal
 from textual import on
 from textual.events import Key
 
 from flow_claude.logging_config import get_logger, cleanup_old_logs
+
+from textual.widgets import TextArea
+from textual import events
+
+
+
+
+
+
+class SubmittingTextArea(TextArea):
+    """Custom SubmittingTextArea that submits on Enter (unless Ctrl is pressed)."""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pre_key = "" 
+
+
+    async def _on_key(self, event: events.Key) -> None:
+        """Handle key presses which correspond to document inserts."""
+
+        self._restart_blink()
+
+        if self.read_only:
+            return
+
+        key = event.key
+        insert_values = {
+            "backslash":"\n",
+        }
+
+        if self.pre_key!="backslash" and event.key=="enter":
+            event.prevent_default()
+            event.stop()
+            # Call app’s submit logic
+            self.app.action_submit_request()
+            self.pre_key=key
+            return
+
+        if self.tab_behavior == "indent":
+            if key == "escape":
+                event.stop()
+                event.prevent_default()
+                self.screen.focus_next()
+                self.pre_key = key
+                return
+            if self.indent_type == "tabs":
+                insert_values["tab"] = "\t"
+            else:
+                insert_values["tab"] = " " * self._find_columns_to_next_tab_stop()
+
+        if event.is_printable or key in insert_values:
+            event.stop()
+            event.prevent_default()
+            insert = insert_values.get(key, event.character)
+            # `insert` is not None because event.character cannot be
+            # None because we've checked that it's printable.
+            assert insert is not None
+            start, end = self.selection
+            self._replace_via_keyboard(insert, start, end)
+        
+
+        self.pre_key = key
+
 
 
 class TextualStdout:
@@ -169,10 +233,9 @@ class FlowCLI(App):
     """
 
     BINDINGS = [
-        Binding("q", "quit", "Quit", show=True),
+        Binding("ctrl+c", "quit", "Quit", show=True),
         Binding("escape", "interrupt", "Interrupt", show=True),
-        Binding("h", "help", "Help", show=True),
-        Binding("ctrl+s", "submit_request", "Submit", show=True),
+
     ]
 
     def __init__(self, model: str = 'sonnet', max_parallel: int = 3,
@@ -201,15 +264,15 @@ class FlowCLI(App):
 
         # Slash command autocomplete
         self.slash_commands = {
-            "\\parallel": "Set max parallel workers (1-10)",
-            "\\model": "Select Claude model (sonnet/opus/haiku)",
-            "\\verbose": "Toggle verbose output",
-            "\\debug": "Toggle debug mode",
-            "\\auto": "Toggle autonomous mode",
-            "\\init": "Generate CLAUDE.md",
-            "\\help": "Show help",
-            "\\exit": "Exit Flow-Claude",
-            "\\q": "Exit Flow-Claude"
+            "/parallel": "Set max parallel workers (1-10)",
+            "/model": "Select Claude model (sonnet/opus/haiku)",
+            "/verbose": "Toggle verbose output",
+            "/debug": "Toggle debug mode",
+            "/auto": "Toggle autonomous mode",
+            "/init": "Generate CLAUDE.md",
+            "/help": "Show help",
+            "/exit": "Exit Flow-Claude",
+            "/q": "Exit Flow-Claude"
         }
 
     def compose(self) -> ComposeResult:
@@ -223,9 +286,9 @@ class FlowCLI(App):
             highlight=True
         )
         with Container(id="input-container"):
-            yield Label("Click Submit or press Ctrl+S  |  Type \\ for commands", id="input-hint")
+            yield Label("Press Enter to submit  |  Use \\ for new line  |  Type / for commands", id="input-hint")
             yield Static("", id="suggestions")
-            text_area = TextArea(id="main-input")
+            text_area = SubmittingTextArea(id="main-input")
             text_area.border_subtitle = "Multi-line input"
             yield text_area
         yield Footer()
@@ -262,7 +325,7 @@ class FlowCLI(App):
         self.ensure_prompt_files()
 
         # Focus input for user to start
-        input_widget = self.query_one("#main-input", TextArea)
+        input_widget = self.query_one("#main-input", SubmittingTextArea)
         input_widget.focus()
 
     async def on_unmount(self) -> None:
@@ -298,34 +361,34 @@ class FlowCLI(App):
   Model: [cyan]{self.model}[/cyan]  |  Parallel: [cyan]{self.max_parallel}[/cyan]  |  Verbose: [cyan]{'ON' if self.verbose_mode else 'OFF'}[/cyan]  |  Debug: [cyan]{'ON' if self.debug_mode else 'OFF'}[/cyan]  |  Auto: [cyan]{'ON' if self.auto_mode else 'OFF'}[/cyan]
 
 [bold]Commands:[/bold]
-  \\parallel  - Set max parallel workers    \\model     - Select Claude model
-  \\verbose   - Toggle verbose output       \\debug     - Toggle debug mode
-  \\auto      - Toggle autonomous mode      \\init      - Generate CLAUDE.md
-  \\help      - Show help                    \\exit      - Exit Flow-Claude
+  /parallel  - Set max parallel workers    /model     - Select Claude model
+  /verbose   - Toggle verbose output       /debug     - Toggle debug mode
+  /auto      - Toggle autonomous mode      /init      - Generate CLAUDE.md
+  /help      - Show help                    /exit      - Exit Flow-Claude
 
-[bold]Keys:[/bold] Q=quit, ESC=interrupt, H=help
+[bold]Keys:[/bold] ctrl+c=quit, ESC=interrupt
 """
         for line in banner.split('\n'):
             self._log(line)
         self._log("")
 
-    async def on_key(self, event: Key) -> None:
-        """Handle key presses - intercept Enter to submit."""
-        # Only handle Enter key when TextArea is focused
-        if event.key == "enter":
-            text_area = self.query_one("#main-input", TextArea)
-            if text_area.has_focus:
-                # Check if Ctrl is pressed - allow Ctrl+Enter for new line
-                if not event.ctrl:
-                    # Plain Enter - submit the request
-                    event.prevent_default()
-                    event.stop()
-                    self.action_submit_request()
+    # async def on_key(self, event: Key) -> None:
+    #     """Handle key presses - intercept Enter to submit."""
+    #     # Only handle Enter key when SubmittingTextArea is focused
+    #     if event.key == "enter":
+    #         text_area = self.query_one("#main-input", SubmittingTextArea)
+    #         if text_area.has_focus:
+    #             # Check if Ctrl is pressed - allow Ctrl+Enter for new line
+    #             if not event.ctrl:
+    #                 # Plain Enter - submit the request
+    #                 event.prevent_default()
+    #                 event.stop()
+    #                 self.action_submit_request()
 
     def action_submit_request(self) -> None:
-        """Submit request from TextArea."""
-        # Get text from TextArea
-        text_area = self.query_one("#main-input", TextArea)
+        """Submit request from SubmittingTextArea."""
+        # Get text from SubmittingTextArea
+        text_area = self.query_one("#main-input", SubmittingTextArea)
         request = text_area.text.strip()
         text_area.text = ""  # Clear text area immediately
         text_area.styles.height = 3  # Reset to minimum height
@@ -341,14 +404,14 @@ class FlowCLI(App):
         # Run async handler in event loop
         asyncio.create_task(self._handle_request_async(request))
 
-    @on(TextArea.Changed, "#main-input")
-    def update_slash_command_suggestions(self, event: TextArea.Changed) -> None:
-        """Update suggestions and auto-resize TextArea based on content."""
+    @on(SubmittingTextArea.Changed, "#main-input")
+    def update_slash_command_suggestions(self, event: SubmittingTextArea.Changed) -> None:
+        """Update suggestions and auto-resize SubmittingTextArea based on content."""
         text = event.text_area.text
         suggestions_widget = self.query_one("#suggestions", Static)
         text_area = event.text_area
 
-        # Auto-resize TextArea based on line count
+        # Auto-resize SubmittingTextArea based on line count
         lines = text.split('\n')
         line_count = len(lines)
 
@@ -359,8 +422,8 @@ class FlowCLI(App):
         # Get the last line (where user is currently typing)
         current_line = lines[-1].strip() if lines else ""
 
-        # Only show suggestions if current line starts with backslash
-        if not current_line or not current_line.startswith('\\'):
+        # Only show suggestions if current line starts with forward slash
+        if not current_line or not current_line.startswith('/'):
             suggestions_widget.update("")
             suggestions_widget.remove_class("visible")
             return
@@ -385,12 +448,12 @@ class FlowCLI(App):
         self._log(f"[bold cyan]> {request}[/bold cyan]")
 
         # Handle exit commands
-        if request in ['\\exit', '\\q']:
+        if request in ['/exit', '/q']:
             self.action_quit()
             return
 
         # Handle slash commands
-        if request.startswith('\\'):
+        if request.startswith('/'):
             handled = await self.handle_slash_command(request)
             if handled:
                 return
@@ -497,28 +560,28 @@ class FlowCLI(App):
         cmd = cmd_parts[0].lower()
         log = self.query_one(RichLog)
 
-        if cmd in ['\\exit', '\\q']:
+        if cmd in ['/exit', '/q']:
             self.exit()
             return True
-        elif cmd == '\\help':
+        elif cmd == '/help':
             self.action_help()
             return True
-        elif cmd == '\\verbose':
+        elif cmd == '/verbose':
             self.verbose_mode = not self.verbose_mode
             self._log(f"[green]✓ Verbose mode: {'ON' if self.verbose_mode else 'OFF'}[/green]")
             self._show_current_settings()
             return True
-        elif cmd == '\\debug':
+        elif cmd == '/debug':
             self.debug_mode = not self.debug_mode
             self._log(f"[green]✓ Debug mode: {'ON' if self.debug_mode else 'OFF'}[/green]")
             self._show_current_settings()
             return True
-        elif cmd == '\\auto':
+        elif cmd == '/auto':
             self.auto_mode = not self.auto_mode
             self._log(f"[green]✓ Autonomous mode: {'ON' if self.auto_mode else 'OFF'}[/green]")
             self._show_current_settings()
             return True
-        elif cmd == '\\parallel':
+        elif cmd == '/parallel':
             # Set max parallel workers
             if len(cmd_parts) > 1 and cmd_parts[1].isdigit():
                 new_value = int(cmd_parts[1])
@@ -529,9 +592,9 @@ class FlowCLI(App):
                 else:
                     self._log(f"[yellow]Invalid value. Must be between 1 and 10.[/yellow]")
             else:
-                self._log(f"[yellow]Usage: \\parallel <number> (current: {self.max_parallel})[/yellow]")
+                self._log(f"[yellow]Usage: /parallel <number> (current: {self.max_parallel})[/yellow]")
             return True
-        elif cmd == '\\model':
+        elif cmd == '/model':
             # Select Claude model
             if len(cmd_parts) > 1:
                 new_model = cmd_parts[1].lower()
@@ -543,10 +606,10 @@ class FlowCLI(App):
                 else:
                     self._log(f"[yellow]Invalid model. Choose: sonnet, opus, haiku[/yellow]")
             else:
-                self._log(f"[yellow]Usage: \\model <name> (current: {self.model})[/yellow]")
+                self._log(f"[yellow]Usage: /model <name> (current: {self.model})[/yellow]")
                 self._log(f"[dim]Available: sonnet, opus, haiku[/dim]")
             return True
-        elif cmd == '\\init':
+        elif cmd == '/init':
             # Generate CLAUDE.md with Claude Code (or template fallback)
             # Run in background to keep UI responsive
             self._log("[dim]Generating CLAUDE.md...[/dim]")
@@ -681,14 +744,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     def action_help(self) -> None:
         """Show help."""
         help_text = """[bold]Flow-Claude Commands:[/bold]
-\\parallel N  - Set max parallel workers (1-10)
-\\model NAME  - Select Claude model (sonnet/opus/haiku)
-\\verbose     - Toggle verbose output
-\\debug       - Toggle debug mode
-\\auto        - Toggle autonomous mode
-\\init        - Generate CLAUDE.md with Claude Code
-\\help        - Show this help
-\\exit, \\q   - Exit Flow-Claude
+/parallel N  - Set max parallel workers (1-10)
+/model NAME  - Select Claude model (sonnet/opus/haiku)
+/verbose     - Toggle verbose output
+/debug       - Toggle debug mode
+/auto        - Toggle autonomous mode
+/init        - Generate CLAUDE.md with Claude Code
+/help        - Show this help
+/exit, /q    - Exit Flow-Claude
 
 [dim]Note: Settings changes apply immediately for new requests.[/dim]"""
         log = self.query_one(RichLog)

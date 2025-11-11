@@ -14,8 +14,13 @@ from typing import Optional
 class FlowClaudeLogger:
     """Centralized logger for Flow-Claude sessions"""
 
-    def __init__(self, session_id: Optional[str] = None, log_dir: str = ".flow-claude/logs"):
+    def __init__(self, session_id: Optional[str] = None, log_dir: Optional[str] = None):
         self.session_id = session_id or datetime.now().strftime("session-%Y%m%d-%H%M%S")
+
+        # Use user home directory by default (~/.flow-claude/logs)
+        if log_dir is None:
+            log_dir = Path.home() / ".flow-claude" / "logs"
+
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -46,8 +51,6 @@ class FlowClaudeLogger:
         console_handler.setFormatter(console_formatter)
         self.logger.addHandler(console_handler)
 
-        # Ensure .flow-claude is in .gitignore (after logger is set up)
-        self._ensure_gitignore()
 
         # Log session start
         self.logger.info("=" * 80)
@@ -96,35 +99,6 @@ class FlowClaudeLogger:
         """Log process state change"""
         self.logger.info(f"Process state: {state} {details}")
 
-    def _ensure_gitignore(self):
-        """Ensure .flow-claude is in .gitignore"""
-        try:
-            gitignore_path = Path.cwd() / ".gitignore"
-            flow_claude_entry = ".flow-claude/"
-
-            # Read existing .gitignore if it exists
-            existing_lines = []
-            if gitignore_path.exists():
-                with open(gitignore_path, 'r', encoding='utf-8') as f:
-                    existing_lines = f.read().splitlines()
-
-            # Check if .flow-claude is already in .gitignore
-            if flow_claude_entry in existing_lines or ".flow-claude" in existing_lines:
-                return  # Already ignored
-
-            # Add .flow-claude to .gitignore
-            with open(gitignore_path, 'a', encoding='utf-8') as f:
-                # Add newline if file doesn't end with one
-                if existing_lines and existing_lines[-1].strip():
-                    f.write('\n')
-                f.write(f'\n# Flow-Claude session logs\n')
-                f.write(f'{flow_claude_entry}\n')
-
-            self.logger.info(f"Added .flow-claude/ to .gitignore")
-
-        except Exception as e:
-            # Don't fail if we can't update .gitignore
-            self.logger.warning(f"Could not update .gitignore: {e}")
 
     def close(self):
         """Close logger and handlers"""
@@ -142,11 +116,16 @@ def get_logger(session_id: Optional[str] = None) -> FlowClaudeLogger:
     return FlowClaudeLogger(session_id=session_id)
 
 
-def cleanup_old_logs(log_dir: str = ".flow-claude/logs", keep_days: int = 7):
+def cleanup_old_logs(log_dir: Optional[str] = None, keep_days: int = 7):
     """Remove log files older than specified days"""
     import time
 
-    log_path = Path(log_dir)
+    # Use user home directory by default (~/.flow-claude/logs)
+    if log_dir is None:
+        log_path = Path.home() / ".flow-claude" / "logs"
+    else:
+        log_path = Path(log_dir)
+
     if not log_path.exists():
         return
 

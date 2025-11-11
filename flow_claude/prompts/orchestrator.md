@@ -89,7 +89,7 @@ Invoke ALL wave workers **in a SINGLE message** for parallelization:
 {
   "subagent_type": "worker-1",
   "description": "Execute task-001",
-  "prompt": "**FIRST:** Read WORKER_INSTRUCTIONS.md from working directory for your complete workflow instructions.
+  "prompt": "**FIRST:** Read .flow-claude/WORKER_INSTRUCTIONS.md from working directory for your complete workflow instructions.
 
 Execute task on branch task/001-description
 
@@ -106,14 +106,14 @@ Execute task on branch task/001-description
 - Use `cd .worktrees/worker-1` if you need to change directory
 - All your work stays in this isolated directory until merge
 
-Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
+Follow the worker workflow from .flow-claude/WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
 }
 
 [Task tool call 2]
 {
   "subagent_type": "worker-2",
   "description": "Execute task-002",
-  "prompt": "**FIRST:** Read WORKER_INSTRUCTIONS.md from working directory for your complete workflow instructions.
+  "prompt": "**FIRST:** Read .flow-claude/WORKER_INSTRUCTIONS.md from working directory for your complete workflow instructions.
 
 Execute task on branch task/002-description
 
@@ -130,14 +130,14 @@ Execute task on branch task/002-description
 - Use `cd .worktrees/worker-2` if you need to change directory
 - All your work stays in this isolated directory until merge
 
-Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
+Follow the worker workflow from .flow-claude/WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
 }
 
 [Task tool call 3]
 {
   "subagent_type": "worker-3",
   "description": "Execute task-003",
-  "prompt": "**FIRST:** Read WORKER_INSTRUCTIONS.md from working directory for your complete workflow instructions.
+  "prompt": "**FIRST:** Read .flow-claude/WORKER_INSTRUCTIONS.md from working directory for your complete workflow instructions.
 
 Execute task on branch task/003-description
 
@@ -154,7 +154,7 @@ Execute task on branch task/003-description
 - Use `cd .worktrees/worker-3` if you need to change directory
 - All your work stays in this isolated directory until merge
 
-Follow the worker workflow from WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
+Follow the worker workflow from .flow-claude/WORKER_INSTRUCTIONS.md: implement, test, merge to flow, signal complete."
 }
 ```
 

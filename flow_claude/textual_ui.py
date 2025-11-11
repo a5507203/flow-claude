@@ -31,7 +31,7 @@ class FlowClaudeApp(App):
     """
 
     BINDINGS = [
-        Binding("q", "quit", "Quit", show=True),
+        Binding("ctrl+c", "quit", "Quit", show=True),
         Binding("escape", "interrupt", "Interrupt", show=True),
         Binding("h", "help", "Help", show=True),
     ]

@@ -30,6 +30,7 @@ def main(model, max_parallel, verbose, debug):
     try:
         from flow_claude.textual_cli import FlowCLI
         from flow_claude.setup_ui import run_setup_ui
+        from flow_claude.cli import setup_instruction_files
 
         # Run setup UI first (flow branch + CLAUDE.md)
         # Note: CLAUDE.md generation happens inside the UI with progress display
@@ -41,7 +42,13 @@ def main(model, max_parallel, verbose, debug):
                 print(f"\n  ✓ Created 'flow' branch from '{base_branch}'")
             if setup_results.get("claude_md_generated"):
                 print("  ✓ CLAUDE.md created and committed to flow branch")
-            if setup_results.get("flow_branch_created") or setup_results.get("claude_md_generated"):
+
+            # Setup instruction files after flow branch is ready
+            created_files = setup_instruction_files(debug=debug)
+            if created_files:
+                print(f"  ✓ Instruction files created in .flow-claude/")
+
+            if setup_results.get("flow_branch_created") or setup_results.get("claude_md_generated") or created_files:
                 print()  # Add spacing before main UI only if setup happened
         except Exception as e:
             # If setup UI fails, continue with main UI anyway

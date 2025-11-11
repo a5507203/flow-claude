@@ -43,6 +43,104 @@ def safe_echo(text: str, nl: bool = True, **kwargs):
         safe_text = text.encode('ascii', errors='replace').decode('ascii')
         click.echo(safe_text, nl=nl, **kwargs)
 
+
+def setup_instruction_files(debug: bool = False) -> list:
+    """Setup instruction files in .flow-claude/ directory.
+
+    This function:
+    1. Creates .flow-claude/ directory if needed
+    2. Copies default instruction files if they don't exist
+    3. Commits them to flow branch if on flow and files are new
+
+    Returns:
+        list: List of created file paths
+
+    This should be called after flow branch is created/checked out.
+    """
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    working_dir = os.getcwd()
+    prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
+
+    # Create .flow-claude directory
+    flow_claude_dir = os.path.join(working_dir, '.flow-claude')
+    os.makedirs(flow_claude_dir, exist_ok=True)
+
+    created_files = []
+
+    # Instruction files to copy
+    instruction_files = [
+        ('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md'),
+        ('PLANNER_INSTRUCTIONS.md', 'planner.md'),
+        ('WORKER_INSTRUCTIONS.md', 'worker.md'),
+        ('USER_PROXY_INSTRUCTIONS.md', 'user.md'),
+    ]
+
+    for local_name, fallback_name in instruction_files:
+        local_path = os.path.join(flow_claude_dir, local_name)
+        default_path = os.path.join(prompts_dir, fallback_name)
+
+        # Copy if doesn't exist
+        if not os.path.exists(local_path):
+            try:
+                shutil.copy2(default_path, local_path)
+                created_files.append(f".flow-claude/{local_name}")
+                if debug:
+                    click.echo(f"DEBUG: Copied {fallback_name} -> .flow-claude/{local_name}")
+            except Exception as e:
+                if debug:
+                    click.echo(f"DEBUG: Failed to copy {fallback_name}: {e}")
+
+    # Auto-commit if files were created and we're on flow branch
+    if created_files:
+        try:
+            # Check if git repo exists
+            if not Path('.git').exists():
+                if debug:
+                    click.echo("DEBUG: No git repository - skipping auto-commit")
+                return created_files
+
+            # Check current branch
+            result = subprocess.run(
+                ['git', 'branch', '--show-current'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            current_branch = result.stdout.strip()
+
+            if current_branch != 'flow':
+                if debug:
+                    click.echo(f"DEBUG: Not on flow branch ({current_branch}) - skipping auto-commit")
+                return created_files
+
+            # Stage files
+            subprocess.run(
+                ['git', 'add'] + created_files,
+                check=True,
+                timeout=10
+            )
+
+            # Commit
+            commit_message = "Initialize Flow-Claude instruction files\n\nAdded agent instruction files for Flow-Claude v6.7\n\n🤖 Auto-committed by Flow-Claude"
+            subprocess.run(
+                ['git', 'commit', '-m', commit_message],
+                check=True,
+                capture_output=True,
+                timeout=10
+            )
+
+            if debug:
+                click.echo(f"DEBUG: ✓ Committed instruction files to flow branch")
+
+        except Exception as e:
+            if debug:
+                click.echo(f"DEBUG: Could not auto-commit instruction files: {e}")
+
+    return created_files
+
 try:
     from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions, AgentDefinition
 except ImportError:
@@ -52,7 +150,7 @@ except ImportError:
     print("  npm install -g @anthropic-ai/claude-code", file=sys.stderr)
     sys.exit(1)
 
-from .agents import create_planning_agent, create_worker_agent
+
 from .git_tools import create_git_tools_server
 
 
@@ -255,8 +353,14 @@ def develop_DEPRECATED_DO_NOT_USE(
         )
 
         if flow_check.returncode == 0:
-            # Flow branch exists - use it
-            click.echo("\n✓ Flow branch found. Using existing flow branch for this session.")
+            # Flow branch exists - checkout to it
+            subprocess.run(
+                ['git', 'checkout', 'flow'],
+                capture_output=True,
+                check=True,
+                timeout=5
+            )
+            click.echo("\n✓ Flow branch found. Checked out to flow branch for this session.")
             base_branch = "flow"
         else:
             # Flow branch doesn't exist - need to create it
@@ -323,6 +427,14 @@ def develop_DEPRECATED_DO_NOT_USE(
             click.echo(f"\nCreating 'flow' branch from '{selected_base}'...")
             subprocess.run(
                 ['git', 'branch', 'flow', selected_base],
+                capture_output=True,
+                check=True,
+                timeout=5
+            )
+
+            # Checkout to flow branch so instruction files can be committed
+            subprocess.run(
+                ['git', 'checkout', 'flow'],
                 capture_output=True,
                 check=True,
                 timeout=5
@@ -428,8 +540,12 @@ def develop_DEPRECATED_DO_NOT_USE(
     created_instruction_files = []  # Track newly created files for auto-commit
 
     def get_prompt_file(local_name, fallback_name):
-        """Get prompt file from working dir, copying default if it doesn't exist."""
-        local_path = os.path.join(working_dir, local_name)
+        """Get prompt file from .flow-claude/ dir, copying default if it doesn't exist."""
+        # Store prompt files in .flow-claude/ directory
+        flow_claude_dir = os.path.join(working_dir, '.flow-claude')
+        os.makedirs(flow_claude_dir, exist_ok=True)
+
+        local_path = os.path.join(flow_claude_dir, local_name)
         default_path = os.path.abspath(os.path.join(prompts_dir, fallback_name))
 
         # If local prompt doesn't exist, copy the default template
@@ -437,9 +553,9 @@ def develop_DEPRECATED_DO_NOT_USE(
             try:
                 import shutil
                 shutil.copy2(default_path, local_path)
-                created_instruction_files.append(local_name)  # Track file was created
+                created_instruction_files.append(f".flow-claude/{local_name}")  # Track file was created
                 if debug:
-                    click.echo(f"DEBUG: Copied default prompt {fallback_name} -> {local_name}")
+                    click.echo(f"DEBUG: Copied default prompt {fallback_name} -> .flow-claude/{local_name}")
             except Exception as e:
                 # If copy fails, fall back to using default directly
                 if debug:
@@ -705,7 +821,8 @@ async def run_development_session(
                 'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob',
                 'mcp__git__parse_task',  # Read task metadata from branch
                 'mcp__git__parse_plan',  # Read plan context
-                'mcp__git__parse_worker_commit'  # Read own progress (commit-only architecture)
+                'mcp__git__parse_worker_commit',  # Read own progress (commit-only architecture)
+                'mcp__git__get_provides'  # Query available capabilities from completed tasks
             ],
             model=model
         )
@@ -820,7 +937,7 @@ Task tool:
 {{
   "subagent_type": "planner",
   "description": "Create plan and Wave 1 branches",
-  "prompt": "**FIRST:** Read your instructions at PLANNER_INSTRUCTIONS.md (if it exists in working directory).
+  "prompt": "**FIRST:** Read your instructions at .flow-claude/PLANNER_INSTRUCTIONS.md (if it exists in working directory).
 
 Create execution plan and Wave 1 task branches for this request:
 
@@ -831,7 +948,7 @@ Create execution plan and Wave 1 task branches for this request:
 - Plan Branch: {plan_branch}
 - Working Directory: {os.getcwd()}
 
-Follow your Phase 1 workflow from PLANNER_INSTRUCTIONS.md."
+Follow your Phase 1 workflow from .flow-claude/PLANNER_INSTRUCTIONS.md."
 }}
 ```
 
@@ -845,6 +962,7 @@ Follow your Phase 1 workflow from PLANNER_INSTRUCTIONS.md."
    # etc. One worktree per worker, linked to task branch
    ```
 3. Spawn ALL wave workers IN ONE MESSAGE for parallelization
+   - Each worker prompt should start with: "**FIRST:** Read .flow-claude/WORKER_INSTRUCTIONS.md for complete workflow"
    - Include **Worktree Path** in each worker's prompt (e.g., `.worktrees/worker-1`)
    - Workers use worktrees instead of git checkout (no conflicts!)
 4. Wait for workers to complete and merge

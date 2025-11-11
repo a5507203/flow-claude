@@ -58,7 +58,9 @@
       "Bash(if exist test_encoding_fix.py del test_encoding_fix.py)",
       "WebFetch(domain:pypi.org)",
       "WebFetch(domain:questionary.readthedocs.io)",
-      "WebFetch(domain:rich.readthedocs.io)"
+      "WebFetch(domain:rich.readthedocs.io)",
+      "Bash(git rev-parse:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

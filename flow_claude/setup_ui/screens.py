@@ -19,7 +19,7 @@ class BranchSelectionScreen(Screen):
     """Screen for selecting base branch to create flow branch."""
 
     BINDINGS = [
-        Binding("q", "quit", "Quit", show=True),
+        Binding("ctrl+c", "quit", "Quit", show=True),
         Binding("escape", "app.pop_screen", "Cancel", show=False),
     ]
 
@@ -79,7 +79,7 @@ class ClaudeMdPromptScreen(Screen):
     """Screen for prompting CLAUDE.md generation."""
 
     BINDINGS = [
-        Binding("q", "quit", "Quit", show=True),
+        Binding("ctrl+c", "quit", "Quit", show=True),
     ]
 
     def __init__(self):
