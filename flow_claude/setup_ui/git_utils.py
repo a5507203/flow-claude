@@ -261,9 +261,9 @@ def commit_to_flow_branch(file_path: str, commit_message: str) -> tuple[bool, st
             timeout=5
         )
 
-        # Add file
+        # Add file (use -f to force add even if in .gitignore)
         subprocess.run(
-            ['git', 'add', file_path],
+            ['git', 'add', '-f', file_path],
             capture_output=True,
             check=True,
             timeout=5

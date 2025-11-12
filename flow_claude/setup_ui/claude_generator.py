@@ -45,7 +45,7 @@ def generate_with_claude_code(cwd: Path) -> tuple[bool, str]:
             cwd=str(cwd),
             capture_output=True,
             text=True,
-            timeout=180  # 3 minutes for Claude Code to analyze and generate
+            timeout=900  # 15 minutes for Claude Code to analyze and generate
         )
 
         # Check if CLAUDE.md was created
@@ -56,7 +56,7 @@ def generate_with_claude_code(cwd: Path) -> tuple[bool, str]:
             return False, "CLAUDE.md file not created by Claude Code"
 
     except subprocess.TimeoutExpired:
-        return False, "Claude Code generation timed out (>180s)"
+        return False, "Claude Code generation timed out (>15min)"
     except Exception as e:
         return False, f"Claude Code error: {e}"
 
