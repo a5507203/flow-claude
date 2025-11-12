@@ -60,7 +60,8 @@
       "WebFetch(domain:questionary.readthedocs.io)",
       "WebFetch(domain:rich.readthedocs.io)",
       "Bash(git rev-parse:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(if exist nul del nul)"
     ],
     "deny": [],
     "ask": []

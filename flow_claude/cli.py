@@ -70,10 +70,9 @@ def setup_instruction_files(debug: bool = False) -> list:
 
     created_files = []
 
-    # Instruction files to copy
+    # Instruction files to copy (V7: no planner, merged into orchestrator)
     instruction_files = [
         ('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md'),
-        ('PLANNER_INSTRUCTIONS.md', 'planner.md'),
         ('WORKER_INSTRUCTIONS.md', 'worker.md'),
         ('USER_PROXY_INSTRUCTIONS.md', 'user.md'),
     ]
@@ -529,10 +528,10 @@ def develop_DEPRECATED_DO_NOT_USE(
             if debug_mode:
                 click.echo(f"DEBUG: Unexpected error during auto-commit: {e}")
 
-    # V6.3: Load prompts from files using @filepath syntax
-    # Orchestrator is main agent, planner and workers are subagents
+    # V7: Load prompts from files using @filepath syntax
+    # Orchestrator is main agent, workers are subagents (planner merged into orchestrator)
     # The SDK loads the full file content at runtime
-    # V6.7: Check for instruction files in working directory first (user's git repo)
+    # Check for instruction files in .flow-claude/ directory first (user's git repo)
     # This allows users to customize agent behavior per-project
     working_dir = os.getcwd()
     prompts_dir = os.path.join(os.path.dirname(__file__), 'prompts')
@@ -566,7 +565,6 @@ def develop_DEPRECATED_DO_NOT_USE(
 
     # Get absolute paths for prompts (use working dir, auto-copy if missing)
     orchestrator_prompt_file = get_prompt_file('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md')
-    planner_prompt_file = get_prompt_file('PLANNER_INSTRUCTIONS.md', 'planner.md')
     worker_prompt_file = get_prompt_file('WORKER_INSTRUCTIONS.md', 'worker.md')
     user_proxy_prompt_file = get_prompt_file('USER_PROXY_INSTRUCTIONS.md', 'user.md')
 
@@ -576,7 +574,6 @@ def develop_DEPRECATED_DO_NOT_USE(
 
     # Use @filepath syntax for all agents
     orchestrator_prompt = f"@{orchestrator_prompt_file}"
-    planner_prompt = f"@{planner_prompt_file}"
     worker_prompt = f"@{worker_prompt_file}"
     user_proxy_prompt = f"@{user_proxy_prompt_file}"
 
@@ -586,14 +583,12 @@ def develop_DEPRECATED_DO_NOT_USE(
     if debug or verbose:
         click.echo(f"DEBUG: Loading agent prompts:")
         click.echo(f"  Orchestrator: {orchestrator_prompt_file}")
-        click.echo(f"  Planner: {planner_prompt_file}")
         click.echo(f"  Worker: {worker_prompt_file}")
         click.echo(f"  User Proxy: {user_proxy_prompt_file}")
-        click.echo(f"DEBUG: - orchestrator-minimal.md: {orchestrator_prompt}")
-        click.echo(f"DEBUG: - planner.md: {planner_prompt}")
+        click.echo(f"DEBUG: - orchestrator.md: {orchestrator_prompt}")
         click.echo(f"DEBUG: - worker.md: {worker_prompt}")
         click.echo(f"DEBUG: - user.md: {user_proxy_prompt}")
-        click.echo(f"DEBUG: Registering 1 planner + 1 user + {num_workers} worker subagents")
+        click.echo(f"DEBUG: Registering 1 user proxy + {num_workers} worker subagents")
         click.echo()
 
     # Run async session
@@ -608,7 +603,6 @@ def develop_DEPRECATED_DO_NOT_USE(
             verbose=verbose,
             debug=debug,
             orchestrator_prompt=orchestrator_prompt,
-            planner_prompt=planner_prompt,
             worker_prompt=worker_prompt,
             user_proxy_prompt=user_proxy_prompt,
             num_workers=num_workers
@@ -632,7 +626,6 @@ async def run_development_session(
     verbose: bool,
     debug: bool,
     orchestrator_prompt: str,
-    planner_prompt: str,
     worker_prompt: str,
     user_proxy_prompt: str,
     num_workers: int,
@@ -645,7 +638,7 @@ async def run_development_session(
 
     This function runs a continuous session that processes the initial request
     and all subsequent follow-up requests from control_queue. It only returns
-    when the user explicitly quits via \quit command.
+    when the user explicitly quits via /quit command.
 
     Args:
         initial_request: User's initial development request
@@ -654,22 +647,25 @@ async def run_development_session(
         max_turns: Maximum conversation turns per request
         permission_mode: Permission mode for tools
         enable_parallel: Enable parallel task execution
-
-    Returns:
-        True if user requested quit, False if session ended naturally
         max_parallel: Maximum number of parallel workers
         verbose: Enable verbose logging
         debug: Enable debug mode
         orchestrator_prompt: Orchestrator agent system prompt (@filepath syntax)
-        planner_prompt: Planner subagent prompt (@filepath syntax)
         worker_prompt: Worker subagent prompt template (@filepath syntax)
         user_proxy_prompt: User proxy subagent prompt (@filepath syntax)
         num_workers: Number of worker agents to create
+        control_queue: Queue for receiving follow-up requests
+        logger: Logger instance for session logging
+        auto_mode: Enable autonomous mode with user proxy agent
+        resume_session_id: Resume from previous session ID
+
+    Returns:
+        True if user requested quit, False if session ended naturally
 
     Note:
         All prompts use @filepath syntax.
         The SDK loads the full file content at runtime.
-        V6.6 adds user agent for user confirmations and decision points.
+        V7 merges planner into orchestrator for simplified architecture.
     """
     # Store logging flags and logger globally for use in handle_agent_message
     global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent
@@ -680,12 +676,12 @@ async def run_development_session(
 
     # Print banner
     click.echo("=" * 60)
-    click.echo("Flow-Claude V6.7 Persistent Session Starting...")
+    click.echo("Flow-Claude V7 Development Session Starting...")
     click.echo("=" * 60)
     click.echo(f"\nInitial Request: {initial_request}")
     click.echo(f"Session ID: {session_id}")
     click.echo(f"Model: {model}")
-    click.echo(f"Architecture: V6.7 (Persistent Session + Orchestrator + Planner + Workers)")
+    click.echo(f"Architecture: V7 (Unified Orchestrator + Workers)")
     click.echo(f"Working Directory: {os.getcwd()}")
     click.echo(f"Execution Mode: {'Parallel' if enable_parallel else 'Sequential'}")
     if enable_parallel:
@@ -775,32 +771,14 @@ async def run_development_session(
         else:
             click.echo("DEBUG: Claude CLI path not found, SDK will use default detection")
 
-    # V6.6: Four-tier architecture - orchestrator is main agent, planner, user, and workers are subagents
-    # Orchestrator (orchestrator-minimal.md) coordinates everything
-    # Planner (planner.md) creates execution plans
-    # User Proxy (user.md) handles user confirmations
-    # Workers (worker.md) execute individual tasks
+    # V7: Simplified architecture - orchestrator plans and coordinates, workers execute
+    # Orchestrator (orchestrator.md) creates plans and spawns workers
+    # User Proxy (user.md) handles user confirmations (auto-mode only)
+    # Workers (worker.md) execute individual tasks in parallel
     # SDK v0.1.6+ automatically handles Windows cmd.exe 8191-char limit via temp files (PR #245)
     agent_definitions = {}
 
-    # Define planner subagent (V6.7: Commit-only architecture - NO Write/Edit tools!)
-    agent_definitions['planner'] = AgentDefinition(
-        description='Planning agent that creates execution plans and breaks down requests',
-        prompt=planner_prompt,
-        tools=[
-            'Task', 'Bash', 'Read', 'Grep', 'Glob',
-            # MCP tools for reading git state
-            'mcp__git__parse_plan',  # Read plan from commits
-            'mcp__git__parse_task',  # Read task metadata from commits
-            'mcp__git__parse_worker_commit',  # Monitor worker progress
-            'mcp__git__get_provides',  # Query completed task capabilities
-            # MCP tools for creating branches (atomically copy instruction files + create commits)
-            'mcp__git__create_plan_branch',  # Create plan branch with instruction files
-            'mcp__git__create_task_branch',  # Create task branch with instruction files
-            'mcp__git__update_plan_branch'  # Update plan with completed tasks
-        ],
-        model=model
-    )
+    # V7: Planner merged into orchestrator - no separate planner agent needed
 
     # Define user subagent (V6.6: New - handles user confirmations)
     # Only register if auto_mode is enabled
@@ -828,7 +806,8 @@ async def run_development_session(
         )
 
     if debug:
-        click.echo(f"DEBUG: Created {len(agent_definitions)} agent definitions (1 planner + 1 user + {num_workers} workers):")
+        user_count = 1 if auto_mode else 0
+        click.echo(f"DEBUG: Created {len(agent_definitions)} agent definitions ({user_count} user proxy + {num_workers} workers):")
         for agent_name, agent_def in agent_definitions.items():
             click.echo(f"DEBUG:   - {agent_name}: {agent_def.description}")
             click.echo(f"DEBUG:     tools: {agent_def.tools}")
@@ -839,7 +818,7 @@ async def run_development_session(
     # Configure agent options with programmatic agents
     options_kwargs = {
         "system_prompt": orchestrator_prompt,  # Main orchestrator system prompt (@filepath syntax)
-        "agents": agent_definitions,  # Planner + worker subagent definitions
+        "agents": agent_definitions,  # V7: Worker subagent definitions (planner merged into orchestrator)
         "allowed_tools": [
             # Standard tools
             "Bash",
@@ -853,6 +832,12 @@ async def run_development_session(
             "mcp__git__parse_plan",  # Parse plan from plan branch commits
             "mcp__git__get_provides",  # Query completed task capabilities
             "mcp__git__parse_worker_commit",  # Parse worker progress from commits
+            # V7: Orchestrator now creates branches directly (planner merged in)
+            "mcp__git__create_plan_branch",  # Create plan branch with all tasks
+            "mcp__git__create_task_branch",  # Create task branch with metadata
+            "mcp__git__update_plan_branch",  # Update plan between waves
+            "mcp__git__create_worktree",  # Create isolated worktree for worker
+            "mcp__git__remove_worktree",  # Clean up worktree after wave completes
         ],
         "mcp_servers": {
             "git": create_git_tools_server()
@@ -901,90 +886,49 @@ async def run_development_session(
 
     # Helper function to create query prompt for a request
     def create_query_prompt(user_request: str) -> str:
-        return f"""# Development Session Configuration (V6.7)
+        user_agent_guide = ""
+        if auto_mode:
+            user_agent_guide = """
+
+**User Agent - How to Use:**
+When you need confirmations or decisions, call the 'user' subagent with Task tool:
+
+
+**When to call user agent:**
+- when creating plan (get confirmation)
+- When blocked (get decision)
+- Design choices need clarification
+
+**IMPORTANT: DO NOT ask questions directly - always invoke user subagent. user subagent will ask user to confirm.**
+"""
+
+        return f"""# Development Session Configuration (V7)
 
 **User Request:** {user_request}
 
-**Session Information (CRITICAL):**
+**Session Info:**
 - Session ID: {session_id}
 - Plan Branch: {plan_branch}
-
-**Model:** {model}
-**Working Directory:** {os.getcwd()}
+- Working Directory: {os.getcwd()}
+- Max Workers: {max_parallel}
 
 {parallel_config}
 
 **Available Subagents:**
-- **planner** - Planning subagent (invoke FIRST to create execution plan)
-{f'- **user** - User proxy subagent (invoke for user confirmations and decisions){chr(10)}' if auto_mode else ''}{chr(10).join([f'- worker-{i} - Worker subagent (invoke for task execution)' for i in range(1, num_workers + 1)])}
-
+{f'- **user** - Get confirmations/decisions (call with Task tool){chr(10)}' if auto_mode else ''}{chr(10).join([f'- **worker-{i}** - Execute tasks' for i in range(1, num_workers + 1)])}
+{user_agent_guide}
 ---
 
-**CRITICAL - Wave-Based Ping-Pong Execution:**
+**Instructions:** See ORCHESTRATOR_INSTRUCTIONS.md for full workflow.
 
-You are the Orchestrator. You coordinate a PING-PONG pattern between planner and workers:
-1. Invoke planner -> planner creates branches -> returns to you
-2. Spawn workers -> workers execute and merge -> return to you
-3. Invoke planner again -> planner updates docs and creates next wave -> returns to you
-4. Repeat until done
+**Quick Start:**
+1. Analyze request → plan tasks
+{f'2. Call user agent for confirmation{chr(10)}3. ' if auto_mode else '2. '}Use MCP tools: create plan/task branches
+{f'4.' if auto_mode else '3.'} Create worktrees, spawn workers
+{f'5.' if auto_mode else '4.'} Update plan after each wave
+{f'6.' if auto_mode else '5.'} Report when done
 
-**WHY:** The planner CANNOT spawn workers (SDK constraint). Only you can spawn subagents.
-
-**Round 1 - Initial Invoke:**
-
-```
-Task tool:
-{{
-  "subagent_type": "planner",
-  "description": "Create plan and Wave 1 branches",
-  "prompt": "**FIRST:** Read your instructions at .flow-claude/PLANNER_INSTRUCTIONS.md (if it exists in working directory).
-
-Create execution plan and Wave 1 task branches for this request:
-
-**User Request:** {user_request}
-
-**Session Information:**
-- Session ID: {session_id}
-- Plan Branch: {plan_branch}
-- Working Directory: {os.getcwd()}
-
-Follow your Phase 1 workflow from .flow-claude/PLANNER_INSTRUCTIONS.md."
-}}
-```
-
-**After Planner Returns:**
-1. Use mcp__git__parse_plan or run `git branch --list 'task/*'` to see what branches were created
-2. **Create git worktrees for parallel execution** (CRITICAL for avoiding conflicts):
-   ```bash
-   # For each task branch in the current wave:
-   git worktree add .worktrees/worker-1 task/001-description
-   git worktree add .worktrees/worker-2 task/002-description
-   # etc. One worktree per worker, linked to task branch
-   ```
-3. Spawn ALL wave workers IN ONE MESSAGE for parallelization
-   - Each worker prompt should start with: "**FIRST:** Read .flow-claude/WORKER_INSTRUCTIONS.md for complete workflow"
-   - Include **Worktree Path** in each worker's prompt (e.g., `.worktrees/worker-1`)
-   - Workers use worktrees instead of git checkout (no conflicts!)
-4. Wait for workers to complete and merge
-5. **Clean up worktrees after wave completes**:
-   ```bash
-   git worktree remove .worktrees/worker-1
-   git worktree remove .worktrees/worker-2
-   # etc.
-   ```
-6. Check if more waves remain (use mcp__git__parse_plan for pending tasks)
-7. If yes: Invoke planner again with "Wave N complete. Prepare Wave N+1." prompt (go back to step 2)
-8. If no: Invoke planner with "All waves complete. Generate final report." prompt
-9. Report final results to user
-
-**YOUR ROLE:** Coordinate the loop. The planner creates branches and updates docs. Workers execute tasks. You orchestrate between them.
-{'''
-**User Proxy Usage:**
-The user agent is available for key decision points:
-- After planner creates plan (get user confirmation)
-- When tasks are blocked (get user decision)
-- At session completion (acknowledge results)
-''' if auto_mode else ''}"""
+Begin."""
 
     # Persistent session - processes ALL requests in a continuous loop
     # Only exits when user sends shutdown signal

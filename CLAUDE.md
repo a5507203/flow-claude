@@ -48,15 +48,15 @@ flow --max-parallel 1          # Sequential execution
 flow --verbose                 # Verbose logging
 flow --debug                   # Debug mode with full details
 
-# Within interactive session, use backslash commands:
-# \parallel  - Set max parallel workers
-# \model     - Select Claude model
-# \verbose   - Toggle verbose output
-# \debug     - Toggle debug mode
-# \auto      - Toggle autonomous mode
-# \init      - Generate CLAUDE.md
-# \help      - Show help
-# \exit      - Exit Flow-Claude
+# Within interactive session, use forward slash commands:
+# /parallel  - Set max parallel workers
+# /model     - Select Claude model
+# /verbose   - Toggle verbose output
+# /debug     - Toggle debug mode
+# /auto      - Toggle autonomous mode
+# /init      - Generate CLAUDE.md
+# /help      - Show help
+# /exit      - Exit Flow-Claude
 
 # Run tests
 pytest tests/test_parsers.py -v
@@ -65,31 +65,28 @@ pytest tests/test_parsers.py -v
 ruff check flow_claude/
 ```
 
-## Architecture (V6.6+)
+## Architecture (V7)
 
-### Four-Agent Hierarchy
+### Three-Agent Hierarchy (Simplified)
 
 1. **Orchestrator** (main agent)
-   - Coordinates wave-based ping-pong execution
-   - Spawns planner and worker subagents
+   - Plans development sessions and creates execution plans
+   - Creates plan and task branches using MCP git tools
+   - Spawns worker subagents for parallel execution
    - Manages git worktrees for parallel execution
-   - Cannot directly create branches (SDK constraint)
+   - Adaptive planning: re-evaluates and updates plan after each wave
 
-2. **Planner** (subagent)
-   - Creates execution plans on `plan/session-*` branches
-   - Creates task branches using MCP git tools
-   - Updates plans between waves
-   - Cannot spawn workers (only orchestrator can spawn subagents)
-
-3. **User Proxy** (subagent, optional)
+2. **User Proxy** (subagent, optional)
    - Handles user confirmations and decisions
    - Only registered if `auto_mode=True`
    - Uses fast `haiku` model
 
-4. **Workers** (subagents, 1-N)
+3. **Workers** (subagents, 1-N)
    - Execute individual tasks on `task/*` branches
    - Run in git worktrees for parallel execution
    - Signal completion via commits
+
+**V7 Changes:** Merged planner into orchestrator for simplified architecture, reduced ping-pong overhead, and lower API costs.
 
 ### Branch Structure
 
@@ -104,19 +101,20 @@ main/master     # Production code
 
 **Critical**: The `flow` branch is created on first run and serves as the base for all sessions. Users select which branch to use as the base when `flow` is first created.
 
-### Wave-Based Execution Pattern
+### Wave-Based Execution Pattern (V7 Adaptive Planning)
 
-The orchestrator coordinates a **ping-pong loop** between planner and workers:
+The orchestrator directly manages planning and execution:
 
-1. **Orchestrator → Planner**: "Create plan and Wave 1 branches"
-2. **Planner returns**: Creates branches, returns to orchestrator
+1. **Orchestrator**: Analyzes user request and creates execution plan with all tasks
+2. **Orchestrator**: Creates plan branch and task branches for Wave 1 (using MCP git tools)
 3. **Orchestrator**: Creates git worktrees for parallel execution
-4. **Orchestrator → Workers**: Spawns all workers in parallel (one message)
+4. **Orchestrator → Workers**: Spawns all Wave 1 workers in parallel (one message)
 5. **Workers return**: Complete tasks, merge to flow, return to orchestrator
-6. **Orchestrator → Planner**: "Wave N complete. Prepare Wave N+1."
-7. Repeat until all waves complete
+6. **Orchestrator**: Re-evaluates plan, marks completed tasks, identifies Wave N+1
+7. **Orchestrator**: Creates task branches for Wave N+1 and spawns workers
+8. Repeat until all waves complete
 
-**Why**: The planner cannot spawn workers (SDK constraint). Only the orchestrator can spawn subagents.
+**V7 Simplification**: No more ping-pong between orchestrator and planner. Orchestrator handles both planning and coordination, reducing API calls and latency.
 
 ### Git Worktrees for Parallelization
 
@@ -144,12 +142,12 @@ Custom MCP tools provide structured git operations:
 - `mcp__git__parse_worker_commit`: Parse worker's progress (design + TODO)
 - `mcp__git__get_provides`: Query completed task capabilities from flow branch
 
-**Write Operations** (planner only):
+**Write Operations** (orchestrator only):
 - `mcp__git__create_plan_branch`: Create plan branch with metadata commit + instruction files
 - `mcp__git__create_task_branch`: Create task branch with metadata commit + instruction files
 - `mcp__git__update_plan_branch`: Update plan with completed tasks, new wave tasks
 
-**Architecture Note**: V6.7+ uses commit-only architecture. Plans, tasks, and progress are stored exclusively in commit messages. No `plan.yaml`, `design.md`, or `todo.md` files.
+**Architecture Note**: V7 uses commit-only architecture. Plans, tasks, and progress are stored exclusively in commit messages. No `plan.yaml`, `design.md`, or `todo.md` files.
 
 ## Commit Message Formats
 
@@ -229,14 +227,15 @@ Wave 2: [003] (depends on 001, 002)
 
 ## Agent Instruction Files
 
-Agents load prompts from instruction files. These are auto-created in the working directory on first run:
+Agents load prompts from instruction files. These are auto-created in `.flow-claude/` directory on first run:
 
 - `ORCHESTRATOR_INSTRUCTIONS.md` ← `flow_claude/prompts/orchestrator.md`
-- `PLANNER_INSTRUCTIONS.md` ← `flow_claude/prompts/planner.md`
 - `WORKER_INSTRUCTIONS.md` ← `flow_claude/prompts/worker.md`
 - `USER_PROXY_INSTRUCTIONS.md` ← `flow_claude/prompts/user.md`
 
 **Customization**: Users can modify these files per-project to customize agent behavior. Changes persist in the git repository.
+
+**V7 Note**: `PLANNER_INSTRUCTIONS.md` removed - planner functionality merged into orchestrator.
 
 ## Key Code Locations
 
@@ -251,14 +250,13 @@ Agents load prompts from instruction files. These are auto-created in the workin
 - `flow_claude/git_tools.py:create_git_tools_server()` - MCP server factory (flow_claude/git_tools.py:1340)
 
 ### Agent Definitions
-- `flow_claude/agents.py:create_planning_agent()` - Planner agent factory (flow_claude/agents.py:47)
 - `flow_claude/agents.py:create_worker_agent()` - Worker agent factory (flow_claude/agents.py:108)
 
 ### Core Logic
-- Agent definitions: `flow_claude/cli.py:636` (planner), `flow_claude/cli.py:668` (workers)
-- ClaudeAgentOptions setup: `flow_claude/cli.py:691`
-- Session loop with interventions: `flow_claude/cli.py:850`
-- Multi-round conversation: `flow_claude/cli.py:924`
+- Agent definitions: `flow_claude/cli.py` (orchestrator + workers, V7: no separate planner)
+- ClaudeAgentOptions setup with MCP git tools: `flow_claude/cli.py`
+- Session loop handling follow-ups: `flow_claude/cli.py`
+- Message handling and logging: `flow_claude/cli.py:handle_agent_message()`
 
 ## Important Implementation Details
 
@@ -293,11 +291,12 @@ Maps `tool_use_id` to agent names for proper attribution in logs (flow_claude/cl
 
 ## Development Notes
 
-- **DO NOT** use Write/Edit tools in planner prompts - planner uses commit-only architecture
+- **V7 Architecture**: Orchestrator uses commit-only architecture for planning (MCP git tools only)
+- Orchestrator creates all git branches and commits via MCP tools (no manual git commands)
 - Workers use Read/Write/Edit freely for implementation
 - All git state queries should use MCP tools, not raw git commands (when possible)
 - Session state is recoverable from git history - no need for state files
-- Windows compatibility: handles cmd.exe path length limits via SDK (flow_claude/cli.py:635)
+- Windows compatibility: handles cmd.exe path length limits via SDK
 
 ## Dependencies
 
@@ -317,9 +316,11 @@ Dev dependencies (pyproject.toml:22-25):
 ### Adding a New MCP Tool
 
 1. Define tool in `flow_claude/git_tools.py` using `@tool` decorator
-2. Add to `create_git_tools_server()` tools list (flow_claude/git_tools.py:1362-1374)
-3. Add tool name to agent's `tools` list in `flow_claude/cli.py` (around lines 642-653 for planner, 672-677 for workers)
-4. Update `allowed_tools` if needed (flow_claude/cli.py:694-706)
+2. Add to `create_git_tools_server()` tools list in `git_tools.py`
+3. Add tool name to appropriate agent's `tools` list in `flow_claude/cli.py`:
+   - Orchestrator: Add to `allowed_tools` list (for main agent access)
+   - Workers: Add to worker agent definition
+4. Update `allowed_tools` if orchestrator needs access
 
 ### Modifying Agent Behavior
 

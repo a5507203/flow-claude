@@ -559,7 +559,6 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
 
         instruction_files = [
             ("orchestrator.md", "ORCHESTRATOR_INSTRUCTIONS.md"),
-            ("planner.md", "PLANNER_INSTRUCTIONS.md"),
             ("worker.md", "WORKER_INSTRUCTIONS.md"),
             ("user.md", "USER_PROXY_INSTRUCTIONS.md")
         ]
@@ -895,7 +894,6 @@ async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
 
         instruction_files = [
             ("orchestrator.md", "ORCHESTRATOR_INSTRUCTIONS.md"),
-            ("planner.md", "PLANNER_INSTRUCTIONS.md"),
             ("worker.md", "WORKER_INSTRUCTIONS.md"),
             ("user.md", "USER_PROXY_INSTRUCTIONS.md")
         ]
@@ -1345,6 +1343,206 @@ Completed: {completed_count}/{total_tasks} tasks
         }
 
 
+@tool(
+    "create_worktree",
+    "Create a git worktree for parallel worker execution",
+    {
+        "type": "object",
+        "properties": {
+            "worker_id": {"type": "string", "description": "Worker ID (e.g., '1', '2', '3')"},
+            "task_branch": {"type": "string", "description": "Task branch name (e.g., 'task/001-user-model')"}
+        },
+        "required": ["worker_id", "task_branch"]
+    }
+)
+async def create_worktree(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a git worktree for isolated parallel execution.
+
+    Creates worktree at `.worktrees/worker-{worker_id}` linked to task_branch.
+    If worktree already exists, removes it first.
+
+    Args:
+        args: Dictionary with fields:
+            - worker_id: Worker identifier (e.g., "1", "2")
+            - task_branch: Task branch to check out (e.g., "task/001-user-model")
+
+    Returns:
+        MCP tool response with success status and worktree path
+    """
+    worker_id = args.get("worker_id", "")
+    task_branch = args.get("task_branch", "")
+
+    if not worker_id or not task_branch:
+        return {
+            "content": [{"type": "text", "text": json.dumps({
+                "error": "worker_id and task_branch are required"
+            }, indent=2)}],
+            "isError": True
+        }
+
+    worktree_path = f".worktrees/worker-{worker_id}"
+
+    try:
+        # Check if worktree already exists and remove it
+        list_result = subprocess.run(
+            ['git', 'worktree', 'list'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        if worktree_path in list_result.stdout:
+            # Remove existing worktree
+            subprocess.run(
+                ['git', 'worktree', 'remove', '--force', worktree_path],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=True
+            )
+
+        # Create worktree
+        result = subprocess.run(
+            ['git', 'worktree', 'add', worktree_path, task_branch],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True
+        )
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "success": True,
+                    "worktree_path": worktree_path,
+                    "task_branch": task_branch,
+                    "worker_id": worker_id,
+                    "message": f"Created worktree at {worktree_path} for {task_branch}"
+                }, indent=2)
+            }]
+        }
+
+    except subprocess.CalledProcessError as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "error": f"Failed to create worktree: {e.stderr}",
+                    "worktree_path": worktree_path,
+                    "task_branch": task_branch
+                }, indent=2)
+            }],
+            "isError": True
+        }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "error": f"Unexpected error: {str(e)}",
+                    "worktree_path": worktree_path
+                }, indent=2)
+            }],
+            "isError": True
+        }
+
+
+@tool(
+    "remove_worktree",
+    "Remove a git worktree after worker completes",
+    {
+        "type": "object",
+        "properties": {
+            "worker_id": {"type": "string", "description": "Worker ID (e.g., '1', '2', '3')"}
+        },
+        "required": ["worker_id"]
+    }
+)
+async def remove_worktree(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove a git worktree after worker completes task.
+
+    Removes worktree at `.worktrees/worker-{worker_id}`.
+    Uses --force to ensure removal even if worktree has uncommitted changes.
+
+    Args:
+        args: Dictionary with fields:
+            - worker_id: Worker identifier (e.g., "1", "2")
+
+    Returns:
+        MCP tool response with success status
+    """
+    worker_id = args.get("worker_id", "")
+
+    if not worker_id:
+        return {
+            "content": [{"type": "text", "text": json.dumps({
+                "error": "worker_id is required"
+            }, indent=2)}],
+            "isError": True
+        }
+
+    worktree_path = f".worktrees/worker-{worker_id}"
+
+    try:
+        # Remove worktree with --force
+        result = subprocess.run(
+            ['git', 'worktree', 'remove', '--force', worktree_path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True
+        )
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "success": True,
+                    "worktree_path": worktree_path,
+                    "worker_id": worker_id,
+                    "message": f"Removed worktree at {worktree_path}"
+                }, indent=2)
+            }]
+        }
+
+    except subprocess.CalledProcessError as e:
+        # Worktree might not exist, which is fine
+        if "is not a working tree" in e.stderr or "not found" in e.stderr:
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "success": True,
+                        "worktree_path": worktree_path,
+                        "message": f"Worktree {worktree_path} does not exist (already cleaned up)"
+                    }, indent=2)
+                }]
+            }
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "error": f"Failed to remove worktree: {e.stderr}",
+                    "worktree_path": worktree_path
+                }, indent=2)
+            }],
+            "isError": True
+        }
+    except Exception as e:
+        return {
+            "content": [{
+                "type": "text",
+                "text": json.dumps({
+                    "error": f"Unexpected error: {str(e)}",
+                    "worktree_path": worktree_path
+                }, indent=2)
+            }],
+            "isError": True
+        }
+
+
 def create_git_tools_server():
     """Create MCP server with git parsing tools.
 
@@ -1366,6 +1564,8 @@ def create_git_tools_server():
             - mcp__git__create_plan_branch: Create plan branch with instruction files and metadata
             - mcp__git__create_task_branch: Create task branch with instruction files and metadata
             - mcp__git__update_plan_branch: Update plan with completed tasks and new wave tasks
+            - mcp__git__create_worktree: Create isolated git worktree for parallel worker execution
+            - mcp__git__remove_worktree: Remove git worktree after worker completes
     """
     return create_sdk_mcp_server(
         name="git",
@@ -1377,6 +1577,8 @@ def create_git_tools_server():
             parse_worker_commit_tool,
             create_plan_branch,
             create_task_branch,
-            update_plan_branch
+            update_plan_branch,
+            create_worktree,
+            remove_worktree
         ]
     )

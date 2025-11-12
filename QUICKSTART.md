@@ -334,7 +334,6 @@ pytest tests/ -v
    - `README.md` - Full documentation
    - `DESIGN_V6.1.md` - Architecture details
    - `IMPLEMENTATION_PLAN.md` - How it works
-   - `prompts/planner.md` - Planning workflow
    - `prompts/worker.md` - Worker workflow
 
 ---

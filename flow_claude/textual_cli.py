@@ -505,13 +505,11 @@ class FlowCLI(App):
 
         # Get prompt files
         orch_file = get_prompt_file('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md')
-        planner_file = get_prompt_file('PLANNER_INSTRUCTIONS.md', 'planner.md')
         worker_file = get_prompt_file('WORKER_INSTRUCTIONS.md', 'worker.md')
         user_file = get_prompt_file('USER_PROXY_INSTRUCTIONS.md', 'user.md')
 
         # Format prompts with @ syntax
         orchestrator_prompt = f"@{orch_file}"
-        planner_prompt = f"@{planner_file}"
         worker_prompt = f"@{worker_file}"
         user_proxy_prompt = f"@{user_file}" if self.auto_mode else None
 
@@ -531,7 +529,6 @@ class FlowCLI(App):
                 verbose=self.verbose_mode,
                 debug=self.debug_mode,
                 orchestrator_prompt=orchestrator_prompt,
-                planner_prompt=planner_prompt,
                 worker_prompt=worker_prompt,
                 user_proxy_prompt=user_proxy_prompt,
                 num_workers=num_workers,
@@ -797,15 +794,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
             if agent:
                 agent_lower = agent.lower()
-                if "planner" in agent_lower:
-                    prefix_parts.append(f"[blue]\\[{agent.upper()}][/blue]")
-                elif "worker" in agent_lower:
+                if "worker" in agent_lower:
                     prefix_parts.append(f"[green]\\[{agent.upper()}][/green]")
+                elif "user" in agent_lower:
+                    prefix_parts.append(f"[cyan]\\[{agent.upper()}][/cyan]")
                 elif "system" in agent_lower:
                     prefix_parts.append(f"[yellow]\\[{agent.upper()}][/yellow]")
                 else:
-                    # Orchestrator - use default/white color
-                    prefix_parts.append(f"[white]\\[{agent.upper()}][/white]")
+                    # Orchestrator - use blue color
+                    prefix_parts.append(f"[blue]\\[{agent.upper()}][/blue]")
 
             full_message = " ".join(prefix_parts) + f" {message}" if prefix_parts else message
             self._log(full_message)
