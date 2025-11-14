@@ -486,6 +486,36 @@ class FlowCLI(App):
     async def run_orchestrator(self, request: str):
         """Run the orchestrator session (runs in background)."""
         from flow_claude.cli import run_development_session
+        from flow_claude.sdk_workers import get_sdk_worker_manager
+
+        # Initialize WorkerManager with control_queue for async worker management
+        # Create a logging function that writes to the UI log
+        def worker_log(msg: str):
+            log = self.query_one(RichLog)
+            # Always show worker output (it's important for tracking progress)
+            # Use different styling for different message types
+            if "[Worker-" in msg and "ERROR]" in msg:
+                # Error messages from workers
+                self._log(f"[red]{msg}[/red]")
+            elif "[Worker-" in msg and "]" in msg:
+                # Normal output from workers
+                self._log(f"[cyan]{msg}[/cyan]")
+            elif "[WorkerManager]" in msg and self.debug_mode:
+                # Manager debug messages only in debug mode
+                self._log(f"[dim]{msg}[/dim]")
+            elif "[SDKWorkerManager]" in msg and self.debug_mode:
+                # SDK Manager debug messages only in debug mode
+                self._log(f"[dim]{msg}[/dim]")
+            elif "[Worker" in msg:
+                # Other worker-related messages
+                self._log(f"[blue]{msg}[/blue]")
+
+        # Initialize SDK-based worker manager
+        sdk_worker_manager = get_sdk_worker_manager(
+            control_queue=self.control_queue,
+            debug=self.debug_mode,
+            log_func=worker_log
+        )
 
         # Load prompts
         working_dir = os.getcwd()

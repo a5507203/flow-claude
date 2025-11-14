@@ -784,10 +784,16 @@ async def run_development_session(
     # Only register if auto_mode is enabled
     if auto_mode:
         agent_definitions['user'] = AgentDefinition(
-            description='User proxy agent that represents the user for confirmation dialogs',
+            description='User agent that represents the user for confirmation dialogs',
             prompt=user_proxy_prompt,
-            tools=[],  # User proxy doesn't need tools - just facilitates user interaction
-            model='haiku'  # Use haiku for fast, cheap confirmation dialogs
+            tools=[
+                'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob',
+                'mcp__git__parse_task',  # Read task metadata from branch
+                'mcp__git__parse_plan',  # Read plan context
+                'mcp__git__parse_worker_commit',  # Read own progress (commit-only architecture)
+                'mcp__git__get_provides'  # Query available capabilities from completed tasks
+            ],  # User proxy doesn't need tools - just facilitates user interaction
+            model=model  # Use haiku for fast, cheap confirmation dialogs
         )
 
     # Define worker subagents
@@ -838,6 +844,9 @@ async def run_development_session(
             "mcp__git__update_plan_branch",  # Update plan between waves
             "mcp__git__create_worktree",  # Create isolated worktree for worker
             "mcp__git__remove_worktree",  # Clean up worktree after wave completes
+            # Async worker management (NEW)
+            "mcp__git__launch_worker_async",  # Launch worker in background (non-blocking)
+            "mcp__git__get_worker_status",  # Check status of background workers
         ],
         "mcp_servers": {
             "git": create_git_tools_server()
@@ -899,7 +908,7 @@ When you need confirmations or decisions, call the 'user' subagent with Task too
 - When blocked (get decision)
 - Design choices need clarification
 
-**IMPORTANT: DO NOT ask questions directly - always invoke user subagent. user subagent will ask user to confirm.**
+**IMPORTANT: DO NOT ask questions directly - always invoke user subagent. **
 """
 
         return f"""# Development Session Configuration (V7)
@@ -960,8 +969,77 @@ Begin."""
                     click.echo("\n[SHUTDOWN] User requested exit\n")
                     break
 
+                # Handle worker completion events from async workers
+                if control.get("type") == "worker_completion":
+                    worker_data = control.get("data", {})
+                    worker_id = worker_data.get("worker_id")
+                    task_branch = worker_data.get("task_branch")
+                    exit_code = worker_data.get("exit_code")
+                    elapsed_time = worker_data.get("elapsed_time", 0)
+
+                    # Format elapsed time
+                    elapsed_min = int(elapsed_time / 60)
+                    elapsed_sec = int(elapsed_time % 60)
+
+                    # Log the completion event
+                    click.echo("\n" + "=" * 60)
+                    click.echo(f"[WORKER COMPLETION EVENT]")
+                    click.echo(f"  Worker ID: {worker_id}")
+                    click.echo(f"  Task: {task_branch}")
+                    click.echo(f"  Exit code: {exit_code} {'(success)' if exit_code == 0 else '(failed)'}")
+                    click.echo(f"  Duration: {elapsed_min}m {elapsed_sec}s")
+                    click.echo("=" * 60 + "\n")
+
+                    if debug:
+                        click.echo(f"DEBUG: Worker completion event details:")
+                        click.echo(f"DEBUG:   Worker-{worker_id}")
+                        click.echo(f"DEBUG:   Branch: {task_branch}")
+                        click.echo(f"DEBUG:   Exit code: {exit_code}")
+                        click.echo(f"DEBUG:   Elapsed: {elapsed_time:.2f}s")
+                        click.echo(f"DEBUG: Injecting completion notification to orchestrator\n")
+
+                    # Create notification message for orchestrator
+                    completion_msg = f"""Worker-{worker_id} has completed task {task_branch}
+- Exit code: {exit_code} {"(success)" if exit_code == 0 else "(error)"}
+- Elapsed time: {elapsed_min}m {elapsed_sec}s
+
+Please immediately:
+1. Parse worker commit status: mcp__git__parse_worker_commit("{task_branch}")
+2. Verify implementation by reading actual code from flow branch (merged code)
+3. Remove worktree: mcp__git__remove_worktree("{worker_id}")
+4. Update plan to mark task complete
+5. Check for newly-ready tasks (mcp__git__get_provides)
+6. If worker-{worker_id} is idle and another task is ready, launch it immediately"""
+
+                    # Process as a regular query
+                    await client.query(completion_msg)
+
+                    # Process the response
+                    async for msg in client.receive_response():
+                        handle_agent_message(msg)
+
+                        # Check for interruptions during response
+                        if control_queue and not control_queue.empty():
+                            try:
+                                peek_control = control_queue.get_nowait()
+
+                                if peek_control.get("type") == "stop":
+                                    click.echo("\n[STOP] Interrupting worker completion handling...\n")
+                                    await client.interrupt()
+                                    break
+                                else:
+                                    # Put back for next iteration
+                                    await control_queue.put(peek_control)
+                            except asyncio.QueueEmpty:
+                                pass
+
+                    click.echo("\n" + "=" * 60)
+                    click.echo("Worker completion processed. Waiting for next event...")
+                    click.echo("=" * 60)
+                    continue
+
                 # Handle intervention (normal request)
-                if control.get("type") == "intervention":
+                elif control.get("type") == "intervention":
                     user_request = control.get("data", {}).get("requirement", "")
                     if not user_request:
                         click.echo("WARNING: Empty request received", err=True)
