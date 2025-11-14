@@ -432,7 +432,7 @@ async def parse_worker_commit_tool(args: Dict[str, Any]) -> Dict[str, Any]:
             "session_id": {"type": "string"},
             "user_request": {"type": "string"},
             "architecture": {"type": "string"},
-            "design_patterns": {"type": "string"},
+            "design_doc": {"type": "string"},
             "technology_stack": {"type": "string"},
             "tasks": {"type": "array"},
             "estimated_total_time": {"type": "string"},
@@ -452,7 +452,7 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             - session_id: e.g., "session-20250106-140530"
             - user_request: Original user request
             - architecture: Architecture description
-            - design_patterns: Design patterns description
+            - design_doc: Design document description
             - technology_stack: Technology stack description
             - tasks: List of task dicts with full metadata
             - estimated_total_time: e.g., "45 minutes"
@@ -464,7 +464,7 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
     session_id = args.get("session_id", "")
     user_request = args.get("user_request", "")
     architecture = args.get("architecture", "")
-    design_patterns = args.get("design_patterns", "")
+    design_doc = args.get("design_doc", "")
     technology_stack = args.get("technology_stack", "")
     tasks = args.get("tasks", [])
     estimated_total_time = args.get("estimated_total_time", "")
@@ -652,8 +652,8 @@ Plan Version: v1
 ## Architecture
 {architecture}
 
-## Design Patterns
-{design_patterns}
+## Design Document
+{design_doc}
 
 ## Technology Stack
 {technology_stack}
@@ -1243,8 +1243,8 @@ Plan Version: {new_version}
 ## Architecture
 {architecture}
 
-## Design Patterns
-{current_plan.get('design_patterns', '')}
+## Design Document
+{current_plan.get('design_doc', '')}
 
 ## Technology Stack
 {current_plan.get('technology_stack', '')}
