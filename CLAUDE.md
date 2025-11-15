@@ -74,7 +74,7 @@ ruff check flow_claude/
    - Creates plan and task branches using MCP git tools
    - Spawns worker subagents for parallel execution
    - Manages git worktrees for parallel execution
-   - Adaptive planning: re-evaluates and updates plan after each wave
+   - Adaptive planning: re-evaluates and updates plan after each task completion
 
 2. **User Proxy** (subagent, optional)
    - Handles user confirmations and decisions
@@ -101,20 +101,25 @@ main/master     # Production code
 
 **Critical**: The `flow` branch is created on first run and serves as the base for all sessions. Users select which branch to use as the base when `flow` is first created.
 
-### Wave-Based Execution Pattern (V7 Adaptive Planning)
+### Immediate Task Completion Pattern (V7 Adaptive Planning)
 
-The orchestrator directly manages planning and execution:
+The orchestrator directly manages planning and execution with immediate per-task processing:
 
 1. **Orchestrator**: Analyzes user request and creates execution plan with all tasks
-2. **Orchestrator**: Creates plan branch and task branches for Wave 1 (using MCP git tools)
-3. **Orchestrator**: Creates git worktrees for parallel execution
-4. **Orchestrator → Workers**: Spawns all Wave 1 workers in parallel (one message)
-5. **Workers return**: Complete tasks, merge to flow, return to orchestrator
-6. **Orchestrator**: Re-evaluates plan, marks completed tasks, identifies Wave N+1
-7. **Orchestrator**: Creates task branches for Wave N+1 and spawns workers
-8. Repeat until all waves complete
+2. **Orchestrator**: Creates plan branch and identifies initially ready tasks (no dependencies)
+3. **Orchestrator**: For each ready task, creates task branch and worktree
+4. **Orchestrator → Workers**: Spawns workers for ready tasks (up to max_parallel limit)
+5. **Worker completes**: ANY worker finishes and notifies orchestrator
+6. **Orchestrator immediately**:
+   - Verifies the completed task's implementation
+   - Updates plan, marks task complete
+   - Removes that worker's worktree
+   - Identifies newly-ready tasks (whose dependencies are now met)
+   - Launches the idle worker on next available task
+7. **Continue**: Each worker completion is processed immediately and independently
+8. Repeat until all tasks complete
 
-**V7 Simplification**: No more ping-pong between orchestrator and planner. Orchestrator handles both planning and coordination, reducing API calls and latency.
+**V7 Simplification**: No more ping-pong between orchestrator and planner. Orchestrator handles both planning and coordination, reducing API calls and latency. Each task completion is handled immediately without waiting for other workers.
 
 ### Git Worktrees for Parallelization
 
@@ -127,7 +132,7 @@ git worktree add .worktrees/worker-2 task/002-description
 
 # Each worker works in its own worktree (no conflicts!)
 
-# Orchestrator cleans up after wave completes
+# Orchestrator cleans up immediately after each task completes
 git worktree remove .worktrees/worker-1
 git worktree remove .worktrees/worker-2
 ```
@@ -145,7 +150,7 @@ Custom MCP tools provide structured git operations:
 **Write Operations** (orchestrator only):
 - `mcp__git__create_plan_branch`: Create plan branch with metadata commit + instruction files
 - `mcp__git__create_task_branch`: Create task branch with metadata commit + instruction files
-- `mcp__git__update_plan_branch`: Update plan with completed tasks, new wave tasks
+- `mcp__git__update_plan_branch`: Update plan with completed tasks and newly discovered tasks
 
 **Architecture Note**: V7 uses commit-only architecture. Plans, tasks, and progress are stored exclusively in commit messages. No `plan.yaml`, `design.md`, or `todo.md` files.
 
@@ -221,8 +226,10 @@ Estimated Total Time: 45 minutes
 Total Tasks: 5
 
 ## Dependency Graph
-Wave 1: [001, 002] (parallel)
-Wave 2: [003] (depends on 001, 002)
+Ready immediately: [001, 002] (no dependencies)
+After 001 completes: [003] becomes available
+After 002 completes: [004] becomes available
+After 001 and 002 complete: [005] becomes available
 ```
 
 ## Agent Instruction Files

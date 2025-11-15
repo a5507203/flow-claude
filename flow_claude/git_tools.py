@@ -11,22 +11,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict
 
-try:
-    from claude_agent_sdk import tool, create_sdk_mcp_server
-except ImportError:
-    # Fallback for development/testing
-    def tool(name: str, description: str, schema: Dict[str, Any]):
-        """Decorator fallback for when SDK is not installed."""
-        def decorator(func):
-            func._tool_name = name
-            func._tool_description = description
-            func._tool_schema = schema
-            return func
-        return decorator
-
-    def create_sdk_mcp_server(name: str, version: str, tools: list):
-        """Fallback MCP server creator."""
-        return {"name": name, "version": version, "tools": tools}
+from claude_agent_sdk import tool, create_sdk_mcp_server
 
 from .parsers import (
     parse_commit_message,
@@ -456,7 +441,7 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             - technology_stack: Technology stack description
             - tasks: List of task dicts with full metadata
             - estimated_total_time: e.g., "45 minutes"
-            - dependency_graph: Wave breakdown description
+            - dependency_graph: Task dependency relationships and execution order
 
     Returns:
         MCP tool response with success status, branch name, and commit SHA
@@ -1078,7 +1063,7 @@ Priority: {priority}
 
 @tool(
     "update_plan_branch",
-    "Update plan commit with completed tasks and new wave tasks",
+    "Update plan commit with completed tasks and dynamically discovered new tasks",
     {
         "type": "object",
         "properties": {
@@ -1091,14 +1076,14 @@ Priority: {priority}
     }
 )
 async def update_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Update plan branch with completed task status and new wave tasks.
+    """Update plan branch with completed task status and dynamically discovered new tasks.
 
     This tool updates an existing plan branch by:
     1. Checking out plan branch
     2. Parsing current plan commit
     3. Marking tasks as completed
     4. Appending architecture learnings
-    5. Adding new wave tasks
+    5. Adding new tasks discovered during implementation
     6. Creating new plan commit with incremented version
     7. Returning to original branch
 
@@ -1182,7 +1167,7 @@ async def update_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
         # Update architecture with learnings
         architecture = current_plan.get("architecture", "")
         if architecture_updates:
-            architecture += f"\n\n### Learnings from Wave {commit_count}:\n{architecture_updates}"
+            architecture += f"\n\n### Progress Update {commit_count}:\n{architecture_updates}"
 
         # Calculate stats
         total_tasks = len(tasks)
@@ -1544,306 +1529,6 @@ async def remove_worktree(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-@tool(
-    "launch_worker_async",
-    "Launch worker in background using SDK query() for async execution",
-    {
-        "properties": {
-            "worker_id": {"type": "string", "description": "Worker ID (e.g., '1', '2', '3')"},
-            "task_branch": {"type": "string", "description": "Task branch name (e.g., 'task/001-user-model')"},
-            "cwd": {"type": "string", "description": "ABSOLUTE path to worker's worktree directory (e.g., '/absolute/path/.worktrees/worker-1')"},
-            "session_id": {"type": "string", "description": "Session ID (e.g., 'session-20250115-120000')"},
-            "plan_branch": {"type": "string", "description": "Plan branch name (e.g., 'plan/session-20250115-120000')"},
-            "model": {"type": "string", "description": "Model to use (sonnet/opus/haiku)", "default": "sonnet"},
-            "instructions": {"type": "string", "description": "Task-specific instructions for the worker written by the orchestrator"}
-        },
-        "required": ["worker_id", "task_branch", "cwd", "session_id", "plan_branch", "instructions"],
-        "type": "object"
-    }
-)
-async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Launch worker in background using SDK query() function.
-
-    This allows the orchestrator to continue immediately without blocking,
-    while the worker executes in the background using the Claude SDK.
-
-    IMPORTANT: cwd MUST be an absolute path to the worker's worktree directory!
-
-    Args:
-        args: Dict with worker_id, task_branch, cwd (ABSOLUTE path to worktree),
-              session_id, plan_branch, model, and instructions
-
-    Returns:
-        Dict with success status message
-    """
-    try:
-        # Get SDK worker manager (it will already be initialized with proper logger)
-        manager = get_sdk_worker_manager()
-
-        # Create async task for worker
-        import asyncio
-
-        # Start worker as async generator
-        worker_task = asyncio.create_task(
-            _run_sdk_worker_task(
-                manager,
-                args["worker_id"],
-                args["task_branch"],
-                {
-                    'session_id': args["session_id"],
-                    'plan_branch': args["plan_branch"],
-                    'model': args.get("model", "sonnet")
-                },
-                args["cwd"],  # cwd IS the worktree path
-                args["instructions"]  # Pass required instructions
-            )
-        )
-
-        # Store the task reference (optional, for debugging)
-        import logging
-        logger = logging.getLogger("flow_claude.orchestrator")
-        logger.debug(f"Created async task for worker-{args['worker_id']}: {worker_task}")
-
-        # Return a simple, clean message without JSON that won't confuse the orchestrator
-        return {
-            "content": [{
-                "type": "text",
-                "text": f"Worker-{args['worker_id']} has been launched in the background for task branch {args['task_branch']}. The worker is now executing the task autonomously."
-            }],
-            "isError": False
-        }
-    except Exception as e:
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "error": f"Failed to launch worker: {str(e)}"
-                }, indent=2)
-            }],
-            "isError": True
-        }
-
-
-@tool(
-    "get_worker_status",
-    "Check status of background workers to see if they are still running",
-    {
-        "properties": {
-            "worker_id": {"type": "string", "description": "Optional specific worker ID to check"}
-        },
-        "type": "object"
-    }
-)
-async def get_worker_status(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Get status of background workers.
-
-    Can check a specific worker or all workers. Returns running status,
-    elapsed time, exit code (if completed), and other metadata.
-
-    Args:
-        args: Dict with optional worker_id
-
-    Returns:
-        Dict with worker status information
-    """
-    try:
-        # Get SDK worker manager
-        manager = get_sdk_worker_manager()
-
-        # SDK manager uses get_active_workers()
-        result = manager.get_active_workers()
-
-        # Format result based on requested worker_id
-        worker_id = args.get("worker_id")
-        if worker_id:
-            if worker_id in result:
-                formatted_result = {worker_id: result[worker_id]}
-            else:
-                formatted_result = {
-                    "worker_id": worker_id,
-                    "status": "not_found",
-                    "message": f"Worker {worker_id} not found or not active"
-                }
-        else:
-            formatted_result = result
-
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps(formatted_result, indent=2)
-            }],
-            "isError": False
-        }
-    except Exception as e:
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "error": f"Failed to get worker status: {str(e)}"
-                }, indent=2)
-            }],
-            "isError": True
-        }
-
-
-@tool(
-    "launch_worker_sdk",
-    "Launch worker using SDK query() function for async execution",
-    {
-        "properties": {
-            "worker_id": {"type": "string", "description": "Worker ID (e.g., '1', '2', '3')"},
-            "task_branch": {"type": "string", "description": "Task branch name (e.g., 'task/001-user-model')"},
-            "worktree_path": {"type": "string", "description": "Worktree path (e.g., '.worktrees/worker-1')"},
-            "session_id": {"type": "string", "description": "Session ID (e.g., 'session-20250115-120000')"},
-            "plan_branch": {"type": "string", "description": "Plan branch name (e.g., 'plan/session-20250115-120000')"},
-            "model": {"type": "string", "description": "Model to use (sonnet/opus/haiku)", "default": "sonnet"}
-        },
-        "required": ["worker_id", "task_branch", "worktree_path", "session_id", "plan_branch"],
-        "type": "object"
-    }
-)
-async def launch_worker_sdk(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Launch worker using SDK query() function in async mode.
-
-    This uses the SDK's query() function to run the worker as an async task,
-    allowing the orchestrator to continue immediately without blocking.
-    The worker runs in the SDK environment with proper tool access.
-
-    Args:
-        args: Dict with worker_id, task_branch, worktree_path, session_id, plan_branch, model
-
-    Returns:
-        Dict with success status and worker information
-    """
-    try:
-        # Import SDK worker manager
-        from .sdk_workers import get_sdk_worker_manager
-
-        # Get SDK worker manager (initialized with proper logger)
-        manager = get_sdk_worker_manager()
-
-        # Create async task for worker
-        import asyncio
-
-        # Start worker as async generator
-        worker_task = asyncio.create_task(
-            _run_sdk_worker_task(
-                manager,
-                args["worker_id"],
-                args["task_branch"],
-                {
-                    'session_id': args["session_id"],
-                    'plan_branch': args["plan_branch"],
-                    'model': args.get("model", "sonnet")
-                },
-                args["worktree_path"],  # worktree_path is the cwd for SDK version
-                args.get("instructions", f"Execute task on branch {args['task_branch']}")  # Fallback instructions
-            )
-        )
-
-        # Return a simple, clean message without JSON that won't confuse the orchestrator
-        return {
-            "content": [{
-                "type": "text",
-                "text": f"SDK Worker-{args['worker_id']} has been launched in the background for task branch {args['task_branch']}. The worker is now executing the task autonomously."
-            }],
-            "isError": False
-        }
-    except Exception as e:
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "error": f"Failed to launch SDK worker: {str(e)}"
-                }, indent=2)
-            }],
-            "isError": True
-        }
-
-
-async def _run_sdk_worker_task(manager, worker_id: str, task_branch: str,
-                               session_info: Dict[str, Any],
-                               cwd: str, instructions: str):
-    """Helper to run SDK worker as async task.
-
-    This collects all output from the worker and handles completion.
-    """
-    import logging
-    logger = logging.getLogger(f"flow_claude.worker-{worker_id}")
-
-    try:
-        logger.info(f"Starting SDK worker-{worker_id} for {task_branch}")
-        logger.debug(f"Working directory: {cwd}")
-
-        async for message in manager.run_worker(worker_id, task_branch,
-                                                session_info, cwd, instructions):
-            # Log the message for debugging
-            if message.get('type') == 'error':
-                logger.error(f"Worker-{worker_id} error: {message.get('error', message.get('message'))}")
-            elif message.get('type') == 'completed':
-                logger.info(f"Worker-{worker_id} completed task {task_branch}")
-            # Messages are already logged by the manager
-            pass
-    except Exception as e:
-        # Log the actual error instead of silently swallowing it
-        logger.error(f"Worker-{worker_id} task failed: {str(e)}", exc_info=True)
-
-
-@tool(
-    "get_sdk_worker_status",
-    "Check status of SDK-based workers",
-    {
-        "properties": {
-            "worker_id": {"type": "string", "description": "Optional specific worker ID to check"}
-        },
-        "type": "object"
-    }
-)
-async def get_sdk_worker_status(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Get status of SDK-based workers.
-
-    Returns information about active SDK workers.
-
-    Args:
-        args: Dict with optional worker_id
-
-    Returns:
-        Dict with SDK worker status information
-    """
-    try:
-        from .sdk_workers import get_sdk_worker_manager
-
-        manager = get_sdk_worker_manager()
-        result = manager.get_active_workers()
-
-        # Format result
-        if args.get("worker_id"):
-            worker_id = args["worker_id"]
-            if worker_id in result:
-                formatted = {worker_id: result[worker_id]}
-            else:
-                formatted = {worker_id: {"status": "not found"}}
-        else:
-            formatted = result
-
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps(formatted, indent=2)
-            }],
-            "isError": False
-        }
-    except Exception as e:
-        return {
-            "content": [{
-                "type": "text",
-                "text": json.dumps({
-                    "error": f"Failed to get SDK worker status: {str(e)}"
-                }, indent=2)
-            }],
-            "isError": True
-        }
-
 
 def create_git_tools_server():
     """Create MCP server with git parsing tools.
@@ -1865,7 +1550,7 @@ def create_git_tools_server():
             - mcp__git__parse_worker_commit: Parse worker's latest commit (design + TODO progress)
             - mcp__git__create_plan_branch: Create plan branch with instruction files and metadata
             - mcp__git__create_task_branch: Create task branch with instruction files and metadata
-            - mcp__git__update_plan_branch: Update plan with completed tasks and new wave tasks
+            - mcp__git__update_plan_branch: Update plan with completed tasks and newly discovered tasks
             - mcp__git__create_worktree: Create isolated git worktree for parallel worker execution
             - mcp__git__remove_worktree: Remove git worktree after worker completes
     """
@@ -1881,10 +1566,6 @@ def create_git_tools_server():
             create_task_branch,
             update_plan_branch,
             create_worktree,
-            remove_worktree,
-            launch_worker_async,
-            get_worker_status,
-            launch_worker_sdk,
-            get_sdk_worker_status
+            remove_worktree
         ]
     )

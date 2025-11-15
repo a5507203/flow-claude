@@ -514,7 +514,8 @@ class FlowCLI(App):
         sdk_worker_manager = get_sdk_worker_manager(
             control_queue=self.control_queue,
             debug=self.debug_mode,
-            log_func=worker_log
+            log_func=worker_log,
+            max_parallel=self.max_parallel
         )
 
         # Load prompts
@@ -617,8 +618,28 @@ class FlowCLI(App):
             if len(cmd_parts) > 1 and cmd_parts[1].isdigit():
                 new_value = int(cmd_parts[1])
                 if 1 <= new_value <= 10:
+                    old_value = self.max_parallel
                     self.max_parallel = new_value
+
+                    # Update SDK worker manager
+                    from flow_claude.sdk_workers import get_sdk_worker_manager
+                    manager = get_sdk_worker_manager()
+                    if hasattr(manager, 'update_max_parallel'):
+                        manager.update_max_parallel(new_value)
+
                     self._log(f"[green]✓ Max parallel workers set to {self.max_parallel}[/green]")
+
+                    # Notify orchestrator if session is active
+                    if self.control_queue and self.orchestrator_task and not self._awaiting_initial_request:
+                        import asyncio
+                        asyncio.create_task(self.control_queue.put({
+                            "type": "intervention",
+                            "data": {
+                                "requirement": f"[CONFIG UPDATE] User changed max_parallel from {old_value} to {new_value}. You now have {new_value} worker slots available (worker-1 through worker-{new_value}). Check current worker status with mcp__git__get_worker_status() and adjust your task scheduling accordingly."
+                            }
+                        }))
+                        self._log(f"[dim]→ Notified orchestrator about max_parallel change[/dim]")
+
                     self._show_current_settings()
                 else:
                     self._log(f"[yellow]Invalid value. Must be between 1 and 10.[/yellow]")

@@ -151,6 +151,7 @@ except ImportError:
 
 
 from .git_tools import create_git_tools_server
+from .sdk_workers import create_worker_tools_server
 
 
 def check_claude_code_available() -> tuple[bool, str]:
@@ -785,9 +786,9 @@ async def run_development_session(
     if auto_mode:
         agent_definitions['user'] = AgentDefinition(
             description='User agent that represents the user for confirmation dialogs',
-            prompt=user_proxy_prompt,
+            prompt="You help user to make decision, look at USER_PROXY_INSTRUCTIONS.md for full detail",
             tools=[
-                'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob',
+                'Bash', 'Read', 'Edit', 'Grep', 'Glob',
                 'mcp__git__parse_task',  # Read task metadata from branch
                 'mcp__git__parse_plan',  # Read plan context
                 'mcp__git__parse_worker_commit',  # Read own progress (commit-only architecture)
@@ -796,20 +797,6 @@ async def run_development_session(
             model=model  # Use haiku for fast, cheap confirmation dialogs
         )
 
-    # Define worker subagents
-    for i in range(1, num_workers + 1):
-        agent_definitions[f'worker-{i}'] = AgentDefinition(
-            description=f'Worker agent {i} that executes individual development tasks',
-            prompt=worker_prompt,
-            tools=[
-                'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob',
-                'mcp__git__parse_task',  # Read task metadata from branch
-                'mcp__git__parse_plan',  # Read plan context
-                'mcp__git__parse_worker_commit',  # Read own progress (commit-only architecture)
-                'mcp__git__get_provides'  # Query available capabilities from completed tasks
-            ],
-            model=model
-        )
 
     if debug:
         user_count = 1 if auto_mode else 0
@@ -841,15 +828,16 @@ async def run_development_session(
             # V7: Orchestrator now creates branches directly (planner merged in)
             "mcp__git__create_plan_branch",  # Create plan branch with all tasks
             "mcp__git__create_task_branch",  # Create task branch with metadata
-            "mcp__git__update_plan_branch",  # Update plan between waves
+            "mcp__git__update_plan_branch",  # Update plan after each task completion
             "mcp__git__create_worktree",  # Create isolated worktree for worker
-            "mcp__git__remove_worktree",  # Clean up worktree after wave completes
+            "mcp__git__remove_worktree",  # Clean up worktree after task completes
             # Async worker management (NEW)
-            "mcp__git__launch_worker_async",  # Launch worker in background (non-blocking)
-            "mcp__git__get_worker_status",  # Check status of background workers
+            "mcp__workers__launch_worker_async",  # Launch worker in background (non-blocking)
+            "mcp__workers__get_worker_status",  # Check status of background workers
         ],
         "mcp_servers": {
-            "git": create_git_tools_server()
+            "git": create_git_tools_server(),
+            "workers": create_worker_tools_server()
         },
         "permission_mode": permission_mode,
         "max_turns": max_turns,
@@ -883,7 +871,8 @@ async def run_development_session(
 **Parallel Execution:** ENABLED
 - Max parallel workers: {max_parallel}
 - Workers available: {', '.join([f'worker-{i}' for i in range(1, num_workers + 1)])}
-- Execute tasks in dependency-ordered waves
+- Execute tasks immediately when dependencies are met
+- Process each task completion immediately
 - Respect max parallel limit
 """
     else:
@@ -901,12 +890,6 @@ async def run_development_session(
 
 **User Agent - How to Use:**
 When you need confirmations or decisions, call the 'user' subagent with Task tool:
-
-
-**When to call user agent:**
-- when creating plan (get confirmation)
-- When blocked (get decision)
-- Design choices need clarification
 
 **IMPORTANT: DO NOT ask questions directly - always invoke user subagent. **
 """
@@ -934,7 +917,7 @@ When you need confirmations or decisions, call the 'user' subagent with Task too
 1. Analyze request → plan tasks
 {f'2. Call user agent for confirmation{chr(10)}3. ' if auto_mode else '2. '}Use MCP tools: create plan/task branches
 {f'4.' if auto_mode else '3.'} Create worktrees, spawn workers
-{f'5.' if auto_mode else '4.'} Update plan after each wave
+{f'5.' if auto_mode else '4.'} Process each completion immediately, update plan
 {f'6.' if auto_mode else '5.'} Report when done
 
 Begin."""
@@ -1003,13 +986,14 @@ Begin."""
 - Exit code: {exit_code} {"(success)" if exit_code == 0 else "(error)"}
 - Elapsed time: {elapsed_min}m {elapsed_sec}s
 
-Please immediately:
+Please process this single completion immediately (don't wait for other workers):
 1. Parse worker commit status: mcp__git__parse_worker_commit("{task_branch}")
 2. Verify implementation by reading actual code from flow branch (merged code)
 3. Remove worktree: mcp__git__remove_worktree("{worker_id}")
-4. Update plan to mark task complete
-5. Check for newly-ready tasks (mcp__git__get_provides)
-6. If worker-{worker_id} is idle and another task is ready, launch it immediately"""
+4. Update plan to mark this task complete: mcp__git__update_plan_branch()
+5. Check for newly-ready tasks: mcp__git__get_provides()
+6. If worker-{worker_id} is now idle and another task is ready, launch it immediately
+7. Continue working while other workers complete their tasks independently"""
 
                     # Process as a regular query
                     await client.query(completion_msg)
