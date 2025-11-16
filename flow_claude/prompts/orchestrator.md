@@ -70,12 +70,8 @@ Task tool:
 {
   "subagent_type": "user",
   "description": "Get user confirmation",
-  "prompt": "I've created a plan with 5 tasks across 3 waves. Should I proceed?
+  "prompt": "I've created a plan with 5 tasks. Should I proceed?
 
-Plan summary:
-- Wave 1: Create User model (8 min)
-- Wave 2: Create AuthService (10 min), Add JWT tokens (12 min)
-- Wave 3: Add endpoints (10 min), Write tests (10 min)
 
 Total: ~45 minutes"
 }
@@ -163,6 +159,50 @@ mcp__workers__get_worker_status({"worker_id": "1"})
 ```
 
 **Important**: Use this to identify which worker IDs are available before launching tasks.
+
+## CRITICAL: Task ID and Dependency Graph Requirements
+
+**⚠️ EVERY task MUST have a unique numeric ID. This is NOT optional.**
+
+### Task ID Format Rules:
+- **REQUIRED**: Each task must have an `id` field with a numeric string
+- **FORMAT**: Use zero-padded three-digit numbers: "001", "002", "003", etc.
+- **OPTIONAL SUFFIX**: Can add a letter for subtasks: "001a", "001b"
+
+### ✅ CORRECT Task Format:
+```python
+{
+    "id": "001",  # REQUIRED - numeric string
+    "description": "Create User model",
+    "preconditions": [],  # REQUIRED - list (can be empty)
+    "provides": ["User.model"],  # REQUIRED - list (can be empty)
+    "files": ["models/user.py"],  # REQUIRED - list
+    "estimated_time": "10 minutes",
+    "priority": "high"
+}
+```
+
+### ❌ INVALID - These will cause system failure:
+```python
+{"id": "", ...}           # Empty ID - SYSTEM WILL REJECT
+{"id": "NNN", ...}        # Placeholder - SYSTEM WILL REJECT
+{"description": ...}      # Missing ID field - SYSTEM WILL REJECT
+{"id": "task-1", ...}     # Non-numeric - SYSTEM WILL REJECT
+```
+
+### Dependency Graph Requirements:
+**REQUIRED**: You MUST provide a non-empty dependency_graph that describes:
+- Which tasks can run immediately (no dependencies)
+- Which tasks become available after others complete
+- The parallel execution opportunities
+
+Example:
+```
+Ready immediately: task-001, task-002 (no dependencies)
+After task-001 completes: task-003, task-004 become available
+After task-002 completes: task-005 becomes available
+After task-003 and task-004 complete: task-006 becomes available
+```
 
 ## MCP Tools Reference
 

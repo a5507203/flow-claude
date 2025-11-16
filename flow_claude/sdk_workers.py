@@ -110,9 +110,17 @@ class SDKWorkerManager:
             return
 
         try:
+            # Load worker instructions file content
+            with open(worker_prompt_file, 'r', encoding='utf-8') as f:
+                worker_instructions = f.read()
+
             # Create worker-specific options WITHOUT MCP servers to avoid circular dependency
             options = ClaudeAgentOptions(
-                system_prompt=f"@{str(worker_prompt_file)}",  # Load from file
+                system_prompt={
+                    "type": "preset",
+                    "preset": "claude_code",
+                    "append": worker_instructions
+                },
                 agents={},  # Workers don't need subagents
                 allowed_tools=[
                     'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob'
@@ -120,7 +128,9 @@ class SDKWorkerManager:
                 ],
                 # No mcp_servers - this prevents circular dependency!
                 cwd=str(working_dir),  # Use the working_dir which can be overridden
-                permission_mode='acceptEdits'
+                permission_mode='acceptEdits',
+                setting_sources=["user", "project", "local"]  # Load all settings
+    
             )
 
             # Use the instructions provided by the orchestrator
@@ -131,6 +141,7 @@ class SDKWorkerManager:
                 self.log(f"[SDKWorkerManager]   Using SDK query() function")
                 self.log(f"[SDKWorkerManager]   Working directory: {str(working_dir)}")
                 self.log(f"[SDKWorkerManager]   Model: {session_info.get('model', 'sonnet')}")
+                self.log(f"[SDKWorkerManager]   System prompt: preset claude_code + {len(worker_instructions)} chars append")
 
             # Execute worker using SDK query()
             async for message in query(prompt=prompt, options=options):

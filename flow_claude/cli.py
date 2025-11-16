@@ -73,7 +73,6 @@ def setup_instruction_files(debug: bool = False) -> list:
     # Instruction files to copy (V7: no planner, merged into orchestrator)
     instruction_files = [
         ('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md'),
-        ('WORKER_INSTRUCTIONS.md', 'worker.md'),
         ('USER_PROXY_INSTRUCTIONS.md', 'user.md'),
     ]
 
@@ -566,30 +565,37 @@ def develop_DEPRECATED_DO_NOT_USE(
 
     # Get absolute paths for prompts (use working dir, auto-copy if missing)
     orchestrator_prompt_file = get_prompt_file('ORCHESTRATOR_INSTRUCTIONS.md', 'orchestrator.md')
-    worker_prompt_file = get_prompt_file('WORKER_INSTRUCTIONS.md', 'worker.md')
     user_proxy_prompt_file = get_prompt_file('USER_PROXY_INSTRUCTIONS.md', 'user.md')
 
     # Auto-commit newly created instruction files to flow branch
     if created_instruction_files:
         _commit_instruction_files(created_instruction_files, debug)
 
-    # Use @filepath syntax for all agents
-    orchestrator_prompt = f"@{orchestrator_prompt_file}"
-    worker_prompt = f"@{worker_prompt_file}"
+    # Load orchestrator instruction file content for preset format
+    with open(orchestrator_prompt_file, 'r', encoding='utf-8') as f:
+        orchestrator_instructions = f.read()
+
+    # Use preset format for orchestrator system prompt
+    orchestrator_prompt = {
+        "type": "preset",
+        "preset": "claude_code",
+        "append": orchestrator_instructions
+    }
+
+    # Keep @filepath syntax for user proxy (handled by subagents)
     user_proxy_prompt = f"@{user_proxy_prompt_file}"
 
-    # Determine number of workers
+    # Determine number of workers for orchestrator to know capacity
     num_workers = max_parallel if enable_parallel else 1
 
     if debug or verbose:
         click.echo(f"DEBUG: Loading agent prompts:")
         click.echo(f"  Orchestrator: {orchestrator_prompt_file}")
-        click.echo(f"  Worker: {worker_prompt_file}")
         click.echo(f"  User Proxy: {user_proxy_prompt_file}")
-        click.echo(f"DEBUG: - orchestrator.md: {orchestrator_prompt}")
-        click.echo(f"DEBUG: - worker.md: {worker_prompt}")
-        click.echo(f"DEBUG: - user.md: {user_proxy_prompt}")
-        click.echo(f"DEBUG: Registering 1 user proxy + {num_workers} worker subagents")
+        click.echo(f"DEBUG: Orchestrator using preset format with claude_code base")
+        click.echo(f"DEBUG: - orchestrator append: {len(orchestrator_instructions)} chars")
+        click.echo(f"DEBUG: - user proxy: {user_proxy_prompt}")
+        click.echo(f"DEBUG: Number of workers available: {num_workers}")
         click.echo()
 
     # Run async session
@@ -604,7 +610,6 @@ def develop_DEPRECATED_DO_NOT_USE(
             verbose=verbose,
             debug=debug,
             orchestrator_prompt=orchestrator_prompt,
-            worker_prompt=worker_prompt,
             user_proxy_prompt=user_proxy_prompt,
             num_workers=num_workers
         ))
@@ -627,7 +632,6 @@ async def run_development_session(
     verbose: bool,
     debug: bool,
     orchestrator_prompt: str,
-    worker_prompt: str,
     user_proxy_prompt: str,
     num_workers: int,
     control_queue: Optional[asyncio.Queue] = None,
@@ -651,10 +655,9 @@ async def run_development_session(
         max_parallel: Maximum number of parallel workers
         verbose: Enable verbose logging
         debug: Enable debug mode
-        orchestrator_prompt: Orchestrator agent system prompt (@filepath syntax)
-        worker_prompt: Worker subagent prompt template (@filepath syntax)
+        orchestrator_prompt: Orchestrator agent system prompt (preset dict format)
         user_proxy_prompt: User proxy subagent prompt (@filepath syntax)
-        num_workers: Number of worker agents to create
+        num_workers: Number of workers available for parallel execution
         control_queue: Queue for receiving follow-up requests
         logger: Logger instance for session logging
         auto_mode: Enable autonomous mode with user proxy agent
@@ -773,9 +776,9 @@ async def run_development_session(
             click.echo("DEBUG: Claude CLI path not found, SDK will use default detection")
 
     # V7: Simplified architecture - orchestrator plans and coordinates, workers execute
-    # Orchestrator (orchestrator.md) creates plans and spawns workers
+    # Orchestrator (orchestrator.md) creates plans and spawns SDK workers
     # User Proxy (user.md) handles user confirmations (auto-mode only)
-    # Workers (worker.md) execute individual tasks in parallel
+    # Workers managed by sdk_workers.py execute individual tasks in parallel
     # SDK v0.1.6+ automatically handles Windows cmd.exe 8191-char limit via temp files (PR #245)
     agent_definitions = {}
 
@@ -800,13 +803,14 @@ async def run_development_session(
 
     if debug:
         user_count = 1 if auto_mode else 0
-        click.echo(f"DEBUG: Created {len(agent_definitions)} agent definitions ({user_count} user proxy + {num_workers} workers):")
+        click.echo(f"DEBUG: Created {len(agent_definitions)} agent definitions ({user_count} user proxy):")
         for agent_name, agent_def in agent_definitions.items():
             click.echo(f"DEBUG:   - {agent_name}: {agent_def.description}")
             click.echo(f"DEBUG:     tools: {agent_def.tools}")
             click.echo(f"DEBUG:     model: {agent_def.model}")
             click.echo(f"DEBUG:     prompt length: {len(agent_def.prompt)} chars")
         click.echo()
+        click.echo(f"DEBUG: Workers managed by SDK: {num_workers} parallel workers available")
 
     # Configure agent options with programmatic agents
     options_kwargs = {
@@ -870,7 +874,6 @@ async def run_development_session(
         parallel_config = f"""
 **Parallel Execution:** ENABLED
 - Max parallel workers: {max_parallel}
-- Workers available: {', '.join([f'worker-{i}' for i in range(1, num_workers + 1)])}
 - Execute tasks immediately when dependencies are met
 - Process each task completion immediately
 - Respect max parallel limit
@@ -907,7 +910,8 @@ When you need confirmations or decisions, call the 'user' subagent with Task too
 {parallel_config}
 
 **Available Subagents:**
-{f'- **user** - Get confirmations/decisions (call with Task tool){chr(10)}' if auto_mode else ''}{chr(10).join([f'- **worker-{i}** - Execute tasks' for i in range(1, num_workers + 1)])}
+{f'- **user** - Get confirmations/decisions (call with Task tool){chr(10)}' if auto_mode else ''}
+**Workers:** {num_workers} SDK-managed workers available for parallel task execution
 {user_agent_guide}
 ---
 

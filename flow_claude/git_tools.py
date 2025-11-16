@@ -423,7 +423,7 @@ async def parse_worker_commit_tool(args: Dict[str, Any]) -> Dict[str, Any]:
             "estimated_total_time": {"type": "string"},
             "dependency_graph": {"type": "string"}
         },
-        "required": ["session_id", "user_request", "tasks"]
+        "required": ["session_id", "user_request", "tasks", "dependency_graph"]
     }
 )
 async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -471,6 +471,72 @@ async def create_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             "content": [{"type": "text", "text": json.dumps({"error": "tasks list is required"}, indent=2)}],
             "isError": True
         }
+
+    # Validate dependency graph is not empty
+    if not dependency_graph or not dependency_graph.strip():
+        return {
+            "content": [{"type": "text", "text": json.dumps({
+                "error": "dependency_graph is required and cannot be empty",
+                "hint": "Describe task execution order, e.g.: 'Ready immediately: task-001, task-002\\nAfter task-001: task-003 becomes ready'"
+            }, indent=2)}],
+            "isError": True
+        }
+
+    # Validate each task has required fields
+    for i, task in enumerate(tasks):
+        # Check ID exists and is non-empty
+        task_id = task.get("id", "").strip()
+        if not task_id:
+            return {
+                "content": [{"type": "text", "text": json.dumps({
+                    "error": f"Task #{i + 1} is missing required 'id' field",
+                    "hint": "Each task must have 'id' (numeric string like '001'), 'description', 'preconditions' (list), 'provides' (list), and 'files' (list)",
+                    "failed_task": task
+                }, indent=2)}],
+                "isError": True
+            }
+
+        # Check ID format (should be digits, optionally followed by a letter)
+        import re
+        if not re.match(r'^\d+[a-z]?$', task_id):
+            return {
+                "content": [{"type": "text", "text": json.dumps({
+                    "error": f"Task #{i + 1} has invalid ID '{task_id}' (must be digits like '001' or '001a')",
+                    "hint": "Task IDs should be numeric strings like '001', '002', '003' or '001a', '001b'",
+                    "failed_task": task
+                }, indent=2)}],
+                "isError": True
+            }
+
+        # Check description
+        description = task.get("description", "").strip()
+        if not description:
+            return {
+                "content": [{"type": "text", "text": json.dumps({
+                    "error": f"Task {task_id} is missing required 'description' field",
+                    "failed_task": task
+                }, indent=2)}],
+                "isError": True
+            }
+
+        # Preconditions and provides must be lists (can be empty)
+        if not isinstance(task.get("preconditions", []), list):
+            return {
+                "content": [{"type": "text", "text": json.dumps({
+                    "error": f"Task {task_id} 'preconditions' must be a list (can be empty list [])",
+                    "failed_task": task
+                }, indent=2)}],
+                "isError": True
+            }
+
+        if not isinstance(task.get("provides", []), list):
+            return {
+                "content": [{"type": "text", "text": json.dumps({
+                    "error": f"Task {task_id} 'provides' must be a list (can be empty list [])",
+                    "failed_task": task
+                }, indent=2)}],
+                "isError": True
+            }
 
     branch_name = f"plan/{session_id}"
 
@@ -816,6 +882,18 @@ async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
             "content": [{"type": "text", "text": json.dumps({"error": "task_id is required"}, indent=2)}],
             "isError": True
         }
+
+    # Validate task ID format (should be digits, optionally followed by a letter)
+    import re
+    if not re.match(r'^\d+[a-z]?$', task_id.strip()):
+        return {
+            "content": [{"type": "text", "text": json.dumps({
+                "error": f"Invalid task ID '{task_id}' (must be digits like '001' or '001a')",
+                "hint": "Task IDs should be numeric strings like '001', '002', '003' or '001a', '001b'"
+            }, indent=2)}],
+            "isError": True
+        }
+
     if not branch_slug:
         return {
             "content": [{"type": "text", "text": json.dumps({"error": "branch_slug is required"}, indent=2)}],
@@ -824,6 +902,25 @@ async def create_task_branch(args: Dict[str, Any]) -> Dict[str, Any]:
     if not description:
         return {
             "content": [{"type": "text", "text": json.dumps({"error": "description is required"}, indent=2)}],
+            "isError": True
+        }
+
+    # Validate preconditions and provides are lists
+    if not isinstance(preconditions, list):
+        return {
+            "content": [{"type": "text", "text": json.dumps({
+                "error": "'preconditions' must be a list (can be empty list [])",
+                "received_type": type(preconditions).__name__
+            }, indent=2)}],
+            "isError": True
+        }
+
+    if not isinstance(provides, list):
+        return {
+            "content": [{"type": "text", "text": json.dumps({
+                "error": "'provides' must be a list (can be empty list [])",
+                "received_type": type(provides).__name__
+            }, indent=2)}],
             "isError": True
         }
 
@@ -1162,6 +1259,61 @@ async def update_plan_branch(args: Dict[str, Any]) -> Dict[str, Any]:
 
         # Add new tasks if provided
         if new_tasks:
+            # Validate new tasks before adding them
+            import re
+            for i, task in enumerate(new_tasks):
+                # Check ID exists and is non-empty
+                task_id = task.get("id", "").strip()
+                if not task_id:
+                    return {
+                        "content": [{"type": "text", "text": json.dumps({
+                            "error": f"New task #{i + 1} is missing required 'id' field",
+                            "hint": "Each task must have 'id' (numeric string like '001')",
+                            "failed_task": task
+                        }, indent=2)}],
+                        "isError": True
+                    }
+
+                # Check ID format
+                if not re.match(r'^\d+[a-z]?$', task_id):
+                    return {
+                        "content": [{"type": "text", "text": json.dumps({
+                            "error": f"New task #{i + 1} has invalid ID '{task_id}'",
+                            "hint": "Task IDs should be numeric strings like '001', '002', '003'",
+                            "failed_task": task
+                        }, indent=2)}],
+                        "isError": True
+                    }
+
+                # Check description
+                if not task.get("description", "").strip():
+                    return {
+                        "content": [{"type": "text", "text": json.dumps({
+                            "error": f"New task {task_id} is missing required 'description' field",
+                            "failed_task": task
+                        }, indent=2)}],
+                        "isError": True
+                    }
+
+                # Validate list fields
+                if not isinstance(task.get("preconditions", []), list):
+                    return {
+                        "content": [{"type": "text", "text": json.dumps({
+                            "error": f"New task {task_id} 'preconditions' must be a list",
+                            "failed_task": task
+                        }, indent=2)}],
+                        "isError": True
+                    }
+
+                if not isinstance(task.get("provides", []), list):
+                    return {
+                        "content": [{"type": "text", "text": json.dumps({
+                            "error": f"New task {task_id} 'provides' must be a list",
+                            "failed_task": task
+                        }, indent=2)}],
+                        "isError": True
+                    }
+
             tasks.extend(new_tasks)
 
         # Update architecture with learnings

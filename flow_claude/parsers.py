@@ -284,7 +284,22 @@ def parse_plan_commit(message: str) -> Dict[str, Any]:
     # Extract tasks (each starts with ### Task NNN)
     tasks = []
     task_pattern = r'### Task (\d+[a-z]?)\s*\n(.*?)(?=### Task |\Z)'
-    for match in re.finditer(task_pattern, message, re.DOTALL):
+    matches = list(re.finditer(task_pattern, message, re.DOTALL))
+
+    # Check if there are task sections that didn't match (likely missing IDs)
+    task_sections_count = message.count('### Task')
+    if task_sections_count > len(matches):
+        # Some task headers are malformed
+        import logging
+        logging.warning(
+            f"Found {task_sections_count} task sections but only {len(matches)} have valid IDs. "
+            f"Task headers must be formatted as '### Task 001' with a numeric ID."
+        )
+        # Also check for common mistakes
+        if '### Task \n' in message or '### Task\n' in message:
+            logging.error("Found task headers without IDs - tasks will not be parsed correctly!")
+
+    for match in matches:
         task_id = match.group(1)
         task_text = match.group(2)
 
