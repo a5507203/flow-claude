@@ -489,7 +489,7 @@ class FlowCLI(App):
         from flow_claude.sdk_workers import get_sdk_worker_manager
 
         # Initialize WorkerManager with control_queue for async worker management
-        # Create a logging function that writes to the UI log
+        # Create a logging function that writes to the UI log AND file log
         def worker_log(msg: str):
             log = self.query_one(RichLog)
             # Always show worker output (it's important for tracking progress)
@@ -509,6 +509,18 @@ class FlowCLI(App):
             elif "[Worker" in msg:
                 # Other worker-related messages
                 self._log(f"[blue]{msg}[/blue]")
+
+            # Also record to file log (important for debugging and tracking)
+            if self.logger:
+                # Remove color markup, record plain text to file
+                clean_msg = msg  # Already plain text
+                if "ERROR]" in msg:
+                    self.logger.error(clean_msg)
+                elif "WARNING]" in msg or "WARN]" in msg:
+                    self.logger.warning(clean_msg)
+                elif self.debug_mode or "[SDKWorkerManager]" not in msg:
+                    # Record all worker messages; manager debug only in debug mode
+                    self.logger.info(clean_msg)
 
         # Initialize SDK-based worker manager
         sdk_worker_manager = get_sdk_worker_manager(
@@ -552,7 +564,7 @@ class FlowCLI(App):
                 initial_request=request,
                 session_id=self.session_id,
                 model=self.model,
-                max_turns=400,  # Reduced from 100 - orchestrator should complete after launching workers
+                max_turns=1000,  # Reduced from 100 - orchestrator should complete after launching workers
                 permission_mode="bypassPermissions",
                 enable_parallel=enable_parallel,
                 max_parallel=self.max_parallel,

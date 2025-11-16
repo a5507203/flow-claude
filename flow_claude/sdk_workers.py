@@ -237,6 +237,12 @@ class SDKWorkerManager:
                 elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
                 self.log(f"[SDKWorkerManager] Worker-{worker_id} completed task {task_branch}")
 
+                # IMPORTANT: Inject completion event BEFORE yielding the message
+                # This ensures the event reaches control_queue even if consumer breaks early
+                if self.control_queue:
+                    await self._inject_completion_event(worker_id, task_branch, 0, elapsed)
+
+                # Now yield the completed message (consumer can safely break after this)
                 yield {
                     'worker_id': worker_id,
                     'type': 'completed',
@@ -244,26 +250,25 @@ class SDKWorkerManager:
                     'task_branch': task_branch
                 }
 
-                if self.control_queue:
-                    await self._inject_completion_event(worker_id, task_branch, 0, elapsed)
-
         except Exception as e:
             # Handle errors
             self.log(f"[SDKWorkerManager] Worker-{worker_id} error: {str(e)}")
 
-            yield {
-                'worker_id': worker_id,
-                'type': 'error',
-                'error': str(e)
-            }
-
-            # Inject error event (with safe elapsed time calculation)
+            # IMPORTANT: Inject error event BEFORE yielding the message
+            # This ensures the event reaches control_queue even if consumer breaks early
             if self.control_queue:
                 if worker_id in self.active_workers:
                     elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
                 else:
                     elapsed = 0  # Worker never started properly
                 await self._inject_completion_event(worker_id, task_branch, 1, elapsed)
+
+            # Now yield the error message
+            yield {
+                'worker_id': worker_id,
+                'type': 'error',
+                'error': str(e)
+            }
 
         finally:
             # Clean up (safe deletion)

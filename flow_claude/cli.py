@@ -544,7 +544,7 @@ Begin. **Remember: Complete immediately after launching all initial workers.**""
                     elapsed_min = int(elapsed_time / 60)
                     elapsed_sec = int(elapsed_time % 60)
 
-                    # Log the completion event
+                    # Log the completion event to console
                     click.echo("\n" + "=" * 60)
                     click.echo(f"[WORKER COMPLETION EVENT]")
                     click.echo(f"  Worker ID: {worker_id}")
@@ -553,6 +553,11 @@ Begin. **Remember: Complete immediately after launching all initial workers.**""
                     click.echo(f"  Duration: {elapsed_min}m {elapsed_sec}s")
                     click.echo("=" * 60 + "\n")
 
+                    # Also log to file for tracking
+                    if logger:
+                        logger.info(f"[WORKER COMPLETION] Worker-{worker_id} completed {task_branch}")
+                        logger.info(f"  Exit code: {exit_code} {'(success)' if exit_code == 0 else '(failed)'}, Duration: {elapsed_min}m {elapsed_sec}s")
+
                     if debug:
                         click.echo(f"DEBUG: Worker completion event details:")
                         click.echo(f"DEBUG:   Worker-{worker_id}")
@@ -560,6 +565,8 @@ Begin. **Remember: Complete immediately after launching all initial workers.**""
                         click.echo(f"DEBUG:   Exit code: {exit_code}")
                         click.echo(f"DEBUG:   Elapsed: {elapsed_time:.2f}s")
                         click.echo(f"DEBUG: Injecting completion notification to orchestrator\n")
+                        if logger:
+                            logger.debug(f"Worker-{worker_id} completion: branch={task_branch}, exit={exit_code}, elapsed={elapsed_time:.2f}s")
 
                     # Create notification message for orchestrator
                     completion_msg = f"""Worker-{worker_id} has completed task {task_branch}
