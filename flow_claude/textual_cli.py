@@ -552,7 +552,7 @@ class FlowCLI(App):
                 initial_request=request,
                 session_id=self.session_id,
                 model=self.model,
-                max_turns=100,
+                max_turns=400,  # Reduced from 100 - orchestrator should complete after launching workers
                 permission_mode="bypassPermissions",
                 enable_parallel=enable_parallel,
                 max_parallel=self.max_parallel,

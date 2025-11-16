@@ -280,6 +280,10 @@ class SDKWorkerManager:
             exit_code: 0 for success, non-zero for error
             elapsed_time: Time taken in seconds
         """
+        if not self.control_queue:
+            self.log(f"[SDKWorkerManager] WARNING: No control_queue available - cannot inject completion event for worker-{worker_id}")
+            return
+
         event = {
             "type": "worker_completion",
             "data": {
@@ -292,8 +296,9 @@ class SDKWorkerManager:
 
         try:
             await self.control_queue.put(event)
+            self.log(f"[SDKWorkerManager] Successfully injected completion event for worker-{worker_id} into control_queue")
             if self.debug:
-                self.log(f"[SDKWorkerManager] Injected completion event for worker-{worker_id}")
+                self.log(f"[SDKWorkerManager]   Task: {task_branch}, Exit code: {exit_code}, Time: {elapsed_time:.1f}s")
         except Exception as e:
             self.log(f"[SDKWorkerManager] Error injecting event: {e}")
 
@@ -390,7 +395,8 @@ def get_sdk_worker_manager(control_queue: Optional[asyncio.Queue] = None,
         _sdk_worker_manager = SDKWorkerManager(control_queue, debug, log_func, max_parallel)
     else:
         # Update parameters if provided
-        if control_queue and _sdk_worker_manager.control_queue is None:
+        # Always update control_queue if provided (not just when current is None)
+        if control_queue:
             _sdk_worker_manager.control_queue = control_queue
         if log_func:
             _sdk_worker_manager.log = log_func
