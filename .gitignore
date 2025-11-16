@@ -2,6 +2,3 @@
 /flow_claude/__pycache__
 *.pyc
 
-# Git worktrees for parallel workers
-.worktrees/
-/.worktrees/

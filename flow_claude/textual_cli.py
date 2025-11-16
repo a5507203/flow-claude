@@ -541,7 +541,6 @@ class FlowCLI(App):
 
         # Format prompts with @ syntax
         orchestrator_prompt = f"@{orch_file}"
-        worker_prompt = f"@{worker_file}"
         user_proxy_prompt = f"@{user_file}" if self.auto_mode else None
 
         # Determine execution mode
@@ -560,8 +559,6 @@ class FlowCLI(App):
                 verbose=self.verbose_mode,
                 debug=self.debug_mode,
                 orchestrator_prompt=orchestrator_prompt,
-                worker_prompt=worker_prompt,
-                user_proxy_prompt=user_proxy_prompt,
                 num_workers=num_workers,
                 control_queue=self.control_queue,
                 logger=self.logger,

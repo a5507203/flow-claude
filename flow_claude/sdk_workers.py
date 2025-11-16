@@ -110,17 +110,15 @@ class SDKWorkerManager:
             return
 
         try:
-            # Load worker instructions file content
-            with open(worker_prompt_file, 'r', encoding='utf-8') as f:
-                worker_instructions = f.read()
 
+            worker_prompt = {
+                "type": "preset",
+                "preset": "claude_code",
+                "append": "**Instructions:** See .flow-claude/WORKER_INSTRUCTIONS.md for your full workflow."
+            }
             # Create worker-specific options WITHOUT MCP servers to avoid circular dependency
             options = ClaudeAgentOptions(
-                system_prompt={
-                    "type": "preset",
-                    "preset": "claude_code",
-                    "append": worker_instructions
-                },
+                system_prompt=worker_prompt,  # Load from file
                 agents={},  # Workers don't need subagents
                 allowed_tools=[
                     'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob'
@@ -129,8 +127,7 @@ class SDKWorkerManager:
                 # No mcp_servers - this prevents circular dependency!
                 cwd=str(working_dir),  # Use the working_dir which can be overridden
                 permission_mode='acceptEdits',
-                setting_sources=["user", "project", "local"]  # Load all settings
-    
+                setting_sources=["user", "project", "local"]  # Explicitly set Claude CLI path
             )
 
             # Use the instructions provided by the orchestrator
@@ -141,7 +138,6 @@ class SDKWorkerManager:
                 self.log(f"[SDKWorkerManager]   Using SDK query() function")
                 self.log(f"[SDKWorkerManager]   Working directory: {str(working_dir)}")
                 self.log(f"[SDKWorkerManager]   Model: {session_info.get('model', 'sonnet')}")
-                self.log(f"[SDKWorkerManager]   System prompt: preset claude_code + {len(worker_instructions)} chars append")
 
             # Execute worker using SDK query()
             async for message in query(prompt=prompt, options=options):
@@ -236,40 +232,20 @@ class SDKWorkerManager:
                     'tool_output': tool_output
                 }
 
-                # Check for completion signal
-                if "TASK_COMPLETED" in message_content.upper():
-                    # Worker signaled completion
-                    elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
+            # Query completed naturally - mark worker as complete
+            if worker_id in self.active_workers:
+                elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
+                self.log(f"[SDKWorkerManager] Worker-{worker_id} completed task {task_branch}")
 
-                    yield {
-                        'worker_id': worker_id,
-                        'type': 'completed',
-                        'elapsed_time': elapsed,
-                        'task_branch': task_branch
-                    }
+                yield {
+                    'worker_id': worker_id,
+                    'type': 'completed',
+                    'elapsed_time': elapsed,
+                    'task_branch': task_branch
+                }
 
-                    # Inject completion event if control_queue available
-                    if self.control_queue:
-                        await self._inject_completion_event(worker_id, task_branch, 0, elapsed)
-
-                    break
-
-            # If loop completes without break (no TASK_COMPLETED found)
-            # Worker completed without explicit signal - inject completion
-            else:
-                if worker_id in self.active_workers:
-                    elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
-                    self.log(f"[SDKWorkerManager] Worker-{worker_id} completed without explicit TASK_COMPLETED signal")
-
-                    yield {
-                        'worker_id': worker_id,
-                        'type': 'completed',
-                        'elapsed_time': elapsed,
-                        'task_branch': task_branch
-                    }
-
-                    if self.control_queue:
-                        await self._inject_completion_event(worker_id, task_branch, 0, elapsed)
+                if self.control_queue:
+                    await self._inject_completion_event(worker_id, task_branch, 0, elapsed)
 
         except Exception as e:
             # Handle errors

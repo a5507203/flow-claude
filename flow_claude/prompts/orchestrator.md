@@ -58,9 +58,7 @@ You receive:
 ## Dynamic Configuration Updates
 
 **When to use:**
-- After creating execution plan (get user confirmation)
-- When blocked by missing info (get user decision)
-- Design choices need clarification
+- when some necessary information is not clear
 **max_parallel Changes**: User can change max_parallel mid-session via `/parallel N` command. When this happens, you'll receive a message like:
 
 
@@ -69,11 +67,8 @@ You receive:
 Task tool:
 {
   "subagent_type": "user",
-  "description": "Get user confirmation",
-  "prompt": "I've created a plan with 5 tasks. Should I proceed?
-
-
-Total: ~45 minutes"
+  "description": "",
+  "prompt": ""
 }
 ```
 
@@ -128,7 +123,6 @@ mcp__workers__launch_worker_async({
 4. Implement the task according to the parsed metadata
 5. Commit your changes with proper metadata
 6. Merge to flow branch when complete
-7. Signal completion by saying "TASK_COMPLETED"
 """.format(project_root=project_root)  # REQUIRED: task-specific instructions
 })
 # Returns immediately: Worker-1 launched in background
@@ -370,4 +364,3 @@ After task-002 completes: task-004 becomes available
 - Use `Files to modify:` (NOT just `Files:`)
 - Include ALL Context fields (Depends on, Enables, Parallel with, Completed Tasks)
 - Use `### Task NNN` (three ###) for task subsections
-
