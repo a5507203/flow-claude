@@ -6,7 +6,23 @@ from both the main orchestrator agent and SDK worker agents.
 
 import json
 from enum import Enum
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
+
+# Import Claude SDK types for proper message handling
+try:
+    from claude_agent_sdk import AssistantMessage
+    SDK_AVAILABLE = True
+except ImportError:
+    SDK_AVAILABLE = False
+    AssistantMessage = None
+
+# Import block formatters for natural language display
+from flow_claude.utils.block_formatter import (
+    format_text_block,
+    format_tool_use_block,
+    format_tool_result_block,
+    format_block_natural
+)
 
 
 class MessageType(Enum):

@@ -594,6 +594,7 @@ Begin. **Remember: Complete immediately after launching all initial workers.**""
                     task_branch = worker_data.get("task_branch")
                     exit_code = worker_data.get("exit_code")
                     elapsed_time = worker_data.get("elapsed_time", 0)
+                    error_message = worker_data.get("error_message")  # May be None
 
                     # Format elapsed time
                     elapsed_min = int(elapsed_time / 60)
@@ -606,12 +607,16 @@ Begin. **Remember: Complete immediately after launching all initial workers.**""
                     click.echo(f"  Task: {task_branch}")
                     click.echo(f"  Exit code: {exit_code} {'(success)' if exit_code == 0 else '(failed)'}")
                     click.echo(f"  Duration: {elapsed_min}m {elapsed_sec}s")
+                    if error_message:
+                        click.echo(f"  Error: {error_message}")
                     click.echo("=" * 60 + "\n")
 
                     # Also log to file for tracking
                     if logger:
                         logger.info(f"[WORKER COMPLETION] Worker-{worker_id} completed {task_branch}")
                         logger.info(f"  Exit code: {exit_code} {'(success)' if exit_code == 0 else '(failed)'}, Duration: {elapsed_min}m {elapsed_sec}s")
+                        if error_message:
+                            logger.error(f"  Error: {error_message}")
 
                     if debug:
                         click.echo(f"DEBUG: Worker completion event details:")
@@ -624,8 +629,10 @@ Begin. **Remember: Complete immediately after launching all initial workers.**""
                             logger.debug(f"Worker-{worker_id} completion: branch={task_branch}, exit={exit_code}, elapsed={elapsed_time:.2f}s")
 
                     # Create notification message for orchestrator
-                    completion_msg = f"""Worker-{worker_id} has completed task {task_branch}
-- Exit code: {exit_code} {"(success)" if exit_code == 0 else "(error)"}
+                    if exit_code == 0:
+                        # Success case - normal completion flow
+                        completion_msg = f"""Worker-{worker_id} has completed task {task_branch}
+- Exit code: {exit_code} (success)
 - Elapsed time: {elapsed_min}m {elapsed_sec}s
 
 Please process this single completion immediately (don't wait for other workers):
@@ -636,6 +643,24 @@ Please process this single completion immediately (don't wait for other workers)
 5. Check for newly-ready tasks: mcp__git__get_provides()
 6. If worker-{worker_id} is now idle and another task is ready, launch it immediately
 7. Continue working while other workers complete their tasks independently"""
+                    else:
+                        # Error case - include error details and suggest retry/alternative
+                        error_details = f"\n- Error: {error_message}" if error_message else ""
+                        completion_msg = f"""Worker-{worker_id} FAILED task {task_branch}
+- Exit code: {exit_code} (error)
+- Elapsed time: {elapsed_min}m {elapsed_sec}s{error_details}
+
+The worker encountered an error and could not complete the task. Please:
+1. Read the error message above to understand what went wrong
+2. Remove the failed worktree: mcp__git__remove_worktree("{worker_id}")
+3. Decide on next steps:
+   - If validation error (e.g., missing branch, bad parameters): Fix the issue and retry
+   - If initialization error (e.g., git/MCP setup): Check worktree setup, then retry
+   - If runtime error: Review task complexity, consider breaking into smaller tasks
+   - If repeated failures: Try alternative approach or skip for now
+4. Update plan if needed: mcp__git__update_plan_branch()
+5. If retrying or launching alternative task, use worker-{worker_id} (now idle)
+6. Continue with other workers' tasks independently"""
 
                     # Process as a regular query
                     await client.query(completion_msg)

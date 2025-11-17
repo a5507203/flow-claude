@@ -52,7 +52,7 @@ def extract_mcp_server_names(allowed_tools: List[str]) -> set:
 def build_worker_mcp_servers(working_dir: Path, allowed_tools: Optional[List[str]] = None) -> Dict[str, Any]:
     """Build MCP servers configuration for a worker.
 
-    Loads MCP configuration from .flow-claude/.mcp.json in the working directory
+    Loads MCP configuration from .mcp.json in the working directory
     and filters to only include servers needed by the worker's allowed_tools.
 
     Args:
@@ -66,6 +66,10 @@ def build_worker_mcp_servers(working_dir: Path, allowed_tools: Optional[List[str
         >>> servers = build_worker_mcp_servers(Path(".worktrees/worker-1"), ['mcp__playwright__screenshot'])
         >>> list(servers.keys())
         ['git', 'playwright']
+
+    File locations:
+        - Main project: <project_root>/.mcp.json
+        - Worker worktrees: <worktree_root>/.mcp.json (e.g., .worktrees/worker-1/.mcp.json)
     """
     # Lazy import to avoid circular dependency
     from flow_claude.git_tools import create_git_tools_server
@@ -75,7 +79,7 @@ def build_worker_mcp_servers(working_dir: Path, allowed_tools: Optional[List[str
         "git": create_git_tools_server()
     }
 
-    # Load project MCP config from .flow-claude/.mcp.json in worker's directory
+    # Load project MCP config from .mcp.json in worker's directory
     project_mcp_config = load_project_mcp_config(working_dir)
 
     # Extract MCP server names needed from allowed_tools
@@ -110,6 +114,101 @@ class SDKWorkerManager:
         self.active_workers = {}  # worker_id -> task info
         self.max_parallel = max_parallel
 
+    def _validate_worker_params(self, worker_id: str, task_branch: str,
+                                session_info: Dict[str, Any],
+                                cwd: str, instructions: str) -> tuple[bool, Optional[str]]:
+        """Validate worker parameters before launching.
+
+        Performs comprehensive validation to catch errors early before expensive
+        SDK initialization. Returns validation result and error message.
+
+        Args:
+            worker_id: Worker identifier
+            task_branch: Git branch for the task
+            session_info: Session metadata
+            cwd: Working directory path
+            instructions: Task instructions
+
+        Returns:
+            Tuple of (success: bool, error_message: Optional[str])
+            - (True, None) if all validations pass
+            - (False, error_msg) if validation fails
+        """
+        import re
+        import subprocess
+
+        # Validate worker_id format (should be numeric string)
+        if not re.match(r'^\d+$', worker_id):
+            return False, f"Worker ID must be numeric string (e.g., '1', '2'), got: {worker_id!r}"
+
+        # Validate session_info has required fields
+        if not isinstance(session_info, dict):
+            return False, f"session_info must be dict, got: {type(session_info).__name__}"
+
+        required_session_fields = ['session_id', 'plan_branch', 'model']
+        for field in required_session_fields:
+            if field not in session_info:
+                return False, f"session_info missing required field: {field!r}"
+            if not session_info[field]:
+                return False, f"session_info field {field!r} is empty"
+
+        # Validate model is valid
+        valid_models = ['sonnet', 'opus', 'haiku']
+        model = session_info.get('model', '').lower()
+        if model not in valid_models:
+            return False, f"Invalid model {model!r}, must be one of: {valid_models}"
+
+        # Validate task_branch exists in git
+        try:
+            result = subprocess.run(
+                ['git', 'rev-parse', '--verify', task_branch],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=Path.cwd()  # Check from main repo
+            )
+            if result.returncode != 0:
+                return False, f"Task branch {task_branch!r} does not exist in git repository"
+        except subprocess.TimeoutExpired:
+            return False, f"Git command timed out while checking branch {task_branch!r}"
+        except Exception as e:
+            return False, f"Failed to verify task branch {task_branch!r}: {e}"
+
+        # Validate working directory
+        working_dir = Path(cwd)
+        if not working_dir.exists():
+            return False, f"Working directory does not exist: {cwd}"
+
+        if not working_dir.is_dir():
+            return False, f"Working directory path is not a directory: {cwd}"
+
+        # Check if it's accessible
+        if not os.access(working_dir, os.R_OK | os.X_OK):
+            return False, f"Working directory not accessible (read/execute permissions required): {cwd}"
+
+        # Validate it's a git repository (worktree or regular)
+        git_dir = working_dir / '.git'
+        if not git_dir.exists():
+            return False, f"Working directory is not a git repository (no .git): {cwd}"
+
+        # Validate instruction file exists and is readable
+        instruction_file = working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md'
+        if not instruction_file.exists():
+            return False, f"Worker instruction file not found: {instruction_file}"
+
+        if not instruction_file.is_file():
+            return False, f"Worker instruction file is not a regular file: {instruction_file}"
+
+        if not os.access(instruction_file, os.R_OK):
+            return False, f"Worker instruction file not readable: {instruction_file}"
+
+        # Validate instructions aren't empty
+        if not instructions or not instructions.strip():
+            return False, "Task instructions cannot be empty"
+
+        # All validations passed
+        return True, None
+
     async def run_worker(self, worker_id: str, task_branch: str,
                         session_info: Dict[str, Any],
                         cwd: str, instructions: str,
@@ -138,13 +237,38 @@ class SDKWorkerManager:
             }
             return
 
-        # Log that we're starting
-        self.log(f"[SDKWorkerManager] run_worker called for worker-{worker_id}")
-        self.log(f"[SDKWorkerManager]   Task branch: {task_branch}")
-        self.log(f"[SDKWorkerManager]   CWD: {cwd}")
-        self.log(f"[SDKWorkerManager]   Active workers: {len(self.active_workers)}/{self.max_parallel}")
+        # Log startup in debug mode only
+        if self.debug:
+            self.log(f"[SDKWorkerManager] Launching worker-{worker_id} for {task_branch}")
 
-        # Track active worker
+        # VALIDATION: Validate parameters before expensive SDK initialization
+        validation_success, validation_error = self._validate_worker_params(
+            worker_id, task_branch, session_info, cwd, instructions
+        )
+
+        if not validation_success:
+            # Validation failed - report error immediately via control queue
+            error_msg = f"Worker-{worker_id} validation failed: {validation_error}"
+            self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
+
+            # Inject completion event to control queue (orchestrator needs to know)
+            if self.control_queue:
+                elapsed_time = 0.0  # No execution time - failed before start
+                await self._inject_completion_event(
+                    worker_id, task_branch, exit_code=1,
+                    elapsed_time=elapsed_time,
+                    error_message=validation_error
+                )
+
+            # Yield error message (for generator consumer)
+            yield {
+                'worker_id': worker_id,
+                'type': 'error',
+                'message': validation_error
+            }
+            return
+
+        # Track active worker (only after validation passes)
         self.active_workers[worker_id] = {
             'task_branch': task_branch,
             'cwd': cwd,
@@ -163,7 +287,8 @@ class SDKWorkerManager:
         # Resolve to canonical absolute path
         working_dir = working_dir.resolve()
 
-        # First check for worker prompt in parent directory (shared prompts)
+        # All pre-flight checks now handled by _validate_worker_params()
+        # Determine worker prompt file path (shared prompts in parent directory)
         parent_dir = Path(os.getcwd())
         worker_prompt_file = parent_dir / ".flow-claude" / "WORKER_INSTRUCTIONS.md"
 
@@ -171,98 +296,6 @@ class SDKWorkerManager:
         if not worker_prompt_file.exists():
             flow_claude_dir = working_dir / ".flow-claude"
             worker_prompt_file = flow_claude_dir / "WORKER_INSTRUCTIONS.md"
-
-
-        # Ensure worker instructions exist
-        if not worker_prompt_file.exists():
-            self.log(f"[SDKWorkerManager] ERROR: Worker instructions not found at {worker_prompt_file}")
-            yield {
-                'worker_id': worker_id,
-                'type': 'error',
-                'message': f"Worker instructions not found: {worker_prompt_file}"
-            }
-            return
-
-        # PRE-FLIGHT CHECKS: Verify environment before launching worker
-        try:
-            # Check 1: Working directory exists
-            if not working_dir.exists():
-                error_msg = f"Working directory does not exist: {working_dir}"
-                self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
-                yield {
-                    'worker_id': worker_id,
-                    'type': 'error',
-                    'message': error_msg
-                }
-                return
-
-            # Check 2: Working directory is accessible
-            if not os.access(working_dir, os.R_OK | os.X_OK):
-                error_msg = f"Working directory not accessible: {working_dir}"
-                self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
-                yield {
-                    'worker_id': worker_id,
-                    'type': 'error',
-                    'message': error_msg
-                }
-                return
-
-            # Check 3: Is a git repository
-            git_dir = working_dir / ".git"
-            is_git_repo = git_dir.exists() or (working_dir / ".." / ".git").exists()
-            if not is_git_repo:
-                # Check if it's a worktree (has .git file pointing to main repo)
-                git_file = working_dir / ".git"
-                is_git_repo = git_file.is_file() if git_file.exists() else False
-
-            if not is_git_repo:
-                self.log(f"[SDKWorkerManager] WARNING: Working directory is not a git repository: {working_dir}")
-
-            # Check 4: Worker instructions are readable
-            if not os.access(worker_prompt_file, os.R_OK):
-                error_msg = f"Worker instructions not readable: {worker_prompt_file}"
-                self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
-                yield {
-                    'worker_id': worker_id,
-                    'type': 'error',
-                    'message': error_msg
-                }
-                return
-
-            # Log diagnostic information in debug mode
-            if self.debug:
-                self.log(f"[SDKWorkerManager] Pre-flight checks passed for worker-{worker_id}")
-                self.log(f"[SDKWorkerManager]   Working dir exists: {working_dir.exists()}")
-                self.log(f"[SDKWorkerManager]   Working dir accessible: {os.access(working_dir, os.R_OK | os.X_OK)}")
-                self.log(f"[SDKWorkerManager]   Is git repository: {is_git_repo}")
-                self.log(f"[SDKWorkerManager]   Instruction file: {worker_prompt_file}")
-
-                # Try to get current git branch
-                try:
-                    import subprocess
-                    result = subprocess.run(
-                        ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                        cwd=working_dir,
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode == 0:
-                        current_branch = result.stdout.strip()
-                        self.log(f"[SDKWorkerManager]   Current branch: {current_branch}")
-                except Exception as git_error:
-                    self.log(f"[SDKWorkerManager]   Could not determine git branch: {git_error}")
-
-        except Exception as preflight_error:
-            error_msg = f"Pre-flight check failed: {str(preflight_error)}"
-            self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
-            self.log(f"[SDKWorkerManager] Traceback: {traceback.format_exc()}")
-            yield {
-                'worker_id': worker_id,
-                'type': 'error',
-                'message': error_msg
-            }
-            return
 
         try:
 
@@ -315,12 +348,6 @@ class SDKWorkerManager:
             # Use the instructions provided by the orchestrator
             prompt = instructions
 
-            if self.debug:
-                self.log(f"[SDKWorkerManager] Launching worker-{worker_id} for {task_branch}")
-                self.log(f"[SDKWorkerManager]   Using SDK query() function")
-                self.log(f"[SDKWorkerManager]   Working directory: {str(working_dir)}")
-                self.log(f"[SDKWorkerManager]   Model: {session_info.get('model', 'sonnet')}")
-
             # Create message handler for this worker
             message_handler = create_worker_message_handler(
                 worker_id=worker_id,
@@ -334,9 +361,9 @@ class SDKWorkerManager:
 
             # Execute worker using ClaudeSDKClient (persistent session)
             # This properly supports MCP servers unlike query()
-            # Wrap with better error context
             try:
-                self.log(f"[SDKWorkerManager] Initializing ClaudeSDKClient for worker-{worker_id}...")
+                if self.debug:
+                    self.log(f"[SDKWorkerManager] Initializing ClaudeSDKClient for worker-{worker_id}...")
 
                 async with ClaudeSDKClient(options=options) as client:
                     # Send the prompt to the client
@@ -516,7 +543,16 @@ class SDKWorkerManager:
             # IMPORTANT: Inject error event BEFORE yielding the message
             # This ensures the event reaches control_queue even if consumer breaks early
             if self.control_queue:
-                await self._inject_completion_event(worker_id, task_branch, 1, elapsed)
+                # Create concise error summary for orchestrator
+                error_summary = f"{type(e).__name__}: {str(e)}"
+                if error_phase != 'unknown':
+                    error_summary = f"[{error_phase}] {error_summary}"
+
+                await self._inject_completion_event(
+                    worker_id, task_branch, exit_code=1,
+                    elapsed_time=elapsed,
+                    error_message=error_summary
+                )
 
             # Now yield the error message with comprehensive diagnostics
             yield {
@@ -533,7 +569,8 @@ class SDKWorkerManager:
                 del self.active_workers[worker_id]
 
     async def _inject_completion_event(self, worker_id: str, task_branch: str,
-                                      exit_code: int, elapsed_time: float):
+                                      exit_code: int, elapsed_time: float,
+                                      error_message: Optional[str] = None):
         """Inject worker completion event into control queue.
 
         Args:
@@ -541,6 +578,7 @@ class SDKWorkerManager:
             task_branch: Task branch name
             exit_code: 0 for success, non-zero for error
             elapsed_time: Time taken in seconds
+            error_message: Optional error message (for failures)
         """
         if not self.control_queue:
             self.log(f"[SDKWorkerManager] WARNING: No control_queue available - cannot inject completion event for worker-{worker_id}")
@@ -555,6 +593,10 @@ class SDKWorkerManager:
                 "elapsed_time": elapsed_time
             }
         }
+
+        # Add error message if provided
+        if error_message:
+            event["data"]["error_message"] = error_message
 
         try:
             await self.control_queue.put(event)
