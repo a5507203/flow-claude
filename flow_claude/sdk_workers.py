@@ -11,9 +11,82 @@ import traceback
 from pathlib import Path
 from typing import Dict, Any, List, AsyncGenerator, Optional
 
-from claude_agent_sdk import ClaudeAgentOptions, query, tool, create_sdk_mcp_server
+from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, query, tool, create_sdk_mcp_server
 from flow_claude.utils.message_formatter import parse_agent_message
 from flow_claude.utils.message_handler import create_worker_message_handler
+from flow_claude.utils.mcp_loader import load_project_mcp_config
+
+
+def extract_mcp_server_names(allowed_tools: List[str]) -> set:
+    """Extract MCP server names from tool names.
+
+    MCP tool names follow the pattern: mcp__<servername>__<toolname>
+
+    Args:
+        allowed_tools: List of tool names that may include MCP tools
+
+    Returns:
+        Set of unique MCP server names extracted from tool names
+
+    Example:
+        >>> extract_mcp_server_names(['mcp__playwright__screenshot', 'mcp__playwright__navigate'])
+        {'playwright'}
+
+        >>> extract_mcp_server_names(['mcp__custom__action', 'mcp__other__tool', 'Bash'])
+        {'custom', 'other'}
+    """
+    server_names = set()
+
+    for tool in allowed_tools:
+        # Check if it's an MCP tool (starts with 'mcp__')
+        if tool.startswith('mcp__'):
+            # Split by '__' and extract server name (second part)
+            parts = tool.split('__')
+            if len(parts) >= 3:  # mcp__servername__toolname
+                server_name = parts[1]
+                server_names.add(server_name)
+
+    return server_names
+
+
+def build_worker_mcp_servers(working_dir: Path, allowed_tools: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Build MCP servers configuration for a worker.
+
+    Loads MCP configuration from .flow-claude/.mcp.json in the working directory
+    and filters to only include servers needed by the worker's allowed_tools.
+
+    Args:
+        working_dir: Worker's working directory (worktree path)
+        allowed_tools: Optional list of additional tool names the worker is allowed to use
+
+    Returns:
+        Dict of MCP server configurations ready for ClaudeAgentOptions
+
+    Example:
+        >>> servers = build_worker_mcp_servers(Path(".worktrees/worker-1"), ['mcp__playwright__screenshot'])
+        >>> list(servers.keys())
+        ['git', 'playwright']
+    """
+    # Lazy import to avoid circular dependency
+    from flow_claude.git_tools import create_git_tools_server
+
+    # Start with core git MCP server (always available to workers)
+    worker_mcp_servers = {
+        "git": create_git_tools_server()
+    }
+
+    # Load project MCP config from .flow-claude/.mcp.json in worker's directory
+    project_mcp_config = load_project_mcp_config(working_dir)
+
+    # Extract MCP server names needed from allowed_tools
+    # and add them from project config (external MCP servers)
+    if allowed_tools and project_mcp_config:
+        needed_server_names = extract_mcp_server_names(allowed_tools)
+        for server_name in needed_server_names:
+            if server_name in project_mcp_config:
+                worker_mcp_servers[server_name] = project_mcp_config[server_name]
+
+    return worker_mcp_servers
 
 
 class SDKWorkerManager:
@@ -39,7 +112,8 @@ class SDKWorkerManager:
 
     async def run_worker(self, worker_id: str, task_branch: str,
                         session_info: Dict[str, Any],
-                        cwd: str, instructions: str) -> AsyncGenerator:
+                        cwd: str, instructions: str,
+                        allowed_tools: Optional[List[str]] = None) -> AsyncGenerator:
         """Run a single worker using SDK query() function.
 
         Args:
@@ -48,6 +122,7 @@ class SDKWorkerManager:
             session_info: Session metadata (session_id, plan_branch, model)
             cwd: Working directory - the worktree path where worker operates (REQUIRED - absolute path)
             instructions: Task-specific instructions written by the orchestrator LLM
+            allowed_tools: Optional list of additional MCP tools to allow beyond core tools
 
         Yields:
             Dict with worker_id, message type, and content
@@ -196,18 +271,45 @@ class SDKWorkerManager:
                 "preset": "claude_code",
                 "append": "**Instructions:** See .flow-claude/WORKER_INSTRUCTIONS.md for your full workflow."
             }
-            # Create worker-specific options WITHOUT MCP servers to avoid circular dependency
+
+            # Build worker allowed tools list
+            # Core tools always available to workers
+            core_worker_tools = [
+                'Bash', 'Glob', 'Grep', 'Read', 'Edit', 'Write', 'NotebookEdit',
+                'WebFetch', 'TodoWrite', 'WebSearch', 'BashOutput', 'KillShell',
+                'Skill', 'SlashCommand'
+            ]
+
+            # Add core git MCP tools (always available)
+            core_git_mcp_tools = [
+                'mcp__git__parse_task',
+                'mcp__git__parse_plan',
+                'mcp__git__parse_worker_commit',
+                'mcp__git__get_provides'
+            ]
+
+            # Combine core tools with additional allowed tools from orchestrator
+            worker_allowed_tools = core_worker_tools + core_git_mcp_tools
+            if allowed_tools:
+                worker_allowed_tools.extend(allowed_tools)
+
+            # Build MCP servers configuration for this worker
+            # Uses helper function to load .mcp.json and filter based on allowed_tools
+            worker_mcp_servers = build_worker_mcp_servers(working_dir, allowed_tools)
+
+            # Log loaded MCP servers in debug mode
+            if self.debug and worker_mcp_servers:
+                self.log(f"[SDKWorkerManager] Worker-{worker_id} MCP servers: {list(worker_mcp_servers.keys())}")
+
+            # Create worker-specific options
             options = ClaudeAgentOptions(
-                system_prompt=worker_prompt,  # Load from file
+                system_prompt=worker_prompt,
                 agents={},  # Workers don't need subagents
-                allowed_tools=[
-                    'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob'
-                    # No MCP tools - workers use standard tools only
-                ],
-                # No mcp_servers - this prevents circular dependency!
-                cwd=str(working_dir),  # Use the working_dir which can be overridden
+                allowed_tools=worker_allowed_tools,
+                mcp_servers=worker_mcp_servers,  # Dynamically built from .mcp.json
+                cwd=str(working_dir),
                 permission_mode='acceptEdits',
-                setting_sources=["user", "project", "local"]  # Explicitly set Claude CLI path
+                setting_sources=["user", "project", "local"]
             )
 
             # Use the instructions provided by the orchestrator
@@ -230,34 +332,40 @@ class SDKWorkerManager:
             first_message_received = False
             message_count = 0
 
-            # Execute worker using SDK query()
+            # Execute worker using ClaudeSDKClient (persistent session)
+            # This properly supports MCP servers unlike query()
             # Wrap with better error context
             try:
-                self.log(f"[SDKWorkerManager] Initializing SDK query for worker-{worker_id}...")
+                self.log(f"[SDKWorkerManager] Initializing ClaudeSDKClient for worker-{worker_id}...")
 
-                async for message in query(prompt=prompt, options=options):
-                    message_count += 1
+                async with ClaudeSDKClient(options=options) as client:
+                    # Send the prompt to the client
+                    await client.query(prompt)
 
-                    # Mark initialization as successful after first message
-                    if not first_message_received:
-                        first_message_received = True
-                        self.log(f"[SDKWorkerManager] Worker-{worker_id} initialized successfully (first message received)")
+                    # Receive responses
+                    async for message in client.receive_response():
+                        message_count += 1
 
-                    # Handle message display (parse, format, log)
-                    message_handler.handle_generic_message(message)
+                        # Mark initialization as successful after first message
+                        if not first_message_received:
+                            first_message_received = True
+                            self.log(f"[SDKWorkerManager] Worker-{worker_id} initialized successfully (first message received)")
 
-                    # Parse message for orchestrator consumption
-                    parsed = parse_agent_message(message)
+                        # Handle message display (parse, format, log)
+                        message_handler.handle_generic_message(message)
 
-                    # Yield parsed message for orchestrator
-                    yield {
-                        'worker_id': worker_id,
-                        'type': parsed.message_type.value,
-                        'content': parsed.content,
-                        'tool_name': parsed.tool_name,
-                        'tool_input': parsed.tool_input,
-                        'tool_output': parsed.tool_output
-                    }
+                        # Parse message for orchestrator consumption
+                        parsed = parse_agent_message(message)
+
+                        # Yield parsed message for orchestrator
+                        yield {
+                            'worker_id': worker_id,
+                            'type': parsed.message_type.value,
+                            'content': parsed.content,
+                            'tool_name': parsed.tool_name,
+                            'tool_input': parsed.tool_input,
+                            'tool_output': parsed.tool_output
+                        }
 
             except Exception as sdk_error:
                 # Distinguish between initialization and runtime errors
@@ -271,6 +379,7 @@ class SDKWorkerManager:
                     self.log(f"[SDKWorkerManager]     - Git repository issues (invalid worktree)")
                     self.log(f"[SDKWorkerManager]     - Claude CLI configuration issues")
                     self.log(f"[SDKWorkerManager]     - Permission or path problems")
+                    self.log(f"[SDKWorkerManager]     - MCP server initialization failures")
                 else:
                     # Runtime error - SDK failed after receiving messages
                     error_phase = "runtime"
@@ -298,6 +407,7 @@ class SDKWorkerManager:
                     'elapsed_time': elapsed,
                     'task_branch': task_branch
                 }
+                return
 
         except Exception as e:
             # Handle errors - log full traceback AND diagnostic information
@@ -513,25 +623,18 @@ def get_sdk_worker_manager(control_queue: Optional[asyncio.Queue] = None,
     return _sdk_worker_manager
 
 
-# ============================================================================
-# Worker Management MCP Tools (moved from git_tools.py)
-# ============================================================================
-
 @tool(
     "launch_worker_async",
     "Launch worker in background using SDK query() for async execution",
     {
-        "properties": {
-            "worker_id": {"type": "string", "description": "Worker ID (e.g., '1', '2', '3')"},
-            "task_branch": {"type": "string", "description": "Task branch name (e.g., 'task/001-user-model')"},
-            "cwd": {"type": "string", "description": "Path to worker's worktree directory - relative (e.g., '.worktrees/worker-1') or absolute"},
-            "session_id": {"type": "string", "description": "Session ID (e.g., 'session-20250115-120000')"},
-            "plan_branch": {"type": "string", "description": "Plan branch name (e.g., 'plan/session-20250115-120000')"},
-            "model": {"type": "string", "description": "Model to use (sonnet/opus/haiku)", "default": "sonnet"},
-            "instructions": {"type": "string", "description": "Task-specific instructions for the worker written by the orchestrator"}
-        },
-        "required": ["worker_id", "task_branch", "cwd", "session_id", "plan_branch", "instructions"],
-        "type": "object"
+        "worker_id": {"type": "string", "description": "Worker ID (e.g., '1', '2', '3')"},
+        "task_branch": {"type": "string", "description": "Task branch name (e.g., 'task/001-user-model')"},
+        "cwd": {"type": "string", "description": "Path to worker's worktree directory - relative (e.g., '.worktrees/worker-1') or absolute"},
+        "session_id": {"type": "string", "description": "Session ID (e.g., 'session-20250115-120000')"},
+        "plan_branch": {"type": "string", "description": "Plan branch name (e.g., 'plan/session-20250115-120000')"},
+        "model": {"type": "string", "description": "Model to use (sonnet/opus/haiku)", "default": "sonnet"},
+        "instructions": {"type": "string", "description": "Task-specific instructions for the worker written by the orchestrator"},
+        "allowed_tools": {"type": "array", "description": "Optional list of additional MCP tool names to allow (worker loads servers from .mcp.json)", "optional": True}
     }
 )
 async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -570,7 +673,8 @@ async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
                         'model': args.get("model", "sonnet")
                     },
                     args["cwd"],  # cwd IS the worktree path
-                    args["instructions"]  # Pass required instructions
+                    args["instructions"],  # Pass required instructions
+                    args.get("allowed_tools")  # Optional additional tools to allow
                 )
             except Exception as e:
                 # Log but don't raise - prevents unhandled exception in TaskGroup
@@ -584,7 +688,7 @@ async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
         logger = logging.getLogger("flow_claude.orchestrator")
         logger.debug(f"Created async task for worker-{args['worker_id']}: {worker_task}")
 
-        # Return a simple, clean message without JSON that won't confuse the orchestrator
+        # Return a simple, clean message without JSON 
         return {
             "content": [{
                 "type": "text",
@@ -608,10 +712,7 @@ async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
     "get_worker_status",
     "Check status of all worker slots (shows active, available, and total capacity)",
     {
-        "properties": {
-            "worker_id": {"type": "string", "description": "Optional specific worker ID to check"}
-        },
-        "type": "object"
+        "worker_id": {"type": "string", "description": "Optional specific worker ID to check", "optional": True}
     }
 )
 async def get_worker_status(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -705,7 +806,8 @@ async def get_worker_status(args: Dict[str, Any]) -> Dict[str, Any]:
 
 async def _run_sdk_worker_task(manager, worker_id: str, task_branch: str,
                                session_info: Dict[str, Any],
-                               cwd: str, instructions: str):
+                               cwd: str, instructions: str,
+                               allowed_tools: Optional[List[str]] = None):
     """Helper to run SDK worker as async task.
 
     This collects all output from the worker and handles completion.
@@ -716,11 +818,14 @@ async def _run_sdk_worker_task(manager, worker_id: str, task_branch: str,
     try:
         logger.info(f"Starting SDK worker-{worker_id} for {task_branch}")
         logger.debug(f"Working directory: {cwd}")
+        if allowed_tools:
+            logger.debug(f"Additional allowed tools: {allowed_tools}")
 
         # Collect all messages from the worker
         messages_received = 0
         async for message in manager.run_worker(worker_id, task_branch,
-                                                session_info, cwd, instructions):
+                                                session_info, cwd, instructions,
+                                                allowed_tools):
             messages_received += 1
             # Log the message for debugging
             if message.get('type') == 'error':

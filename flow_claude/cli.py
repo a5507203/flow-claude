@@ -152,6 +152,7 @@ except ImportError:
 
 from .git_tools import create_git_tools_server
 from .sdk_workers import create_worker_tools_server
+from .utils.text_formatter import format_tool_input, format_tool_result
 
 
 def check_claude_code_available() -> tuple[bool, str]:
@@ -364,7 +365,47 @@ async def run_development_session(
     if auto_mode:
         agent_definitions['user'] = AgentDefinition(
             description='User agent that represents the user for confirmation dialogs',
-            prompt="You help user to make decision, look at USER_PROXY_INSTRUCTIONS.md for full detail",
+            prompt='''You help user to make decision
+
+## Core Responsibilities
+
+When invoked, you analyze proposals, plans, and options, then make decisions based on software engineering best practices. You provide clear technical justification and return decisions immediately without waiting for human input.
+
+## Decision-Making Framework
+
+### Plan Review Criteria
+When evaluating implementation plans, assess:
+1. **Completeness**: Does it cover all stated requirements?
+2. **Feasibility**: Are time estimates and task breakdowns realistic?
+3. **Technology Appropriateness**: Are chosen technologies suitable for the use case?
+4. **Architecture Soundness**: Is the proposed structure logical and maintainable?
+
+### Technology/Design Decision Criteria
+When choosing between options, prioritize:
+1. **Requirements Fit**: Which option best serves the stated needs?
+2. **Simplicity**: When equivalent, prefer simpler over complex solutions
+3. **Standard Practice**: Favor widely-adopted patterns and technologies
+4. **Maintainability**: Choose options that are easier to understand and modify
+
+
+## Operational Principles
+
+### DO:
+- Carefully read and understand all context before deciding
+- Apply established software engineering best practices
+- Choose simplicity for straightforward requirements
+- Provide specific, actionable technical reasoning
+- Make decisions quickly and confidently
+- Trust your technical judgment
+
+## Your Mission
+
+You are a proxy for an experienced software engineer making real-time technical decisions. The orchestrator and other agents trust you to catch flawed plans, make smart architectural choices, resolve ambiguities sensibly, and keep projects moving efficiently.
+
+Every decision you make should reflect what a skilled engineer would choose when reviewing proposals during active development. Be thoughtful, be decisive, and always explain your technical reasoning clearly.
+
+**Trust your judgment. Analyze. Decide. Justify. Execute.**
+''',
             tools=[
                 'Bash', 'Read', 'Edit', 'Grep', 'Glob',
                 'mcp__git__parse_task',  # Read task metadata from branch
@@ -421,7 +462,17 @@ async def run_development_session(
         ],
         "mcp_servers": {
             "git": create_git_tools_server(),
-            "workers": create_worker_tools_server()
+            "workers": create_worker_tools_server(),
+            "playwright": {
+                "type": "stdio",
+                "command": "cmd",
+                "args": [
+                "/c",
+                "npx",
+            "@playwright/mcp@latest"
+            ],
+      "env": {}
+    }
         },
         "permission_mode": permission_mode,
         "max_turns": max_turns,
@@ -843,10 +894,12 @@ def handle_agent_message(msg):
 
                         # Show tool input in verbose/debug mode
                         if (_verbose_logging or _debug_logging) and tool_input:
-                            import json
-                            input_str = json.dumps(tool_input, indent=2)
+                            # Format tool input as readable text instead of JSON
+                            formatted_input = format_tool_input(tool_name, tool_input)
+                            # Extract just the parameters part (skip the "Tool: X" line)
+                            input_lines = formatted_input.split('\n')[1:]  # Skip first line
                             _message_handler.write_message(
-                                message=f"  Input: {input_str}",
+                                message='\n'.join(input_lines),
                                 agent=agent_name,
                                 timestamp=None
                             )
@@ -865,9 +918,12 @@ def handle_agent_message(msg):
 
                         # Show tool input in verbose/debug mode
                         if (_verbose_logging or _debug_logging) and tool_input:
-                            import json
-                            input_str = json.dumps(tool_input, indent=2)
-                            click.echo(f"  Input: {input_str}")
+                            # Format tool input as readable text instead of JSON
+                            formatted_input = format_tool_input(tool_name, tool_input)
+                            # Extract just the parameters part (skip the "Tool: X" line)
+                            input_lines = formatted_input.split('\n')[1:]  # Skip first line
+                            for line in input_lines:
+                                click.echo(f"  {line}")
                             sys.stdout.flush()
 
                 elif _debug_logging:
@@ -896,9 +952,12 @@ def handle_agent_message(msg):
                 
                 # Show result output in debug mode
                 if _debug_logging and hasattr(msg, 'content'):
-                    result_str = str(msg.content)
+                    # Format result as readable text
+                    formatted_result = format_tool_result(msg.content, is_error=False)
+                    # Extract just the content part (skip the "Result: SUCCESS" line)
+                    result_lines = formatted_result.split('\n')[1:]  # Skip first line
                     _message_handler.write_message(
-                        message=f"  Output: {result_str}",
+                        message='\n'.join(result_lines),
                         agent=agent_name,
                         timestamp=None
                     )
@@ -909,8 +968,12 @@ def handle_agent_message(msg):
                 sys.stdout.flush()
                 
                 if _debug_logging and hasattr(msg, 'content'):
-                    result_str = str(msg.content)
-                    click.echo(f"  Output: {result_str}")
+                    # Format result as readable text
+                    formatted_result = format_tool_result(msg.content, is_error=False)
+                    # Extract just the content part (skip the "Result: SUCCESS" line)
+                    result_lines = formatted_result.split('\n')[1:]  # Skip first line
+                    for line in result_lines:
+                        click.echo(f"  {line}")
                     sys.stdout.flush()
         return
 
@@ -960,12 +1023,12 @@ def handle_agent_message(msg):
 
         # Show tool input in verbose mode
         if _verbose_logging and tool_input:
-            import json
-            # Truncate long inputs
-            input_str = json.dumps(tool_input, indent=2)
-            if len(input_str) > 500:
-                input_str = input_str[:500] + "..."
-            click.echo(f"  Input: {input_str}")
+            # Format tool input as readable text instead of JSON
+            formatted_input = format_tool_input(tool_name, tool_input)
+            # Extract just the parameters part (skip the "Tool: X" line)
+            input_lines = formatted_input.split('\n')[1:]  # Skip first line
+            for line in input_lines:
+                click.echo(f"  {line}")
 
     elif msg_type == "tool_result":
         # Tool result
@@ -982,20 +1045,14 @@ def handle_agent_message(msg):
 
             click.echo()
 
-            # Show result content (truncated)
+            # Show result content as readable text
             if content:
-                import json
-                if isinstance(content, str):
-                    result_str = content
-                else:
-                    result_str = json.dumps(content, indent=2)
-
-                # Show MORE output for errors and MCP tools (up to 1000 chars)
-                max_len = 1000 if (is_error or "mcp__git__" in str(tool_id)) else 300
-                if len(result_str) > max_len:
-                    result_str = result_str[:max_len] + "..."
-
-                click.echo(f"  Output: {result_str}")
+                # Format result as readable text instead of JSON
+                formatted_result = format_tool_result(content, is_error=is_error)
+                # Extract just the content part (skip the "Result: SUCCESS/ERROR" line)
+                result_lines = formatted_result.split('\n')[1:]  # Skip first line
+                for line in result_lines:
+                    click.echo(f"  {line}")
 
     elif msg_type == "error":
         # Error message

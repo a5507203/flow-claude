@@ -13,6 +13,10 @@ from .message_handler import (
     create_orchestrator_message_handler
 )
 
+from .mcp_loader import (
+    load_project_mcp_config
+)
+
 __all__ = [
     'parse_agent_message',
     'format_agent_message',
@@ -20,5 +24,6 @@ __all__ = [
     'MessageType',
     'MessageHandler',
     'create_worker_message_handler',
-    'create_orchestrator_message_handler'
+    'create_orchestrator_message_handler',
+    'load_project_mcp_config'
 ]
