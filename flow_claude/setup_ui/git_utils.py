@@ -184,8 +184,56 @@ def get_branches() -> tuple[list[str], Optional[str]]:
         return [], None
 
 
+def ensure_worktrees_in_gitignore() -> bool:
+    """Ensure .worktrees/ is in .gitignore.
+
+    Adds .worktrees/ to .gitignore if not already present.
+    This should be called when creating the flow branch to ensure
+    git worktrees are ignored in both new and existing projects.
+
+    Returns:
+        bool: True if successful or already present, False on error
+    """
+    try:
+        gitignore_path = Path.cwd() / ".gitignore"
+
+        # Read existing .gitignore if it exists
+        if gitignore_path.exists():
+            content = gitignore_path.read_text()
+
+            # Check if .worktrees/ already in gitignore
+            if '.worktrees/' in content:
+                return True  # Already present
+
+            # Append .worktrees/ with Flow-Claude section
+            with open(gitignore_path, 'a') as f:
+                # Add newline if file doesn't end with one
+                if content and not content.endswith('\n'):
+                    f.write('\n')
+                f.write('\n# Flow-Claude worktrees (for parallel task execution)\n')
+                f.write('.worktrees/\n')
+        else:
+            # Create new .gitignore with .worktrees/
+            with open(gitignore_path, 'w') as f:
+                f.write('# Flow-Claude worktrees (for parallel task execution)\n')
+                f.write('.worktrees/\n')
+
+        # Stage the .gitignore change
+        subprocess.run(
+            ['git', 'add', '.gitignore'],
+            capture_output=True,
+            timeout=5
+        )
+
+        return True
+    except Exception:
+        return False
+
+
 def create_flow_branch(base_branch: str) -> bool:
     """Create flow branch from base branch.
+
+    Also ensures .worktrees/ is added to .gitignore.
 
     Args:
         base_branch: Name of the base branch to create from
@@ -194,6 +242,10 @@ def create_flow_branch(base_branch: str) -> bool:
         bool: True if successful, False otherwise
     """
     try:
+        # First, ensure .worktrees/ is in .gitignore
+        ensure_worktrees_in_gitignore()
+
+        # Create flow branch
         subprocess.run(
             ['git', 'branch', 'flow', base_branch],
             capture_output=True,
