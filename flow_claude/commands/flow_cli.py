@@ -28,7 +28,7 @@ def main(model, max_parallel, verbose, debug):
     - Press 'q' to quit, ESC to interrupt, H for help
     """
     try:
-        from flow_claude.textual_cli import FlowCLI
+        from flow_claude.ui import FlowCLI
         from flow_claude.setup_ui import run_setup_ui
         from flow_claude.cli import setup_instruction_files
 

@@ -7,10 +7,13 @@ for parallel task execution.
 import asyncio
 import json
 import os
+import traceback
 from pathlib import Path
 from typing import Dict, Any, List, AsyncGenerator, Optional
 
 from claude_agent_sdk import ClaudeAgentOptions, query, tool, create_sdk_mcp_server
+from flow_claude.utils.message_formatter import parse_agent_message
+from flow_claude.utils.message_handler import create_worker_message_handler
 
 
 class SDKWorkerManager:
@@ -73,20 +76,16 @@ class SDKWorkerManager:
             'start_time': asyncio.get_event_loop().time()
         }
 
-        # Convert relative path to absolute if needed
-        # Also handle Unix-style paths on Windows (e.g., /c/Users/... -> C:\Users\...)
-        if cwd.startswith('/c/') or cwd.startswith('/d/') or cwd.startswith('/e/'):
-            # Unix-style path from Git Bash or similar - convert to Windows
-            drive = cwd[1].upper()
-            rest = cwd[3:].replace('/', '\\')
-            cwd = f"{drive}:\\{rest}"
-
+        # Convert to absolute path (support both relative and absolute input)
+        # Orchestrator typically provides relative path like ".worktrees/worker-1"
         if not os.path.isabs(cwd):
+            # Relative path - join with project root
             working_dir = Path(os.getcwd()) / cwd
         else:
+            # Already absolute - use as-is
             working_dir = Path(cwd)
 
-        # Ensure the path uses proper separators for the OS
+        # Resolve to canonical absolute path
         working_dir = working_dir.resolve()
 
         # First check for worker prompt in parent directory (shared prompts)
@@ -139,97 +138,29 @@ class SDKWorkerManager:
                 self.log(f"[SDKWorkerManager]   Working directory: {str(working_dir)}")
                 self.log(f"[SDKWorkerManager]   Model: {session_info.get('model', 'sonnet')}")
 
+            # Create message handler for this worker
+            message_handler = create_worker_message_handler(
+                worker_id=worker_id,
+                debug=self.debug,
+                log_func=self.log
+            )
+
             # Execute worker using SDK query()
             async for message in query(prompt=prompt, options=options):
-                # Parse different message types
-                message_content = ""
-                message_type = "text"
-                tool_name = None
-                tool_input = None
-                tool_output = None
+                # Handle message display (parse, format, log)
+                message_handler.handle_generic_message(message)
 
-                # Handle different message structures
-                if hasattr(message, '__dict__'):
-                    # Message object with attributes
-                    if hasattr(message, 'content'):
-                        message_content = str(message.content)
-                    if hasattr(message, 'type'):
-                        message_type = str(message.type)
-                    if hasattr(message, 'tool_use'):
-                        # Tool use message
-                        message_type = "tool_use"
-                        if hasattr(message.tool_use, 'name'):
-                            tool_name = message.tool_use.name
-                        if hasattr(message.tool_use, 'input'):
-                            tool_input = message.tool_use.input
-                    if hasattr(message, 'tool_result'):
-                        # Tool result message
-                        message_type = "tool_result"
-                        if hasattr(message.tool_result, 'output'):
-                            tool_output = message.tool_result.output
-                elif isinstance(message, dict):
-                    # Dictionary message
-                    message_content = message.get('content', '')
-                    message_type = message.get('type', 'text')
-                    if 'tool_use' in message:
-                        message_type = "tool_use"
-                        tool_name = message['tool_use'].get('name')
-                        tool_input = message['tool_use'].get('input')
-                    if 'tool_result' in message:
-                        message_type = "tool_result"
-                        tool_output = message['tool_result'].get('output')
-                else:
-                    # String or other type
-                    message_content = str(message)
+                # Parse message for orchestrator consumption
+                parsed = parse_agent_message(message)
 
-                # Enhanced logging based on message type
-                if message_type == "tool_use":
-                    self.log(f"[Worker-{worker_id}] [TOOL USE] {tool_name}")
-                    if self.debug and tool_input:
-                        self.log(f"[Worker-{worker_id}]   Input: {json.dumps(tool_input, indent=2) if isinstance(tool_input, dict) else tool_input}")
-                elif message_type == "tool_result":
-                    self.log(f"[Worker-{worker_id}] [TOOL RESULT]")
-                    if self.debug and tool_output:
-                        # Truncate long outputs
-                        output_str = str(tool_output)
-                        if len(output_str) > 500:
-                            output_str = output_str[:500] + "... (truncated)"
-                        self.log(f"[Worker-{worker_id}]   Output: {output_str}")
-                elif message_content:
-                    # Text content - categorize by keywords
-                    lines = message_content.split('\n')
-                    for line in lines:
-                        if not line.strip():
-                            continue
-
-                        # Categorize output
-                        if 'Using tool:' in line or 'Calling tool:' in line:
-                            self.log(f"[Worker-{worker_id}] [TOOL] {line}")
-                        elif 'Error:' in line or 'Failed:' in line or '[ERROR]' in line:
-                            self.log(f"[Worker-{worker_id}] [ERROR] {line}")
-                        elif 'Successfully' in line or 'Completed' in line or 'Created' in line:
-                            self.log(f"[Worker-{worker_id}] [SUCCESS] {line}")
-                        elif line.startswith('##'):
-                            # Markdown headers (important sections)
-                            self.log(f"[Worker-{worker_id}] [SECTION] {line}")
-                        elif line.startswith('#'):
-                            # Task progress headers
-                            self.log(f"[Worker-{worker_id}] [TASK] {line}")
-                        else:
-                            # Other output (only show first 100 chars in non-debug)
-                            if self.debug or len(line) <= 100:
-                                self.log(f"[Worker-{worker_id}] {line}")
-                            else:
-                                self.log(f"[Worker-{worker_id}] {line[:100]}...")
-
-                # Yield the parsed message
+                # Yield parsed message for orchestrator
                 yield {
                     'worker_id': worker_id,
-                    'type': message_type,
-                    'content': message_content,
-                    'tool_name': tool_name,
-                    'tool_input': tool_input,
-                    'tool_output': tool_output
+                    'type': parsed.message_type.value,
+                    'content': parsed.content,
+                    'tool_name': parsed.tool_name,
+                    'tool_input': parsed.tool_input,
+                    'tool_output': parsed.tool_output
                 }
 
             # Query completed naturally - mark worker as complete
@@ -251,8 +182,10 @@ class SDKWorkerManager:
                 }
 
         except Exception as e:
-            # Handle errors
+            # Handle errors - log full traceback for debugging
+            error_traceback = traceback.format_exc()
             self.log(f"[SDKWorkerManager] Worker-{worker_id} error: {str(e)}")
+            self.log(f"[SDKWorkerManager] Full traceback:\n{error_traceback}")
 
             # IMPORTANT: Inject error event BEFORE yielding the message
             # This ensures the event reaches control_queue even if consumer breaks early
@@ -263,11 +196,12 @@ class SDKWorkerManager:
                     elapsed = 0  # Worker never started properly
                 await self._inject_completion_event(worker_id, task_branch, 1, elapsed)
 
-            # Now yield the error message
+            # Now yield the error message with full traceback
             yield {
                 'worker_id': worker_id,
                 'type': 'error',
-                'error': str(e)
+                'error': str(e),
+                'traceback': error_traceback
             }
 
         finally:
@@ -307,53 +241,6 @@ class SDKWorkerManager:
         except Exception as e:
             self.log(f"[SDKWorkerManager] Error injecting event: {e}")
 
-    async def run_parallel_workers(self, workers: List[Dict[str, Any]]) -> List:
-        """Run multiple workers in parallel using asyncio.gather().
-
-        Args:
-            workers: List of worker configurations, each with:
-                - worker_id: Worker identifier
-                - task_branch: Task branch to work on
-                - session_info: Session metadata
-                - cwd: Working directory for the worker
-
-        Returns:
-            List of results from each worker
-        """
-        tasks = []
-
-        for worker_config in workers:
-            # Create async generator for each worker
-            worker_gen = self.run_worker(
-                worker_config['worker_id'],
-                worker_config['task_branch'],
-                worker_config['session_info'],
-                worker_config.get('cwd', f".worktrees/worker-{worker_config['worker_id']}"),
-                worker_config.get('instructions', f"Execute task on branch {worker_config['task_branch']}")
-            )
-
-            # Collect all output from the generator
-            tasks.append(self._collect_worker_output(worker_gen))
-
-        # Run all workers in parallel
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        return results
-
-    async def _collect_worker_output(self, worker_generator: AsyncGenerator) -> List:
-        """Collect all output from a worker generator.
-
-        Args:
-            worker_generator: Async generator from run_worker
-
-        Returns:
-            List of all messages from the worker
-        """
-        messages = []
-        async for message in worker_generator:
-            messages.append(message)
-        return messages
-
     def update_max_parallel(self, new_max: int):
         """Update max parallel workers dynamically (can be called mid-session).
 
@@ -382,14 +269,14 @@ _sdk_worker_manager: Optional[SDKWorkerManager] = None
 def get_sdk_worker_manager(control_queue: Optional[asyncio.Queue] = None,
                           debug: bool = False,
                           log_func: Optional[callable] = None,
-                          max_parallel: int = 3) -> SDKWorkerManager:
+                          max_parallel: Optional[int] = None) -> SDKWorkerManager:
     """Get or create the global SDKWorkerManager instance.
 
     Args:
         control_queue: Async queue for completion events
         debug: Enable debug output
         log_func: Logging function
-        max_parallel: Maximum number of concurrent workers
+        max_parallel: Maximum number of concurrent workers (default: 3 on creation, unchanged on retrieval)
 
     Returns:
         SDKWorkerManager singleton instance
@@ -397,7 +284,8 @@ def get_sdk_worker_manager(control_queue: Optional[asyncio.Queue] = None,
     global _sdk_worker_manager
 
     if _sdk_worker_manager is None:
-        _sdk_worker_manager = SDKWorkerManager(control_queue, debug, log_func, max_parallel)
+        # First time creation - use default if not provided
+        _sdk_worker_manager = SDKWorkerManager(control_queue, debug, log_func, max_parallel or 3)
     else:
         # Update parameters if provided
         # Always update control_queue if provided (not just when current is None)
@@ -405,8 +293,9 @@ def get_sdk_worker_manager(control_queue: Optional[asyncio.Queue] = None,
             _sdk_worker_manager.control_queue = control_queue
         if log_func:
             _sdk_worker_manager.log = log_func
-        # Always update max_parallel to ensure it's current
-        _sdk_worker_manager.max_parallel = max_parallel
+        # Only update max_parallel if explicitly provided (don't overwrite with None)
+        if max_parallel is not None:
+            _sdk_worker_manager.max_parallel = max_parallel
 
     return _sdk_worker_manager
 
@@ -422,7 +311,7 @@ def get_sdk_worker_manager(control_queue: Optional[asyncio.Queue] = None,
         "properties": {
             "worker_id": {"type": "string", "description": "Worker ID (e.g., '1', '2', '3')"},
             "task_branch": {"type": "string", "description": "Task branch name (e.g., 'task/001-user-model')"},
-            "cwd": {"type": "string", "description": "ABSOLUTE path to worker's worktree directory (e.g., '/absolute/path/.worktrees/worker-1')"},
+            "cwd": {"type": "string", "description": "Path to worker's worktree directory - relative (e.g., '.worktrees/worker-1') or absolute"},
             "session_id": {"type": "string", "description": "Session ID (e.g., 'session-20250115-120000')"},
             "plan_branch": {"type": "string", "description": "Plan branch name (e.g., 'plan/session-20250115-120000')"},
             "model": {"type": "string", "description": "Model to use (sonnet/opus/haiku)", "default": "sonnet"},
@@ -438,11 +327,10 @@ async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
     This allows the orchestrator to continue immediately without blocking,
     while the worker executes in the background using the Claude SDK.
 
-    IMPORTANT: cwd MUST be an absolute path to the worker's worktree directory!
-
     Args:
-        args: Dict with worker_id, task_branch, cwd (ABSOLUTE path to worktree),
-              session_id, plan_branch, model, and instructions
+        args: Dict with worker_id, task_branch, cwd (relative or absolute path to worktree),
+              session_id, plan_branch, model, and instructions.
+              Relative paths are resolved relative to project root.
 
     Returns:
         Dict with success status message
@@ -623,7 +511,11 @@ async def _run_sdk_worker_task(manager, worker_id: str, task_branch: str,
             messages_received += 1
             # Log the message for debugging
             if message.get('type') == 'error':
-                logger.error(f"Worker-{worker_id} error: {message.get('error', message.get('message'))}")
+                error_msg = message.get('error', message.get('message'))
+                logger.error(f"Worker-{worker_id} error: {error_msg}")
+                # Log traceback if available
+                if 'traceback' in message:
+                    logger.error(f"Worker-{worker_id} traceback:\n{message['traceback']}")
                 # Important: Still continue processing other messages
             elif message.get('type') == 'completed':
                 logger.info(f"Worker-{worker_id} completed task {task_branch}")

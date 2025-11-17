@@ -282,7 +282,7 @@ See: flow_claude/cli.py:222-313
 New instruction files are auto-committed to flow branch (flow_claude/cli.py:340-418)
 
 ### Interactive Mode
-Managed by TextualCLI (`textual_cli.py`). After each session completes, automatically prompts for the next development request. Maintains continuous session loop until user explicitly exits with `\exit` or `\q`.
+Managed by TextualCLI (`flow_claude/ui/` package). After each session completes, automatically prompts for the next development request. Maintains continuous session loop until user explicitly exits with `\exit` or `\q`.
 
 ### Safe Unicode Handling
 `safe_echo()` handles Windows console encoding issues with emojis (flow_claude/cli.py:28-41)

@@ -24,7 +24,7 @@ _tool_id_to_agent = {}
 # SDK session ID for resume capability
 _current_session_id = None
 
-# Hook for Textual UI integration (textual_cli.py)
+# Hook for Textual UI integration (ui package)
 _message_handler = None
 
 
@@ -206,7 +206,6 @@ async def run_development_session(
     max_parallel: int,
     verbose: bool,
     debug: bool,
-    orchestrator_prompt: dict,
     num_workers: int,
     control_queue: Optional[asyncio.Queue] = None,
     logger: Optional[object] = None,  # FlowClaudeLogger instance
@@ -229,7 +228,6 @@ async def run_development_session(
         max_parallel: Maximum number of parallel workers
         verbose: Enable verbose logging
         debug: Enable debug mode
-        orchestrator_prompt: Orchestrator agent system prompt (@filepath syntax)
         num_workers: Number of worker agents to create
         control_queue: Queue for receiving follow-up requests
         logger: Logger instance for session logging
@@ -251,7 +249,7 @@ async def run_development_session(
     _session_logger = logger
     _tool_id_to_agent = {}  # Clear agent tracking for new session
 
-    # Note: SDKWorkerManager is initialized in textual_cli.py before calling this function
+    # Note: SDKWorkerManager is initialized in ui/orchestrator.py before calling this function
     # The singleton pattern ensures the same instance (with proper worker_log) is used throughout
     # Initializing again here would overwrite the UI log function with click.echo, breaking output
 
@@ -387,6 +385,13 @@ async def run_development_session(
             click.echo(f"DEBUG:     model: {agent_def.model}")
             click.echo(f"DEBUG:     prompt length: {len(agent_def.prompt)} chars")
         click.echo()
+
+
+    orchestrator_prompt = {
+        "type": "preset",
+        "preset": "claude_code",
+        "append": "**Instructions:** See .flow-claude/ORCHESTRATOR_INSTRUCTIONS.md for your full workflow."
+    }
 
     # Configure agent options with programmatic agents
     options_kwargs = {
@@ -680,6 +685,9 @@ Please process this single completion immediately (don't wait for other workers)
 
 def handle_agent_message(msg):
     """Handle and display agent messages with enhanced logging.
+
+    Uses unified message formatter from flow_claude.utils.message_formatter
+    for consistent formatting across orchestrator and worker messages.
 
     Args:
         msg: Message object from SDK (SystemMessage, AssistantMessage, etc.) or dict
