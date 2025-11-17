@@ -61,7 +61,8 @@
       "WebFetch(domain:rich.readthedocs.io)",
       "Bash(git rev-parse:*)",
       "Bash(find:*)",
-      "Bash(if exist nul del nul)"
+      "Bash(if exist nul del nul)",
+      "Bash(.gitignore)"
     ],
     "deny": [],
     "ask": []

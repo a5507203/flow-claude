@@ -390,7 +390,6 @@ async def run_development_session(
     orchestrator_prompt = {
         "type": "preset",
         "preset": "claude_code",
-        "append": "**Instructions:** See .flow-claude/ORCHESTRATOR_INSTRUCTIONS.md for your full workflow."
     }
 
     # Configure agent options with programmatic agents
@@ -474,13 +473,11 @@ async def run_development_session(
         if auto_mode:
             user_agent_guide = """
 
-**User Agent - How to Use:**
-When you need confirmations or decisions, call the 'user' subagent with Task tool:
 
 **IMPORTANT: DO NOT ask questions directly - always invoke user subagent. **
 """
 
-        return f"""# Development Session Configuration (V7)
+        return f"""# Development Session Configuration 
 
 **User Request:** {user_request}
 
@@ -489,6 +486,8 @@ When you need confirmations or decisions, call the 'user' subagent with Task too
 - Plan Branch: {plan_branch}
 - Working Directory: {os.getcwd()}
 - Max Workers: {max_parallel}
+
+**Instructions:** See .flow-claude/ORCHESTRATOR_INSTRUCTIONS.md for your full workflow.
 
 {parallel_config}
 

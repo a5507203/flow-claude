@@ -108,6 +108,87 @@ class SDKWorkerManager:
             }
             return
 
+        # PRE-FLIGHT CHECKS: Verify environment before launching worker
+        try:
+            # Check 1: Working directory exists
+            if not working_dir.exists():
+                error_msg = f"Working directory does not exist: {working_dir}"
+                self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
+                yield {
+                    'worker_id': worker_id,
+                    'type': 'error',
+                    'message': error_msg
+                }
+                return
+
+            # Check 2: Working directory is accessible
+            if not os.access(working_dir, os.R_OK | os.X_OK):
+                error_msg = f"Working directory not accessible: {working_dir}"
+                self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
+                yield {
+                    'worker_id': worker_id,
+                    'type': 'error',
+                    'message': error_msg
+                }
+                return
+
+            # Check 3: Is a git repository
+            git_dir = working_dir / ".git"
+            is_git_repo = git_dir.exists() or (working_dir / ".." / ".git").exists()
+            if not is_git_repo:
+                # Check if it's a worktree (has .git file pointing to main repo)
+                git_file = working_dir / ".git"
+                is_git_repo = git_file.is_file() if git_file.exists() else False
+
+            if not is_git_repo:
+                self.log(f"[SDKWorkerManager] WARNING: Working directory is not a git repository: {working_dir}")
+
+            # Check 4: Worker instructions are readable
+            if not os.access(worker_prompt_file, os.R_OK):
+                error_msg = f"Worker instructions not readable: {worker_prompt_file}"
+                self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
+                yield {
+                    'worker_id': worker_id,
+                    'type': 'error',
+                    'message': error_msg
+                }
+                return
+
+            # Log diagnostic information in debug mode
+            if self.debug:
+                self.log(f"[SDKWorkerManager] Pre-flight checks passed for worker-{worker_id}")
+                self.log(f"[SDKWorkerManager]   Working dir exists: {working_dir.exists()}")
+                self.log(f"[SDKWorkerManager]   Working dir accessible: {os.access(working_dir, os.R_OK | os.X_OK)}")
+                self.log(f"[SDKWorkerManager]   Is git repository: {is_git_repo}")
+                self.log(f"[SDKWorkerManager]   Instruction file: {worker_prompt_file}")
+
+                # Try to get current git branch
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                        cwd=working_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        current_branch = result.stdout.strip()
+                        self.log(f"[SDKWorkerManager]   Current branch: {current_branch}")
+                except Exception as git_error:
+                    self.log(f"[SDKWorkerManager]   Could not determine git branch: {git_error}")
+
+        except Exception as preflight_error:
+            error_msg = f"Pre-flight check failed: {str(preflight_error)}"
+            self.log(f"[SDKWorkerManager] ERROR: {error_msg}")
+            self.log(f"[SDKWorkerManager] Traceback: {traceback.format_exc()}")
+            yield {
+                'worker_id': worker_id,
+                'type': 'error',
+                'message': error_msg
+            }
+            return
+
         try:
 
             worker_prompt = {
@@ -145,23 +226,60 @@ class SDKWorkerManager:
                 log_func=self.log
             )
 
+            # Track initialization state to distinguish init errors from runtime errors
+            first_message_received = False
+            message_count = 0
+
             # Execute worker using SDK query()
-            async for message in query(prompt=prompt, options=options):
-                # Handle message display (parse, format, log)
-                message_handler.handle_generic_message(message)
+            # Wrap with better error context
+            try:
+                self.log(f"[SDKWorkerManager] Initializing SDK query for worker-{worker_id}...")
 
-                # Parse message for orchestrator consumption
-                parsed = parse_agent_message(message)
+                async for message in query(prompt=prompt, options=options):
+                    message_count += 1
 
-                # Yield parsed message for orchestrator
-                yield {
-                    'worker_id': worker_id,
-                    'type': parsed.message_type.value,
-                    'content': parsed.content,
-                    'tool_name': parsed.tool_name,
-                    'tool_input': parsed.tool_input,
-                    'tool_output': parsed.tool_output
-                }
+                    # Mark initialization as successful after first message
+                    if not first_message_received:
+                        first_message_received = True
+                        self.log(f"[SDKWorkerManager] Worker-{worker_id} initialized successfully (first message received)")
+
+                    # Handle message display (parse, format, log)
+                    message_handler.handle_generic_message(message)
+
+                    # Parse message for orchestrator consumption
+                    parsed = parse_agent_message(message)
+
+                    # Yield parsed message for orchestrator
+                    yield {
+                        'worker_id': worker_id,
+                        'type': parsed.message_type.value,
+                        'content': parsed.content,
+                        'tool_name': parsed.tool_name,
+                        'tool_input': parsed.tool_input,
+                        'tool_output': parsed.tool_output
+                    }
+
+            except Exception as sdk_error:
+                # Distinguish between initialization and runtime errors
+                if not first_message_received:
+                    # Initialization error - SDK failed before first message
+                    error_phase = "initialization"
+                    self.log(f"[SDKWorkerManager] Worker-{worker_id} INITIALIZATION ERROR")
+                    self.log(f"[SDKWorkerManager]   SDK failed before receiving first message")
+                    self.log(f"[SDKWorkerManager]   This usually indicates:")
+                    self.log(f"[SDKWorkerManager]     - Working directory issues (doesn't exist, not accessible)")
+                    self.log(f"[SDKWorkerManager]     - Git repository issues (invalid worktree)")
+                    self.log(f"[SDKWorkerManager]     - Claude CLI configuration issues")
+                    self.log(f"[SDKWorkerManager]     - Permission or path problems")
+                else:
+                    # Runtime error - SDK failed after receiving messages
+                    error_phase = "runtime"
+                    self.log(f"[SDKWorkerManager] Worker-{worker_id} RUNTIME ERROR")
+                    self.log(f"[SDKWorkerManager]   Worker was running successfully ({message_count} messages processed)")
+                    self.log(f"[SDKWorkerManager]   Error occurred during execution")
+
+                # Re-raise to be handled by main exception handler
+                raise sdk_error
 
             # Query completed naturally - mark worker as complete
             if worker_id in self.active_workers:
@@ -182,26 +300,121 @@ class SDKWorkerManager:
                 }
 
         except Exception as e:
-            # Handle errors - log full traceback for debugging
+            # Handle errors - log full traceback AND diagnostic information
             error_traceback = traceback.format_exc()
-            self.log(f"[SDKWorkerManager] Worker-{worker_id} error: {str(e)}")
-            self.log(f"[SDKWorkerManager] Full traceback:\n{error_traceback}")
+
+            # Determine error phase if available from inner exception handler
+            try:
+                # Check if error_phase was set by SDK query wrapper
+                error_phase = locals().get('error_phase', 'unknown')
+                first_msg_received = locals().get('first_message_received', False)
+                msg_count = locals().get('message_count', 0)
+            except:
+                error_phase = 'unknown'
+                first_msg_received = False
+                msg_count = 0
+
+            # Collect comprehensive diagnostic information
+            diagnostic_info = []
+            diagnostic_info.append(f"Worker: {worker_id}")
+            diagnostic_info.append(f"Task Branch: {task_branch}")
+            diagnostic_info.append(f"Error Phase: {error_phase}")
+            if error_phase == 'initialization':
+                diagnostic_info.append(f"First Message Received: No (SDK initialization failed)")
+            elif error_phase == 'runtime':
+                diagnostic_info.append(f"Messages Processed: {msg_count}")
+            diagnostic_info.append(f"Error: {str(e)}")
+            diagnostic_info.append(f"Error Type: {type(e).__name__}")
+
+            # Check exception for additional attributes (some SDK exceptions have details)
+            if hasattr(e, 'args') and len(e.args) > 1:
+                diagnostic_info.append(f"Error Args: {e.args}")
+            if hasattr(e, '__dict__'):
+                extra_attrs = {k: v for k, v in e.__dict__.items() if not k.startswith('_')}
+                if extra_attrs:
+                    diagnostic_info.append(f"Error Attributes: {extra_attrs}")
+
+            # Working directory diagnostics
+            try:
+                diagnostic_info.append(f"Working Directory: {working_dir}")
+                diagnostic_info.append(f"  - Exists: {working_dir.exists()}")
+                if working_dir.exists():
+                    diagnostic_info.append(f"  - Accessible: {os.access(working_dir, os.R_OK | os.X_OK)}")
+                    diagnostic_info.append(f"  - Is Directory: {working_dir.is_dir()}")
+
+                    # Check git repository status
+                    git_file = working_dir / ".git"
+                    if git_file.exists():
+                        if git_file.is_file():
+                            diagnostic_info.append(f"  - Git: Worktree (has .git file)")
+                        elif git_file.is_dir():
+                            diagnostic_info.append(f"  - Git: Repository (has .git directory)")
+                    else:
+                        diagnostic_info.append(f"  - Git: No .git found")
+            except Exception as diag_error:
+                diagnostic_info.append(f"  - Could not check directory: {diag_error}")
+
+            # Environment diagnostics
+            try:
+                import subprocess
+                import sys
+                import platform
+
+                diagnostic_info.append(f"Environment:")
+                diagnostic_info.append(f"  - Python: {sys.version.split()[0]}")
+                diagnostic_info.append(f"  - Platform: {platform.system()} {platform.release()}")
+
+                # Try to get git version
+                try:
+                    git_result = subprocess.run(
+                        ['git', '--version'],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if git_result.returncode == 0:
+                        diagnostic_info.append(f"  - Git: {git_result.stdout.strip()}")
+                except Exception:
+                    diagnostic_info.append(f"  - Git: Not available or error")
+
+                # Try to get current directory status
+                try:
+                    cwd = os.getcwd()
+                    diagnostic_info.append(f"  - Process CWD: {cwd}")
+                except Exception:
+                    pass
+
+            except Exception as env_error:
+                diagnostic_info.append(f"  - Could not collect environment info: {env_error}")
+
+            # Calculate elapsed time
+            if worker_id in self.active_workers:
+                elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
+                diagnostic_info.append(f"Elapsed Time: {elapsed:.2f}s")
+            else:
+                elapsed = 0
+                diagnostic_info.append(f"Elapsed Time: Worker never started properly")
+
+            # Log comprehensive error information
+            self.log(f"[SDKWorkerManager] ===== WORKER ERROR DIAGNOSTIC =====")
+            for line in diagnostic_info:
+                self.log(f"[SDKWorkerManager] {line}")
+            self.log(f"[SDKWorkerManager] ===== TRACEBACK =====")
+            self.log(f"{error_traceback}")
+            self.log(f"[SDKWorkerManager] ===== END DIAGNOSTIC =====")
 
             # IMPORTANT: Inject error event BEFORE yielding the message
             # This ensures the event reaches control_queue even if consumer breaks early
             if self.control_queue:
-                if worker_id in self.active_workers:
-                    elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
-                else:
-                    elapsed = 0  # Worker never started properly
                 await self._inject_completion_event(worker_id, task_branch, 1, elapsed)
 
-            # Now yield the error message with full traceback
+            # Now yield the error message with comprehensive diagnostics
             yield {
                 'worker_id': worker_id,
                 'type': 'error',
                 'error': str(e),
-                'traceback': error_traceback
+                'traceback': error_traceback,
+                'diagnostics': '\n'.join(diagnostic_info)
             }
 
         finally:
