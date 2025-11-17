@@ -256,10 +256,16 @@ class FlowCLI(App):
             sys.stderr = self._original_stderr
         self.exit()
 
-    def action_interrupt(self) -> None:
+    async def action_interrupt(self) -> None:
         """Handle interrupt (ESC) - interrupts current task."""
         log = self.query_one(RichLog)
         self._log("\n[bold yellow][ESC] Interrupting current task...[/bold yellow]")
+
+        # Stop all active workers first (hardcoded interrupt handler)
+        from flow_claude.sdk_workers import stop_all_workers_async
+        stopped_count = await stop_all_workers_async()
+        if stopped_count > 0:
+            self._log(f"[yellow]Stopped {stopped_count} active worker(s)[/yellow]")
 
         # Clean all pending follow-up instructions, then send stop signal
         if self.control_queue:
@@ -272,7 +278,7 @@ class FlowCLI(App):
                         discarded += 1  # Discard follow-up instructions
                     else:
                         # Keep stop/shutdown messages
-                        asyncio.create_task(self.control_queue.put(msg))
+                        await self.control_queue.put(msg)
                 except Exception:
                     break
 
@@ -280,7 +286,7 @@ class FlowCLI(App):
                 self._log(f"[dim]Cleared {discarded} pending follow-up(s)[/dim]")
 
             # Send stop signal
-            asyncio.create_task(self.control_queue.put({"type": "stop"}))
+            await self.control_queue.put({"type": "stop"})
 
         self._log("[dim]Task will be interrupted. Type new request to continue.[/dim]\n")
 

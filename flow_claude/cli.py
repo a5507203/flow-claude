@@ -601,22 +601,26 @@ Begin. **Remember: Complete immediately after launching all initial workers.**""
                     elapsed_sec = int(elapsed_time % 60)
 
                     # Log the completion event to console
+                    status_label = '(success)' if exit_code == 0 else '(stopped)' if exit_code == 2 else '(failed)'
                     click.echo("\n" + "=" * 60)
                     click.echo(f"[WORKER COMPLETION EVENT]")
                     click.echo(f"  Worker ID: {worker_id}")
                     click.echo(f"  Task: {task_branch}")
-                    click.echo(f"  Exit code: {exit_code} {'(success)' if exit_code == 0 else '(failed)'}")
+                    click.echo(f"  Exit code: {exit_code} {status_label}")
                     click.echo(f"  Duration: {elapsed_min}m {elapsed_sec}s")
                     if error_message:
-                        click.echo(f"  Error: {error_message}")
+                        click.echo(f"  Message: {error_message}")
                     click.echo("=" * 60 + "\n")
 
                     # Also log to file for tracking
                     if logger:
                         logger.info(f"[WORKER COMPLETION] Worker-{worker_id} completed {task_branch}")
-                        logger.info(f"  Exit code: {exit_code} {'(success)' if exit_code == 0 else '(failed)'}, Duration: {elapsed_min}m {elapsed_sec}s")
+                        logger.info(f"  Exit code: {exit_code} {status_label}, Duration: {elapsed_min}m {elapsed_sec}s")
                         if error_message:
-                            logger.error(f"  Error: {error_message}")
+                            if exit_code == 2:
+                                logger.warning(f"  Message: {error_message}")
+                            else:
+                                logger.error(f"  Error: {error_message}")
 
                     if debug:
                         click.echo(f"DEBUG: Worker completion event details:")
@@ -643,6 +647,22 @@ Please process this single completion immediately (don't wait for other workers)
 5. Check for newly-ready tasks: mcp__git__get_provides()
 6. If worker-{worker_id} is now idle and another task is ready, launch it immediately
 7. Continue working while other workers complete their tasks independently"""
+                    elif exit_code == 2:
+                        # Stopped case - worker was cancelled by orchestrator
+                        error_details = f"\n- Reason: {error_message}" if error_message else ""
+                        completion_msg = f"""Worker-{worker_id} was STOPPED for task {task_branch}
+- Exit code: {exit_code} (stopped)
+- Elapsed time: {elapsed_min}m {elapsed_sec}s{error_details}
+
+The worker was intentionally stopped by you before completing the task. Please:
+1. Remove the stopped worktree: mcp__git__remove_worktree("{worker_id}")
+2. Decide on next steps for the incomplete task:
+   - If task should be completed: Launch a new worker for the same task branch
+   - If task is no longer needed: Update plan to mark as cancelled/skipped
+   - If changing approach: Create a new task branch with different strategy
+3. Update plan if needed: mcp__git__update_plan_branch()
+4. Worker-{worker_id} is now idle and available for new tasks
+5. Continue with other workers' tasks independently"""
                     else:
                         # Error case - include error details and suggest retry/alternative
                         error_details = f"\n- Error: {error_message}" if error_message else ""
@@ -686,6 +706,78 @@ The worker encountered an error and could not complete the task. Please:
 
                     click.echo("\n" + "=" * 60)
                     click.echo("Worker completion processed. Waiting for next event...")
+                    click.echo("=" * 60)
+                    continue
+
+                # Handle stop_worker result events
+                elif control.get("type") == "stop_worker_result":
+                    result_data = control.get("data", {})
+                    success = result_data.get("success", False)
+                    worker_id = result_data.get("worker_id", "unknown")
+
+                    # Log the stop result to console
+                    click.echo("\n" + "=" * 60)
+                    click.echo(f"[STOP WORKER RESULT]")
+                    click.echo(f"  Worker ID: {worker_id}")
+
+                    if success:
+                        task_branch = result_data.get("task_branch", "unknown")
+                        elapsed = result_data.get("elapsed_seconds", 0)
+                        message = result_data.get("message", "Worker stopped")
+
+                        click.echo(f"  Status: SUCCESS")
+                        click.echo(f"  Task: {task_branch}")
+                        click.echo(f"  Elapsed: {elapsed}s")
+                        click.echo(f"  Message: {message}")
+
+                        # Log to file
+                        if logger:
+                            logger.info(f"[STOP WORKER] Worker-{worker_id} stopped successfully")
+                            logger.info(f"  Task: {task_branch}, Elapsed: {elapsed}s")
+
+                        # Notify orchestrator
+                        notification_msg = f"""Worker-{worker_id} has been stopped successfully.
+
+Task: {task_branch}
+Elapsed time: {elapsed}s
+
+The worker was cancelled and cleaned up. A completion event (exit_code=2) has been sent.
+You can now assign a new task to worker-{worker_id} if needed."""
+
+                        await client.query(notification_msg)
+
+                        # Process the response
+                        async for msg in client.receive_response():
+                            handle_agent_message(msg)
+
+                    else:
+                        error = result_data.get("error", "Unknown error")
+                        active_workers = result_data.get("active_workers", [])
+
+                        click.echo(f"  Status: FAILED")
+                        click.echo(f"  Error: {error}")
+                        if active_workers:
+                            click.echo(f"  Active workers: {active_workers}")
+
+                        # Log to file
+                        if logger:
+                            logger.warning(f"[STOP WORKER] Failed to stop worker-{worker_id}")
+                            logger.warning(f"  Error: {error}")
+
+                        # Notify orchestrator of failure
+                        notification_msg = f"""Failed to stop worker-{worker_id}.
+
+Error: {error}
+Active workers: {active_workers if active_workers else 'none'}
+
+The worker could not be stopped. It may have already completed or was never running."""
+
+                        await client.query(notification_msg)
+
+                        # Process the response
+                        async for msg in client.receive_response():
+                            handle_agent_message(msg)
+
                     click.echo("=" * 60)
                     continue
 

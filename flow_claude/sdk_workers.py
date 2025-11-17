@@ -111,7 +111,7 @@ class SDKWorkerManager:
         self.control_queue = control_queue
         self.debug = debug
         self.log = log_func or (lambda msg: print(msg))
-        self.active_workers = {}  # worker_id -> task info
+        self.active_workers = {}  # worker_id -> task info (task_branch, cwd, start_time, task)
         self.max_parallel = max_parallel
 
     def _validate_worker_params(self, worker_id: str, task_branch: str,
@@ -618,6 +618,63 @@ class SDKWorkerManager:
             self.log(f"[SDKWorkerManager] Updated max_parallel from {old_max} to {new_max}")
             self.log(f"[SDKWorkerManager] Currently {len(self.active_workers)} workers active")
 
+    async def stop_all_workers(self) -> int:
+        """Stop all currently active workers (hardcoded interrupt handler).
+
+        This is called when user interrupts (ESC key), NOT exposed as MCP tool.
+        Cancels all worker tasks, injects completion events, and cleans up.
+
+        Returns:
+            Number of workers stopped
+        """
+        if not self.active_workers:
+            self.log(f"[SDKWorkerManager] No active workers to stop")
+            return 0
+
+        worker_count = len(self.active_workers)
+        self.log(f"[SDKWorkerManager] Stopping all {worker_count} active workers...")
+
+        stopped_count = 0
+
+        # Process workers one at a time with popitem() to avoid race conditions
+        # If a worker completes naturally during this loop, it won't be in the dict
+        while self.active_workers:
+            try:
+                worker_id, worker_info = self.active_workers.popitem()
+            except KeyError:
+                # Dict became empty (race with natural completion)
+                break
+
+            task_branch = worker_info.get('task_branch', 'unknown')
+            worker_task = worker_info.get('task')
+
+            # Cancel the worker task if it exists and is running
+            if worker_task:
+                if not worker_task.done():
+                    worker_task.cancel()
+                    self.log(f"[SDKWorkerManager] Cancelled worker-{worker_id} task for {task_branch}")
+                else:
+                    self.log(f"[SDKWorkerManager] Worker-{worker_id} task already completed for {task_branch}")
+            else:
+                self.log(f"[SDKWorkerManager] WARNING: Worker-{worker_id} has no task reference (task_branch: {task_branch})")
+
+            # Calculate elapsed time
+            elapsed = asyncio.get_event_loop().time() - worker_info.get('start_time', 0)
+
+            # Inject completion event with exit_code=2 (stopped)
+            if self.control_queue:
+                await self._inject_completion_event(
+                    worker_id, task_branch, exit_code=2,
+                    elapsed_time=elapsed,
+                    error_message="Worker stopped by user interrupt (stop all)"
+                )
+
+            stopped_count += 1
+
+        self.log(f"[SDKWorkerManager] Stopped {stopped_count} workers")
+
+        return stopped_count
+
     def get_active_workers(self) -> Dict[str, Any]:
         """Get information about currently active workers.
 
@@ -663,6 +720,24 @@ def get_sdk_worker_manager(control_queue: Optional[asyncio.Queue] = None,
             _sdk_worker_manager.max_parallel = max_parallel
 
     return _sdk_worker_manager
+
+
+async def stop_all_workers_async() -> int:
+    """Stop all active workers asynchronously (for async UI interrupt handler).
+
+    This is an async wrapper for the stop_all_workers() method.
+    Can be awaited from async code (like Textual async action handlers).
+
+    Returns:
+        Number of workers stopped
+
+    Usage:
+        # From async UI interrupt handler
+        stopped_count = await stop_all_workers_async()
+        print(f"Stopped {stopped_count} workers")
+    """
+    manager = get_sdk_worker_manager()
+    return await manager.stop_all_workers()
 
 
 @tool(
@@ -726,9 +801,13 @@ async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
         # Start worker with safe wrapper
         worker_task = asyncio.create_task(safe_worker_wrapper())
 
-        # Store the task reference (optional, for debugging)
+        # Store the task reference in manager for stop_worker functionality
+        worker_id = args['worker_id']
+        if worker_id in manager.active_workers:
+            manager.active_workers[worker_id]['task'] = worker_task
+
         logger = logging.getLogger("flow_claude.orchestrator")
-        logger.debug(f"Created async task for worker-{args['worker_id']}: {worker_task}")
+        logger.debug(f"Created async task for worker-{worker_id}: {worker_task}")
 
         # Return a simple, clean message without JSON 
         return {
@@ -896,6 +975,179 @@ async def _run_sdk_worker_task(manager, worker_id: str, task_branch: str,
         # The error has been logged and the manager already injected a completion event
 
 
+@tool(
+    "stop_worker",
+    "Stop a running worker by worker ID (forcefully cancels the worker task)",
+    {
+        "worker_id": {"type": "string", "description": "Worker ID to stop (e.g., '1', '2', '3')"}
+    }
+)
+async def stop_worker(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Stop a running worker by cancelling its task.
+
+    This forcefully stops a worker that is currently executing a task.
+    The worker will be cancelled, cleaned up, and a completion event will
+    be injected to the control queue with exit_code=2 (stopped).
+
+    Args:
+        args: Dict with worker_id
+
+    Returns:
+        Dict with success/error status
+
+    Example:
+        >>> stop_worker({"worker_id": "1"})
+        {"status": "stopped", "worker_id": "1", "task_branch": "task/001-description"}
+    """
+    try:
+        import asyncio
+
+        worker_id = args.get("worker_id")
+
+        # Get SDK worker manager
+        manager = get_sdk_worker_manager()
+
+        if not worker_id:
+            error_msg = "worker_id is required"
+            # Send error to control queue
+            if manager.control_queue:
+                await manager.control_queue.put({
+                    "type": "stop_worker_result",
+                    "data": {
+                        "success": False,
+                        "error": error_msg
+                    }
+                })
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": error_msg
+                }],
+                "isError": True
+            }
+
+        # Check if worker exists and is active
+        active_workers = manager.get_active_workers()
+        if worker_id not in active_workers:
+            error_msg = f"Worker-{worker_id} is not currently running"
+            # Send error to control queue
+            if manager.control_queue:
+                await manager.control_queue.put({
+                    "type": "stop_worker_result",
+                    "data": {
+                        "success": False,
+                        "worker_id": worker_id,
+                        "error": error_msg,
+                        "active_workers": list(active_workers.keys())
+                    }
+                })
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"{error_msg}. Active workers: {list(active_workers.keys())}"
+                }],
+                "isError": True
+            }
+
+        worker_info = active_workers[worker_id]
+        task_branch = worker_info.get('task_branch', 'unknown')
+        worker_task = worker_info.get('task')
+
+        # Cancel the worker task if it exists
+        if worker_task and not worker_task.done():
+            worker_task.cancel()
+            manager.log(f"[SDKWorkerManager] Cancelled worker-{worker_id} task for {task_branch}")
+
+            # Calculate elapsed time
+            elapsed = asyncio.get_event_loop().time() - worker_info.get('start_time', 0)
+
+            # Inject completion event with exit_code=2 (stopped)
+            if manager.control_queue:
+                await manager._inject_completion_event(
+                    worker_id, task_branch, exit_code=2,
+                    elapsed_time=elapsed,
+                    error_message="Worker stopped by orchestrator request"
+                )
+
+            # Clean up worker from active_workers
+            if worker_id in manager.active_workers:
+                del manager.active_workers[worker_id]
+
+            # Send stop result to control queue for orchestrator
+            result_message = f"Worker-{worker_id} has been stopped successfully (task: {task_branch}, elapsed: {round(elapsed, 1)}s)"
+            if manager.control_queue:
+                await manager.control_queue.put({
+                    "type": "stop_worker_result",
+                    "data": {
+                        "success": True,
+                        "worker_id": worker_id,
+                        "task_branch": task_branch,
+                        "elapsed_seconds": round(elapsed, 1),
+                        "message": result_message
+                    }
+                })
+                manager.log(f"[SDKWorkerManager] Sent stop_worker result to control queue")
+
+            # Return simple acknowledgment (orchestrator will get details via control queue)
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": f"Stop command issued for worker-{worker_id}. Worker is being cancelled..."
+                }],
+                "isError": False
+            }
+        else:
+            # Task already completed or doesn't exist
+            error_message = f"Worker-{worker_id} task is not running (already completed or no task reference)"
+
+            # Send error result to control queue
+            if manager.control_queue:
+                await manager.control_queue.put({
+                    "type": "stop_worker_result",
+                    "data": {
+                        "success": False,
+                        "worker_id": worker_id,
+                        "task_branch": task_branch,
+                        "error": error_message
+                    }
+                })
+
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": error_message
+                }],
+                "isError": True
+            }
+
+    except Exception as e:
+        # Get manager for control queue access
+        try:
+            manager = get_sdk_worker_manager()
+            error_msg = f"Failed to stop worker: {str(e)}"
+
+            # Send error to control queue
+            if manager.control_queue:
+                await manager.control_queue.put({
+                    "type": "stop_worker_result",
+                    "data": {
+                        "success": False,
+                        "worker_id": args.get("worker_id"),
+                        "error": error_msg
+                    }
+                })
+        except:
+            pass  # If we can't even get manager, just return error
+
+        return {
+            "content": [{
+                "type": "text",
+                "text": f"Failed to stop worker: {str(e)}"
+            }],
+            "isError": True
+        }
+
+
 def create_worker_tools_server():
     """Create MCP server with worker management tools.
 
@@ -915,12 +1167,14 @@ def create_worker_tools_server():
         Agents can then use:
             - mcp__workers__launch_worker_async: Launch worker in background
             - mcp__workers__get_worker_status: Check status of all worker slots
+            - mcp__workers__stop_worker: Stop a running worker by worker ID
     """
     return create_sdk_mcp_server(
         name="workers",
         version="1.0.0",
         tools=[
             launch_worker_async,
-            get_worker_status
+            get_worker_status,
+            stop_worker
         ]
     )
