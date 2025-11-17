@@ -42,7 +42,6 @@ class OrchestratorRunner:
                 initial_request=request,
                 session_id=self.app.session_id,
                 model=self.app.model,
-                max_turns=1000,  # Reduced from 100 - orchestrator should complete after launching workers
                 permission_mode="bypassPermissions",
                 enable_parallel=enable_parallel,
                 max_parallel=self.app.max_parallel,

@@ -153,6 +153,7 @@ except ImportError:
 from .git_tools import create_git_tools_server
 from .sdk_workers import create_worker_tools_server
 from .utils.text_formatter import format_tool_input, format_tool_result
+from .utils.mcp_loader import load_project_mcp_config
 
 
 def check_claude_code_available() -> tuple[bool, str]:
@@ -201,7 +202,6 @@ async def run_development_session(
     initial_request: str,
     session_id: str,
     model: str,
-    max_turns: int,
     permission_mode: str,
     enable_parallel: bool,
     max_parallel: int,
@@ -461,21 +461,13 @@ Every decision you make should reflect what a skilled engineer would choose when
             "mcp__workers__get_worker_status",  # Check status of background workers
         ],
         "mcp_servers": {
+            # SDK MCP servers (always available)
             "git": create_git_tools_server(),
             "workers": create_worker_tools_server(),
-            "playwright": {
-                "type": "stdio",
-                "command": "cmd",
-                "args": [
-                "/c",
-                "npx",
-            "@playwright/mcp@latest"
-            ],
-      "env": {}
-    }
+            # Load additional MCP servers from project's .mcp.json
+            **load_project_mcp_config()
         },
         "permission_mode": permission_mode,
-        "max_turns": max_turns,
         "cwd": os.getcwd(),
         "cli_path": claude_path,
         "setting_sources":["user", "project", "local"]  # Explicitly set Claude CLI path
@@ -697,7 +689,7 @@ The worker encountered an error and could not complete the task. Please:
                                 if peek_control.get("type") == "stop":
                                     click.echo("\n[STOP] Interrupting worker completion handling...\n")
                                     await client.interrupt()
-                                    break
+                                    
                                 else:
                                     # Put back for next iteration
                                     await control_queue.put(peek_control)
@@ -928,7 +920,7 @@ def handle_agent_message(msg):
                             _message_handler.write_message(
                                 message=text,
                                 agent=agent_name,
-                                timestamp=timestamp if _debug_logging else None
+                                timestamp=None  # Never show timestamps in UI
                             )
                         else:
                             # Terminal mode - print with agent identification
@@ -987,8 +979,7 @@ def handle_agent_message(msg):
                     tool_msg = f"[TOOL] {tool_name}"
                     if tool_detail and tool_name != 'Task':
                         tool_msg += f" | {tool_detail}"
-                    if _debug_logging and tool_id:
-                        tool_msg += f" (id: {tool_id[:12]})"
+                    # Never show tool ID in UI (only in file logs)
 
                     # Send to Textual UI if available, otherwise print to terminal
                     if _message_handler:
@@ -996,7 +987,7 @@ def handle_agent_message(msg):
                         _message_handler.write_message(
                             message=tool_msg,
                             agent=agent_name,
-                            timestamp=timestamp if _debug_logging else None
+                            timestamp=None  # Never show timestamps in UI
                         )
 
                         # Show subagent invocation for Task tool
@@ -1005,18 +996,6 @@ def handle_agent_message(msg):
                             description = tool_input.get('description', '')
                             _message_handler.write_message(
                                 message=f"  -> Invoking {subagent_type}: {description}",
-                                agent=agent_name,
-                                timestamp=None
-                            )
-
-                        # Show tool input in verbose/debug mode
-                        if (_verbose_logging or _debug_logging) and tool_input:
-                            # Format tool input as readable text instead of JSON
-                            formatted_input = format_tool_input(tool_name, tool_input)
-                            # Extract just the parameters part (skip the "Tool: X" line)
-                            input_lines = formatted_input.split('\n')[1:]  # Skip first line
-                            _message_handler.write_message(
-                                message='\n'.join(input_lines),
                                 agent=agent_name,
                                 timestamp=None
                             )
@@ -1031,16 +1010,6 @@ def handle_agent_message(msg):
                             subagent_type = tool_input.get('subagent_type', 'unknown')
                             description = tool_input.get('description', '')
                             click.echo(f"  -> Invoking {subagent_type}: {description}")
-                            sys.stdout.flush()
-
-                        # Show tool input in verbose/debug mode
-                        if (_verbose_logging or _debug_logging) and tool_input:
-                            # Format tool input as readable text instead of JSON
-                            formatted_input = format_tool_input(tool_name, tool_input)
-                            # Extract just the parameters part (skip the "Tool: X" line)
-                            input_lines = formatted_input.split('\n')[1:]  # Skip first line
-                            for line in input_lines:
-                                click.echo(f"  {line}")
                             sys.stdout.flush()
 
                 elif _debug_logging:
@@ -1064,7 +1033,7 @@ def handle_agent_message(msg):
                 _message_handler.write_message(
                     message=result_msg,
                     agent=agent_name,
-                    timestamp=timestamp if _debug_logging else None
+                    timestamp=None  # Never show timestamps in UI
                 )
                 
                 # Show result output in debug mode

@@ -105,11 +105,11 @@ class MessageHandler:
         # Output to UI handler if available
         if self.ui_handler and hasattr(self.ui_handler, 'write_message'):
             try:
-                timestamp = self._get_timestamp() if self.debug else None
+                # Never show timestamps in UI (only in file logs)
                 self.ui_handler.write_message(
                     message=formatted,
                     agent=self.agent_name,
-                    timestamp=timestamp
+                    timestamp=None
                 )
             except Exception:
                 # Fallback to log function if UI fails

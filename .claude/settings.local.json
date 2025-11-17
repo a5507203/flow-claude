@@ -3,7 +3,13 @@
     "allow": [
       "Bash(test:*)",
       "WebSearch",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(git worktree:*)",
+      "Bash(git for-each-ref:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(lsof:*)"
     ],
     "deny": [],
     "ask": []
