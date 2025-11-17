@@ -772,48 +772,73 @@ async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
         # Get SDK worker manager (it will already be initialized with proper logger)
         manager = get_sdk_worker_manager()
 
-        # Create async task for worker
         import asyncio
         import logging
 
+        # VALIDATE PARAMETERS BEFORE CREATING BACKGROUND TASK
+        # This gives immediate feedback to orchestrator instead of waiting for control queue
+        worker_id = args["worker_id"]
+        task_branch = args["task_branch"]
+        cwd = args["cwd"]
+        instructions = args["instructions"]
+        session_info = {
+            'session_id': args["session_id"],
+            'plan_branch': args["plan_branch"],
+            'model': args.get("model", "sonnet")
+        }
+
+        validation_success, validation_error = manager._validate_worker_params(
+            worker_id, task_branch, session_info, cwd, instructions
+        )
+
+        if not validation_success:
+            # Validation failed - return error immediately to orchestrator
+            error_msg = f"Worker-{worker_id} validation failed: {validation_error}"
+            manager.log(f"[SDKWorkerManager] ERROR: {error_msg}")
+
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": error_msg
+                }],
+                "isError": True
+            }
+
+        # Validation passed - create async task for worker
         # Create a wrapped task that handles exceptions properly
         async def safe_worker_wrapper():
             """Wrapper to ensure exceptions don't cause unhandled errors."""
             try:
                 await _run_sdk_worker_task(
                     manager,
-                    args["worker_id"],
-                    args["task_branch"],
-                    {
-                        'session_id': args["session_id"],
-                        'plan_branch': args["plan_branch"],
-                        'model': args.get("model", "sonnet")
-                    },
-                    args["cwd"],  # cwd IS the worktree path
-                    args["instructions"],  # Pass required instructions
+                    worker_id,
+                    task_branch,
+                    session_info,
+                    cwd,
+                    instructions,
                     args.get("allowed_tools")  # Optional additional tools to allow
                 )
             except Exception as e:
                 # Log but don't raise - prevents unhandled exception in TaskGroup
                 logger = logging.getLogger("flow_claude.orchestrator")
-                logger.error(f"Worker-{args['worker_id']} wrapper caught exception: {e}")
+                logger.error(f"Worker-{worker_id} wrapper caught exception: {e}")
 
         # Start worker with safe wrapper
         worker_task = asyncio.create_task(safe_worker_wrapper())
 
         # Store the task reference in manager for stop_worker functionality
-        worker_id = args['worker_id']
+        # Note: Worker is added to active_workers in run_worker after validation
         if worker_id in manager.active_workers:
             manager.active_workers[worker_id]['task'] = worker_task
 
         logger = logging.getLogger("flow_claude.orchestrator")
         logger.debug(f"Created async task for worker-{worker_id}: {worker_task}")
 
-        # Return a simple, clean message without JSON 
+        # Return a simple, clean message without JSON
         return {
             "content": [{
                 "type": "text",
-                "text": f"Worker-{args['worker_id']} has been launched in the background for task branch {args['task_branch']}. The worker is now executing the task autonomously."
+                "text": f"Worker-{worker_id} has been launched in the background for task branch {task_branch}. The worker is now executing the task autonomously."
             }],
             "isError": False
         }

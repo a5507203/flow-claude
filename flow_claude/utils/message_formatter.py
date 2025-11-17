@@ -54,6 +54,7 @@ def parse_agent_message(msg: Any) -> ParsedMessage:
     """Parse agent message into structured format.
 
     Handles different message structures from Claude SDK:
+    - AssistantMessage with blocks (SDK format)
     - Object with attributes (hasattr check)
     - Dictionary
     - Raw string
@@ -70,8 +71,27 @@ def parse_agent_message(msg: Any) -> ParsedMessage:
     tool_input = None
     tool_output = None
 
+    # Handle AssistantMessage with blocks (SDK format)
+    if SDK_AVAILABLE and isinstance(msg, AssistantMessage):
+        if hasattr(msg, 'content') and isinstance(msg.content, list):
+            # Format each block naturally
+            formatted_blocks = []
+            for block in msg.content:
+                formatted = format_block_natural(block, max_result_length=200)
+                if formatted:
+                    formatted_blocks.append(formatted)
+
+            message_content = "\n".join(formatted_blocks) if formatted_blocks else ""
+        elif hasattr(msg, 'content'):
+            message_content = str(msg.content)
+
+        return ParsedMessage(
+            message_type=MessageType.TEXT,
+            content=message_content
+        )
+
     # Handle different message structures
-    if hasattr(msg, '__dict__'):
+    elif hasattr(msg, '__dict__'):
         # Message object with attributes
         if hasattr(msg, 'content'):
             message_content = str(msg.content)
