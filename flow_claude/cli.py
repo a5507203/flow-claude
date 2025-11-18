@@ -244,11 +244,12 @@ async def run_development_session(
         V7 merges planner into orchestrator for simplified architecture.
     """
     # Store logging flags and logger globally for use in handle_agent_message
-    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent
+    global _verbose_logging, _debug_logging, _session_logger, _tool_id_to_agent, _current_session_id
     _verbose_logging = verbose
     _debug_logging = debug
     _session_logger = logger
     _tool_id_to_agent = {}  # Clear agent tracking for new session
+    _current_session_id = None  # Reset session ID for new session (will be captured from SystemMessage)
 
     # Note: SDKWorkerManager is initialized in ui/orchestrator.py before calling this function
     # The singleton pattern ensures the same instance (with proper worker_log) is used throughout
@@ -556,286 +557,311 @@ Begin. **Remember: Complete immediately after launching all initial workers.**""
             click.echo("ERROR: control_queue is required", err=True)
             return
 
-        # Create SDK client ONCE - session persists across all requests
-        options = ClaudeAgentOptions(**options_kwargs)
+        # Auto-resume configuration for crash recovery
+        retry_count = 0
+        max_retries = 100
 
-        if debug:
-            click.echo(f"DEBUG: Creating persistent ClaudeSDKClient session...")
+        while retry_count < max_retries:
+            try:
+                # Add resume parameter if we have session_id from previous crash
+                if _current_session_id and retry_count > 0:
+                    options_kwargs["resume"] = _current_session_id
+                    if debug:
+                        click.echo(f"DEBUG: Resuming with session_id: {_current_session_id}")
 
-        async with ClaudeSDKClient(options=options) as client:
-            if debug:
-                click.echo(f"DEBUG: SDK client session started")
+                # Create SDK client ONCE - session persists across all requests
+                options = ClaudeAgentOptions(**options_kwargs)
 
-            # Continuous loop - processes requests until shutdown
-            while True:
                 if debug:
-                    click.echo(f"\nDEBUG: Waiting for next request from control_queue...")
+                    click.echo(f"DEBUG: Creating persistent ClaudeSDKClient session...")
 
-                # Wait for next request (blocks here)
-                control = await control_queue.get()
+                async with ClaudeSDKClient(options=options) as client:
+                    if debug:
+                        click.echo(f"DEBUG: SDK client session started")
 
-                # Handle shutdown
-                if control.get("type") == "shutdown":
-                    click.echo("\n[SHUTDOWN] User requested exit\n")
-                    break
+                    # Continuous loop - processes requests until shutdown
+                    while True:
+                        if debug:
+                            click.echo(f"\nDEBUG: Waiting for next request from control_queue...")
 
-                # Handle worker completion events from async workers
-                if control.get("type") == "worker_completion":
-                    worker_data = control.get("data", {})
-                    worker_id = worker_data.get("worker_id")
-                    task_branch = worker_data.get("task_branch")
-                    exit_code = worker_data.get("exit_code")
-                    elapsed_time = worker_data.get("elapsed_time", 0)
-                    error_message = worker_data.get("error_message")  # May be None
+                        # Wait for next request (blocks here)
+                        control = await control_queue.get()
 
-                    # Format elapsed time
-                    elapsed_min = int(elapsed_time / 60)
-                    elapsed_sec = int(elapsed_time % 60)
+                        # Handle shutdown
+                        if control.get("type") == "shutdown":
+                            click.echo("\n[SHUTDOWN] User requested exit\n")
+                            break
 
-                    # Log the completion event to console
-                    status_label = '(success)' if exit_code == 0 else '(stopped)' if exit_code == 2 else '(failed)'
-                    click.echo("\n" + "=" * 60)
-                    click.echo(f"[WORKER COMPLETION EVENT]")
-                    click.echo(f"  Worker ID: {worker_id}")
-                    click.echo(f"  Task: {task_branch}")
-                    click.echo(f"  Exit code: {exit_code} {status_label}")
-                    click.echo(f"  Duration: {elapsed_min}m {elapsed_sec}s")
-                    if error_message:
-                        click.echo(f"  Message: {error_message}")
-                    click.echo("=" * 60 + "\n")
+                        # Handle worker completion events from async workers
+                        if control.get("type") == "worker_completion":
+                            worker_data = control.get("data", {})
+                            worker_id = worker_data.get("worker_id")
+                            task_branch = worker_data.get("task_branch")
+                            exit_code = worker_data.get("exit_code")
+                            elapsed_time = worker_data.get("elapsed_time", 0)
+                            error_message = worker_data.get("error_message")  # May be None
 
-                    # Also log to file for tracking
-                    if logger:
-                        logger.info(f"[WORKER COMPLETION] Worker-{worker_id} completed {task_branch}")
-                        logger.info(f"  Exit code: {exit_code} {status_label}, Duration: {elapsed_min}m {elapsed_sec}s")
-                        if error_message:
-                            if exit_code == 2:
-                                logger.warning(f"  Message: {error_message}")
+                            # Format elapsed time
+                            elapsed_min = int(elapsed_time / 60)
+                            elapsed_sec = int(elapsed_time % 60)
+
+                            # Log the completion event to console
+                            status_label = '(success)' if exit_code == 0 else '(stopped)' if exit_code == 2 else '(failed)'
+                            click.echo("\n" + "=" * 60)
+                            click.echo(f"[WORKER COMPLETION EVENT]")
+                            click.echo(f"  Worker ID: {worker_id}")
+                            click.echo(f"  Task: {task_branch}")
+                            click.echo(f"  Exit code: {exit_code} {status_label}")
+                            click.echo(f"  Duration: {elapsed_min}m {elapsed_sec}s")
+                            if error_message:
+                                click.echo(f"  Message: {error_message}")
+                            click.echo("=" * 60 + "\n")
+
+                            # Also log to file for tracking
+                            if logger:
+                                logger.info(f"[WORKER COMPLETION] Worker-{worker_id} completed {task_branch}")
+                                logger.info(f"  Exit code: {exit_code} {status_label}, Duration: {elapsed_min}m {elapsed_sec}s")
+                                if error_message:
+                                    if exit_code == 2:
+                                        logger.warning(f"  Message: {error_message}")
+                                    else:
+                                        logger.error(f"  Error: {error_message}")
+
+                            if debug:
+                                click.echo(f"DEBUG: Worker completion event details:")
+                                click.echo(f"DEBUG:   Worker-{worker_id}")
+                                click.echo(f"DEBUG:   Branch: {task_branch}")
+                                click.echo(f"DEBUG:   Exit code: {exit_code}")
+                                click.echo(f"DEBUG:   Elapsed: {elapsed_time:.2f}s")
+                                click.echo(f"DEBUG: Injecting completion notification to orchestrator\n")
+                                if logger:
+                                    logger.debug(f"Worker-{worker_id} completion: branch={task_branch}, exit={exit_code}, elapsed={elapsed_time:.2f}s")
+
+                            # Create notification message for orchestrator
+                            if exit_code == 0:
+                                # Success case - normal completion flow
+                                completion_msg = f"""Worker-{worker_id} has completed task {task_branch}
+        - Exit code: {exit_code} (success)
+        - Elapsed time: {elapsed_min}m {elapsed_sec}s
+
+        Please process this single completion immediately (don't wait for other workers):
+        1. Parse worker commit status: mcp__git__parse_worker_commit("{task_branch}")
+        2. Verify implementation by reading actual code from flow branch (merged code)
+        3. Remove worktree: mcp__git__remove_worktree("{worker_id}")
+        4. Update plan to mark this task complete: mcp__git__update_plan_branch()
+        5. Check for newly-ready tasks: mcp__git__get_provides()
+        6. If worker-{worker_id} is now idle and another task is ready, launch it immediately
+        7. Continue working while other workers complete their tasks independently"""
+                            elif exit_code == 2:
+                                # Stopped case - worker was cancelled by orchestrator
+                                error_details = f"\n- Reason: {error_message}" if error_message else ""
+                                completion_msg = f"""Worker-{worker_id} was STOPPED for task {task_branch}
+        - Exit code: {exit_code} (stopped)
+        - Elapsed time: {elapsed_min}m {elapsed_sec}s{error_details}
+
+        The worker was intentionally stopped by you before completing the task. Please:
+        1. Remove the stopped worktree: mcp__git__remove_worktree("{worker_id}")
+        2. Decide on next steps for the incomplete task:
+           - If task should be completed: Launch a new worker for the same task branch
+           - If task is no longer needed: Update plan to mark as cancelled/skipped
+           - If changing approach: Create a new task branch with different strategy
+        3. Update plan if needed: mcp__git__update_plan_branch()
+        4. Worker-{worker_id} is now idle and available for new tasks
+        5. Continue with other workers' tasks independently"""
                             else:
-                                logger.error(f"  Error: {error_message}")
+                                # Error case - include error details and suggest retry/alternative
+                                error_details = f"\n- Error: {error_message}" if error_message else ""
+                                completion_msg = f"""Worker-{worker_id} FAILED task {task_branch}
+        - Exit code: {exit_code} (error)
+        - Elapsed time: {elapsed_min}m {elapsed_sec}s{error_details}
 
-                    if debug:
-                        click.echo(f"DEBUG: Worker completion event details:")
-                        click.echo(f"DEBUG:   Worker-{worker_id}")
-                        click.echo(f"DEBUG:   Branch: {task_branch}")
-                        click.echo(f"DEBUG:   Exit code: {exit_code}")
-                        click.echo(f"DEBUG:   Elapsed: {elapsed_time:.2f}s")
-                        click.echo(f"DEBUG: Injecting completion notification to orchestrator\n")
-                        if logger:
-                            logger.debug(f"Worker-{worker_id} completion: branch={task_branch}, exit={exit_code}, elapsed={elapsed_time:.2f}s")
+        The worker encountered an error and could not complete the task. Please:
+        1. Read the error message above to understand what went wrong
+        2. Remove the failed worktree: mcp__git__remove_worktree("{worker_id}")
+        3. Decide on next steps:
+           - If validation error (e.g., missing branch, bad parameters): Fix the issue and retry
+           - If initialization error (e.g., git/MCP setup): Check worktree setup, then retry
+           - If runtime error: Review task complexity, consider breaking into smaller tasks
+           - If repeated failures: Try alternative approach or skip for now
+        4. Update plan if needed: mcp__git__update_plan_branch()
+        5. If retrying or launching alternative task, use worker-{worker_id} (now idle)
+        6. Continue with other workers' tasks independently"""
 
-                    # Create notification message for orchestrator
-                    if exit_code == 0:
-                        # Success case - normal completion flow
-                        completion_msg = f"""Worker-{worker_id} has completed task {task_branch}
-- Exit code: {exit_code} (success)
-- Elapsed time: {elapsed_min}m {elapsed_sec}s
+                            # Process as a regular query
+                            await client.query(completion_msg)
 
-Please process this single completion immediately (don't wait for other workers):
-1. Parse worker commit status: mcp__git__parse_worker_commit("{task_branch}")
-2. Verify implementation by reading actual code from flow branch (merged code)
-3. Remove worktree: mcp__git__remove_worktree("{worker_id}")
-4. Update plan to mark this task complete: mcp__git__update_plan_branch()
-5. Check for newly-ready tasks: mcp__git__get_provides()
-6. If worker-{worker_id} is now idle and another task is ready, launch it immediately
-7. Continue working while other workers complete their tasks independently"""
-                    elif exit_code == 2:
-                        # Stopped case - worker was cancelled by orchestrator
-                        error_details = f"\n- Reason: {error_message}" if error_message else ""
-                        completion_msg = f"""Worker-{worker_id} was STOPPED for task {task_branch}
-- Exit code: {exit_code} (stopped)
-- Elapsed time: {elapsed_min}m {elapsed_sec}s{error_details}
+                            # Process the response
+                            async for msg in client.receive_response():
+                                handle_agent_message(msg)
 
-The worker was intentionally stopped by you before completing the task. Please:
-1. Remove the stopped worktree: mcp__git__remove_worktree("{worker_id}")
-2. Decide on next steps for the incomplete task:
-   - If task should be completed: Launch a new worker for the same task branch
-   - If task is no longer needed: Update plan to mark as cancelled/skipped
-   - If changing approach: Create a new task branch with different strategy
-3. Update plan if needed: mcp__git__update_plan_branch()
-4. Worker-{worker_id} is now idle and available for new tasks
-5. Continue with other workers' tasks independently"""
-                    else:
-                        # Error case - include error details and suggest retry/alternative
-                        error_details = f"\n- Error: {error_message}" if error_message else ""
-                        completion_msg = f"""Worker-{worker_id} FAILED task {task_branch}
-- Exit code: {exit_code} (error)
-- Elapsed time: {elapsed_min}m {elapsed_sec}s{error_details}
+                                # Check for interruptions during response
+                                if control_queue and not control_queue.empty():
+                                    try:
+                                        peek_control = control_queue.get_nowait()
 
-The worker encountered an error and could not complete the task. Please:
-1. Read the error message above to understand what went wrong
-2. Remove the failed worktree: mcp__git__remove_worktree("{worker_id}")
-3. Decide on next steps:
-   - If validation error (e.g., missing branch, bad parameters): Fix the issue and retry
-   - If initialization error (e.g., git/MCP setup): Check worktree setup, then retry
-   - If runtime error: Review task complexity, consider breaking into smaller tasks
-   - If repeated failures: Try alternative approach or skip for now
-4. Update plan if needed: mcp__git__update_plan_branch()
-5. If retrying or launching alternative task, use worker-{worker_id} (now idle)
-6. Continue with other workers' tasks independently"""
+                                        if peek_control.get("type") == "stop":
+                                            click.echo("\n[STOP] Interrupting worker completion handling...\n")
+                                            await client.interrupt()
+                                            break
+                                        else:
+                                            # Put back for next iteration
+                                            await control_queue.put(peek_control)
+                                    except asyncio.QueueEmpty:
+                                        pass
 
-                    # Process as a regular query
-                    await client.query(completion_msg)
+                            click.echo("\n" + "=" * 60)
+                            click.echo("Worker completion processed. Waiting for next event...")
+                            click.echo("=" * 60)
+                            continue
 
-                    # Process the response
-                    async for msg in client.receive_response():
-                        handle_agent_message(msg)
+                        # Handle stop_worker result events
+                        elif control.get("type") == "stop_worker_result":
+                            result_data = control.get("data", {})
+                            success = result_data.get("success", False)
+                            worker_id = result_data.get("worker_id", "unknown")
 
-                        # Check for interruptions during response
-                        if control_queue and not control_queue.empty():
-                            try:
-                                peek_control = control_queue.get_nowait()
+                            # Log the stop result to console
+                            click.echo("\n" + "=" * 60)
+                            click.echo(f"[STOP WORKER RESULT]")
+                            click.echo(f"  Worker ID: {worker_id}")
 
-                                if peek_control.get("type") == "stop":
-                                    click.echo("\n[STOP] Interrupting worker completion handling...\n")
-                                    await client.interrupt()
-                                    
-                                else:
-                                    # Put back for next iteration
-                                    await control_queue.put(peek_control)
-                            except asyncio.QueueEmpty:
-                                pass
+                            if success:
+                                task_branch = result_data.get("task_branch", "unknown")
+                                elapsed = result_data.get("elapsed_seconds", 0)
+                                message = result_data.get("message", "Worker stopped")
 
-                    click.echo("\n" + "=" * 60)
-                    click.echo("Worker completion processed. Waiting for next event...")
-                    click.echo("=" * 60)
-                    continue
+                                click.echo(f"  Status: SUCCESS")
+                                click.echo(f"  Task: {task_branch}")
+                                click.echo(f"  Elapsed: {elapsed}s")
+                                click.echo(f"  Message: {message}")
 
-                # Handle stop_worker result events
-                elif control.get("type") == "stop_worker_result":
-                    result_data = control.get("data", {})
-                    success = result_data.get("success", False)
-                    worker_id = result_data.get("worker_id", "unknown")
+                                # Log to file
+                                if logger:
+                                    logger.info(f"[STOP WORKER] Worker-{worker_id} stopped successfully")
+                                    logger.info(f"  Task: {task_branch}, Elapsed: {elapsed}s")
 
-                    # Log the stop result to console
-                    click.echo("\n" + "=" * 60)
-                    click.echo(f"[STOP WORKER RESULT]")
-                    click.echo(f"  Worker ID: {worker_id}")
+                                # Notify orchestrator
+                                notification_msg = f"""Worker-{worker_id} has been stopped successfully.
 
-                    if success:
-                        task_branch = result_data.get("task_branch", "unknown")
-                        elapsed = result_data.get("elapsed_seconds", 0)
-                        message = result_data.get("message", "Worker stopped")
+        Task: {task_branch}
+        Elapsed time: {elapsed}s
 
-                        click.echo(f"  Status: SUCCESS")
-                        click.echo(f"  Task: {task_branch}")
-                        click.echo(f"  Elapsed: {elapsed}s")
-                        click.echo(f"  Message: {message}")
+        The worker was cancelled and cleaned up. A completion event (exit_code=2) has been sent.
+        You can now assign a new task to worker-{worker_id} if needed."""
 
-                        # Log to file
-                        if logger:
-                            logger.info(f"[STOP WORKER] Worker-{worker_id} stopped successfully")
-                            logger.info(f"  Task: {task_branch}, Elapsed: {elapsed}s")
+                                await client.query(notification_msg)
 
-                        # Notify orchestrator
-                        notification_msg = f"""Worker-{worker_id} has been stopped successfully.
+                                # Process the response
+                                async for msg in client.receive_response():
+                                    handle_agent_message(msg)
 
-Task: {task_branch}
-Elapsed time: {elapsed}s
+                            else:
+                                error = result_data.get("error", "Unknown error")
+                                active_workers = result_data.get("active_workers", [])
 
-The worker was cancelled and cleaned up. A completion event (exit_code=2) has been sent.
-You can now assign a new task to worker-{worker_id} if needed."""
+                                click.echo(f"  Status: FAILED")
+                                click.echo(f"  Error: {error}")
+                                if active_workers:
+                                    click.echo(f"  Active workers: {active_workers}")
 
-                        await client.query(notification_msg)
+                                # Log to file
+                                if logger:
+                                    logger.warning(f"[STOP WORKER] Failed to stop worker-{worker_id}")
+                                    logger.warning(f"  Error: {error}")
 
-                        # Process the response
-                        async for msg in client.receive_response():
-                            handle_agent_message(msg)
+                                # Notify orchestrator of failure
+                                notification_msg = f"""Failed to stop worker-{worker_id}.
 
-                    else:
-                        error = result_data.get("error", "Unknown error")
-                        active_workers = result_data.get("active_workers", [])
+        Error: {error}
+        Active workers: {active_workers if active_workers else 'none'}
 
-                        click.echo(f"  Status: FAILED")
-                        click.echo(f"  Error: {error}")
-                        if active_workers:
-                            click.echo(f"  Active workers: {active_workers}")
+        The worker could not be stopped. It may have already completed or was never running."""
 
-                        # Log to file
-                        if logger:
-                            logger.warning(f"[STOP WORKER] Failed to stop worker-{worker_id}")
-                            logger.warning(f"  Error: {error}")
+                                await client.query(notification_msg)
 
-                        # Notify orchestrator of failure
-                        notification_msg = f"""Failed to stop worker-{worker_id}.
+                                # Process the response
+                                async for msg in client.receive_response():
+                                    handle_agent_message(msg)
 
-Error: {error}
-Active workers: {active_workers if active_workers else 'none'}
+                            click.echo("=" * 60)
+                            continue
 
-The worker could not be stopped. It may have already completed or was never running."""
+                        # Handle intervention (normal request)
+                        elif control.get("type") == "intervention":
+                            user_request = control.get("data", {}).get("requirement", "")
+                            if not user_request:
+                                click.echo("WARNING: Empty request received", err=True)
+                                continue
 
-                        await client.query(notification_msg)
+                            click.echo(f"\n[REQUEST] Processing: {user_request}\n")
+                            if debug:
+                                click.echo(f"DEBUG: Sending query to SDK...")
 
-                        # Process the response
-                        async for msg in client.receive_response():
-                            handle_agent_message(msg)
+                            # Send query
+                            prompt = create_query_prompt(user_request)
+                            await client.query(prompt)
 
-                    click.echo("=" * 60)
-                    continue
+                            # Process response with interruption support
+                            interrupted = False
+                            async for msg in client.receive_response():
+                                handle_agent_message(msg)
 
-                # Handle intervention (normal request)
-                elif control.get("type") == "intervention":
-                    user_request = control.get("data", {}).get("requirement", "")
-                    if not user_request:
-                        click.echo("WARNING: Empty request received", err=True)
-                        continue
+                                # Check for interruptions during response processing
+                                if control_queue and not control_queue.empty():
+                                    try:
+                                        peek_control = control_queue.get_nowait()
 
-                    click.echo(f"\n[REQUEST] Processing: {user_request}\n")
-                    if debug:
-                        click.echo(f"DEBUG: Sending query to SDK...")
-
-                    # Send query
-                    prompt = create_query_prompt(user_request)
-                    await client.query(prompt)
-
-                    # Process response with interruption support
-                    interrupted = False
-                    async for msg in client.receive_response():
-                        handle_agent_message(msg)
-
-                        # Check for interruptions during response processing
-                        if control_queue and not control_queue.empty():
-                            try:
-                                peek_control = control_queue.get_nowait()
-
-                                if peek_control.get("type") == "stop":
-                                    # User requested stop - interrupt current task
-                                    click.echo("\n[STOP] Interrupting current task...\n")
-                                    await client.interrupt()
-                                    interrupted = True
+                                        if peek_control.get("type") == "stop":
+                                            # User requested stop - interrupt current task
+                                            click.echo("\n[STOP] Interrupting current task...\n")
+                                            await client.interrupt()
+                                            interrupted = True
                                 
 
-                                elif peek_control.get("type") == "intervention":
-                                    # Follow-up request - put back in queue for next iteration
-                                    await control_queue.put(peek_control)
-                                    if debug:
-                                        click.echo(f"DEBUG: Follow-up request queued")
+                                        elif peek_control.get("type") == "intervention":
+                                            # Follow-up request - put back in queue for next iteration
+                                            await control_queue.put(peek_control)
+                                            if debug:
+                                                click.echo(f"DEBUG: Follow-up request queued")
 
-                                elif peek_control.get("type") == "shutdown":
-                                    # Shutdown request - put back and break
-                                    await control_queue.put(peek_control)
-                                    break
+                                        elif peek_control.get("type") == "shutdown":
+                                            # Shutdown request - put back and break
+                                            await control_queue.put(peek_control)
+                                            break
 
-                            except asyncio.QueueEmpty:
-                                pass
+                                    except asyncio.QueueEmpty:
+                                        pass
 
-                    if interrupted:
-                        click.echo("[STOP] Task interrupted. Waiting for next request...")
-                    else:
-                        click.echo("\n" + "=" * 60)
-                        click.echo("Request complete. Waiting for next request...")
-                        click.echo("=" * 60)
+                            if interrupted:
+                                click.echo("[STOP] Task interrupted. Waiting for next request...")
+                            else:
+                                click.echo("\n" + "=" * 60)
+                                click.echo("Request complete. Waiting for next request...")
+                                click.echo("=" * 60)
 
-                    # Loop back to wait for next request (same SDK session!)
+                            # Loop back to wait for next request (same SDK session!)
+                            continue
+
+                        # Unknown control type
+                        else:
+                            click.echo(f"WARNING: Unknown control type: {control.get('type')}", err=True)
+                            continue
+
+                    # Session ended normally
+                    click.echo("\nSDK session ended")
+                    break  # Exit retry loop on normal completion
+
+            except Exception as e:
+                retry_count += 1
+                if _current_session_id and retry_count < max_retries:
+                    click.echo(f"\n[CRASH] Session crashed: {e}")
+                    click.echo(f"[RESUME] Auto-resuming session {_current_session_id} (attempt {retry_count}/{max_retries})...")
+                    await asyncio.sleep(2)  # Brief delay before resume
                     continue
-
-                # Unknown control type
                 else:
-                    click.echo(f"WARNING: Unknown control type: {control.get('type')}", err=True)
-                    continue
-
-            # Session ended
-            click.echo("\nSDK session ended")
+                    # No session ID or max retries reached
+                    click.echo(f"\nERROR: Session failed after {retry_count} attempts", err=True)
+                    raise
 
     except Exception as e:
         click.echo(f"\nERROR: Error during development session: {e}", err=True)
@@ -875,8 +901,8 @@ def handle_agent_message(msg):
     if isinstance(msg, SystemMessage):
         # Capture session ID from init message
         if hasattr(msg, 'subtype') and msg.subtype == 'init':
-            if hasattr(msg, 'session_id'):
-                _current_session_id = msg.session_id
+            if hasattr(msg, 'data') and isinstance(msg.data, dict) and 'session_id' in msg.data:
+                _current_session_id = msg.data['session_id']
                 if _debug_logging:
                     click.echo(f"[{timestamp}] [SESSION] Captured session ID: {_current_session_id}")
 
