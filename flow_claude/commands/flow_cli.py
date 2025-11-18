@@ -1,76 +1,339 @@
 """
-Flow CLI Entry Point
+Flow CLI - Project Initialization
 
-Interactive Textual UI for Flow-Claude development sessions.
-Just type `flow` to start an interactive session.
+Initializes a project for Claude Code UI-native autonomous development.
+Run once per project to create necessary file structure.
 """
 
 import sys
+import shutil
 import click
+from pathlib import Path
+
+
+def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
+    """Copy template files to project directory.
+
+    Creates .claude/ directory structure and copies all templates.
+
+    Args:
+        project_root: Project root directory
+        verbose: Print detailed progress
+
+    Returns:
+        Dict with counts of files copied
+    """
+    import pkg_resources
+
+    # Get templates directory from package
+    try:
+        # Try to get from installed package
+        template_dir = Path(pkg_resources.resource_filename('flow_claude', 'templates'))
+    except:
+        # Fallback to relative path (development mode)
+        template_dir = Path(__file__).parent.parent / 'templates'
+
+    if not template_dir.exists():
+        print(f"ERROR: Templates directory not found: {template_dir}")
+        return {"error": "Templates not found"}
+
+    results = {
+        "skills": 0,
+        "commands": 0,
+        "agents": 0,
+        "worker_template": False
+    }
+
+    # Create .claude directory structure
+    claude_dir = project_root / '.claude'
+    claude_dir.mkdir(exist_ok=True)
+
+    # Create subdirectories
+    (claude_dir / 'skills').mkdir(exist_ok=True)
+    (claude_dir / 'commands').mkdir(exist_ok=True)
+    (claude_dir / 'agents').mkdir(exist_ok=True)
+
+    # Create .flow-claude directory for worker instructions
+    flow_claude_dir = project_root / '.flow-claude'
+    flow_claude_dir.mkdir(exist_ok=True)
+
+    # Copy skills
+    skills_src = template_dir / 'skills'
+    if skills_src.exists():
+        for skill_dir in skills_src.iterdir():
+            if skill_dir.is_dir():
+                dest_dir = claude_dir / 'skills' / skill_dir.name
+                dest_dir.mkdir(exist_ok=True)
+
+                # Copy SKILL.md (uppercase)
+                skill_file = skill_dir / 'SKILL.md'
+                if skill_file.exists():
+                    shutil.copy(skill_file, dest_dir / 'SKILL.md')
+                    results["skills"] += 1
+                    if verbose:
+                        print(f"  ✓ Copied skill: {skill_dir.name}")
+
+    # Copy commands
+    commands_src = template_dir / 'commands'
+    if commands_src.exists():
+        for cmd_file in commands_src.glob('*.md'):
+            shutil.copy(cmd_file, claude_dir / 'commands' / cmd_file.name)
+            results["commands"] += 1
+            if verbose:
+                print(f"  ✓ Copied command: {cmd_file.stem}")
+
+    # Copy agents
+    agents_src = template_dir / 'agents'
+    if agents_src.exists():
+        # Copy user-proxy.md (default: autonomous mode OFF)
+        user_proxy = agents_src / 'user-proxy.md'
+        if user_proxy.exists():
+            shutil.copy(user_proxy, claude_dir / 'agents' / 'user-proxy.md')
+            results["agents"] += 1
+            if verbose:
+                print(f"  ✓ Copied agent: user-proxy")
+
+        # Copy worker-template.md to .flow-claude/WORKER_INSTRUCTIONS.md
+        worker_template = agents_src / 'worker-template.md'
+        if worker_template.exists():
+            shutil.copy(worker_template, flow_claude_dir / 'WORKER_INSTRUCTIONS.md')
+            results["worker_template"] = True
+            if verbose:
+                print(f"  ✓ Copied worker instructions")
+
+    return results
+
+
+def create_claude_md_template(project_root: Path) -> bool:
+    """Create minimal CLAUDE.md template if it doesn't exist.
+
+    Args:
+        project_root: Project root directory
+
+    Returns:
+        True if file was created, False if already exists
+    """
+    claude_md = project_root / 'CLAUDE.md'
+
+    if claude_md.exists():
+        return False
+
+    content = """# Project AI Assistant
+
+This project uses Flow-Claude for autonomous development.
+
+## How to Use
+
+Simply describe your development request in Claude Code chat:
+
+```
+"Add user authentication with JWT"
+"Implement email validation"
+"Create API endpoint for user profile"
+```
+
+The orchestrator will automatically:
+1. Analyze your request
+2. Create an execution plan
+3. Decompose into tasks
+4. Execute tasks in parallel
+5. Merge results to flow branch
+
+## Architecture
+
+Flow-Claude uses a git-first architecture where:
+- **Plans** are stored as structured git commits
+- **Tasks** are executed on separate branches
+- **Workers** run in parallel git worktrees
+- **State** is tracked through commit history
+
+## Skills
+
+This project has access to the following skills:
+
+### Orchestrator Skill
+Main coordination logic for autonomous development.
+Location: `.claude/skills/orchestrator/skill.md`
+
+### Git Tools Skill
+Provides 7 tools for git-based state management.
+Location: `.claude/skills/git-tools/skill.md`
+
+### SDK Workers Skill
+Manages worker agents and MCP configuration.
+Location: `.claude/skills/sdk-workers/skill.md`
+
+## Configuration
+
+### Autonomous Mode
+Toggle with `\\auto` command:
+- **OFF** (default): Asks for confirmation before executing
+- **ON**: Executes plans automatically
+
+Controlled by `.claude/agents/user-proxy.md` existence.
+
+### Max Parallel Workers
+Set with `\\parallel <1-10>` command.
+
+Default: 3 workers
+Location: `.claude/skills/orchestrator/skill.md` (YAML frontmatter)
+
+## Workflow
+
+When you make a development request:
+
+1. Orchestrator analyzes request
+2. Creates plan branch (`plan/session-*`)
+3. Creates task branches (`task/*`)
+4. Spawns workers in git worktrees
+5. Workers execute tasks in parallel
+6. Results merge to `flow` branch
+
+## Branches
+
+- `main/master`: Production code
+- `flow`: Development base (created by `flow` init)
+- `plan/session-*`: Execution plans
+- `task/*`: Individual tasks
+
+## Commands
+
+- `\\auto`: Toggle autonomous mode
+- `\\parallel <N>`: Set max parallel workers (1-10)
+
+## External MCP Tools
+
+Workers can access external MCP servers defined in `.mcp.json`.
+
+Example:
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "npx", "@playwright/mcp@latest"]
+    }
+  }
+}
+```
+
+Orchestrator grants workers access to needed tools dynamically.
+
+---
+
+**Ready to start?** Just describe what you want to build!
+"""
+
+    claude_md.write_text(content, encoding='utf-8')
+    return True
 
 
 @click.command()
-@click.option('--model', type=click.Choice(['sonnet', 'opus', 'haiku']), default='sonnet',
-              help='Claude model to use (default: sonnet)')
-@click.option('--max-parallel', type=int, default=3,
-              help='Maximum number of parallel workers (default: 3)')
 @click.option('--verbose', is_flag=True,
-              help='Enable verbose output')
-@click.option('--debug', is_flag=True,
-              help='Enable debug mode')
-def main(model, max_parallel, verbose, debug):
+              help='Show detailed progress')
+def main(verbose):
     """
-    Flow-Claude Interactive CLI
+    Initialize Flow-Claude for Claude Code UI.
 
-    Launch an interactive development session where you can:
-    - Enter development requests
-    - See real-time execution progress
-    - Press 'q' to quit, ESC to interrupt, H for help
+    Creates .claude/ directory structure with skills, commands, and agents.
+    Run once per project, then use Claude Code UI for development.
     """
     try:
-        from flow_claude.ui import FlowCLI
         from flow_claude.setup_ui import run_setup_ui
-        from flow_claude.cli import setup_instruction_files
 
-        # Run setup UI first (flow branch + CLAUDE.md)
-        # Note: CLAUDE.md generation happens inside the UI with progress display
+        project_root = Path.cwd()
+
+        print("\n🚀 Flow-Claude Initialization\n")
+        print("=" * 60)
+
+        # Step 1: Run setup UI (flow branch + CLAUDE.md)
+        print("\n[1/3] Setting up git repository and flow branch...\n")
         try:
             setup_results = run_setup_ui()
-            # Print summary of what was set up
+
+            # Report what was set up
             if setup_results.get("flow_branch_created"):
-                base_branch = setup_results.get('base_branch')
-                print(f"\n  ✓ Created 'flow' branch from '{base_branch}'")
+                base_branch = setup_results.get('base_branch', 'unknown')
+                print(f"  ✓ Created 'flow' branch from '{base_branch}'")
+
             if setup_results.get("claude_md_generated"):
-                print("  ✓ CLAUDE.md created and committed to flow branch")
+                print("  ✓ CLAUDE.md generated and committed to flow branch")
+            elif not setup_results.get("claude_md_generated"):
+                # Setup UI might not have generated CLAUDE.md
+                # Create minimal template ourselves
+                if create_claude_md_template(project_root):
+                    print("  ✓ CLAUDE.md created (minimal template)")
 
-            # Setup instruction files after flow branch is ready
-            created_files = setup_instruction_files(debug=debug)
-            if created_files:
-                print(f"  ✓ Instruction files created in .flow-claude/")
+            if not setup_results.get("flow_branch_created") and not setup_results.get("claude_md_generated"):
+                print("  ✓ Flow branch and CLAUDE.md already exist")
 
-            if setup_results.get("flow_branch_created") or setup_results.get("claude_md_generated") or created_files:
-                print()  # Add spacing before main UI only if setup happened
         except Exception as e:
-            # If setup UI fails, continue with main UI anyway
-            print(f"\n  Warning: Setup UI failed: {e}\n")
-            if debug:
+            print(f"  ⚠ Warning: Setup UI encountered an issue: {e}")
+            if verbose:
                 import traceback
                 traceback.print_exc()
+            print("  → Continuing with template file creation...")
 
-        # Launch main FlowCLI app
-        app = FlowCLI(
-            model=model,
-            max_parallel=max_parallel,
-            verbose=verbose,
-            debug=debug
-        )
-        try:
-            app.run()
-        except KeyboardInterrupt:
-            print("\n\nExiting...")
+        # Step 2: Copy template files
+        print("\n[2/3] Creating Claude Code project structure...\n")
+        results = copy_template_files(project_root, verbose=verbose)
+
+        if "error" in results:
+            print(f"  ✗ Error: {results['error']}")
+            sys.exit(1)
+
+        if not verbose:
+            # Summary output
+            print(f"  ✓ Created {results['skills']} skills")
+            print(f"  ✓ Created {results['commands']} commands")
+            print(f"  ✓ Created {results['agents']} agent(s)")
+            if results['worker_template']:
+                print(f"  ✓ Created worker instructions")
+
+        # Step 3: Final instructions
+        print("\n[3/3] Initialization complete!\n")
+        print("=" * 60)
+        print("\n📁 Project structure created:\n")
+        print("  .claude/")
+        print("    ├── skills/")
+        print("    │   ├── git-tools/       # Git state management")
+        print("    │   ├── sdk-workers/     # Worker coordination")
+        print("    │   └── orchestrator/    # Main orchestrator")
+        print("    ├── commands/")
+        print("    │   ├── auto.md          # Toggle autonomous mode")
+        print("    │   └── parallel.md      # Set max workers")
+        print("    └── agents/")
+        print("        └── user-proxy.md    # User confirmation agent")
+        print("  .flow-claude/")
+        print("    └── WORKER_INSTRUCTIONS.md  # Worker template")
+        print("  CLAUDE.md                   # Main project instructions")
+
+        print("\n✨ Next steps:\n")
+        print("  1. Open this project in Claude Code UI")
+        print("  2. Start a chat and describe what you want to build")
+        print("  3. The orchestrator will handle the rest!\n")
+
+        print("📚 Configuration:\n")
+        print("  • Autonomous mode: OFF (type \\auto to toggle)")
+        print("  • Max parallel workers: 3 (type \\parallel <N> to change)")
+        print("  • Flow branch: 'flow' (all development happens here)")
+
+        print("\n🎯 Example request:\n")
+        print('  "Add user authentication with JWT and bcrypt"\n')
+
+        print("=" * 60)
+        print("\n✓ Initialization complete. Happy coding! 🚀\n")
+
     except ImportError as e:
-        print(f"ERROR: Textual UI not available: {e}", file=sys.stderr)
-        print("Install textual with: pip install textual", file=sys.stderr)
+        print(f"ERROR: Required module not found: {e}", file=sys.stderr)
+        print("Install Flow-Claude with: pip install -e .", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"ERROR: Initialization failed: {e}", file=sys.stderr)
+        if verbose:
+            import traceback
+            traceback.print_exc()
         sys.exit(1)
 
 
