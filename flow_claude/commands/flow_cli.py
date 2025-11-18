@@ -40,8 +40,7 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
     results = {
         "skills": 0,
         "commands": 0,
-        "agents": 0,
-        "worker_template": False
+        "agents": 0
     }
 
     # Create .claude directory structure
@@ -52,10 +51,6 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
     (claude_dir / 'skills').mkdir(exist_ok=True)
     (claude_dir / 'commands').mkdir(exist_ok=True)
     (claude_dir / 'agents').mkdir(exist_ok=True)
-
-    # Create .flow-claude directory for worker instructions
-    flow_claude_dir = project_root / '.flow-claude'
-    flow_claude_dir.mkdir(exist_ok=True)
 
     # Copy skills
     skills_src = template_dir / 'skills'
@@ -71,7 +66,7 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
                     shutil.copy(skill_file, dest_dir / 'SKILL.md')
                     results["skills"] += 1
                     if verbose:
-                        print(f"  ✓ Copied skill: {skill_dir.name}")
+                        print(f"  [OK] Copied skill: {skill_dir.name}")
 
     # Copy commands
     commands_src = template_dir / 'commands'
@@ -80,26 +75,18 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
             shutil.copy(cmd_file, claude_dir / 'commands' / cmd_file.name)
             results["commands"] += 1
             if verbose:
-                print(f"  ✓ Copied command: {cmd_file.stem}")
+                print(f"  [OK] Copied command: {cmd_file.stem}")
 
     # Copy agents
     agents_src = template_dir / 'agents'
     if agents_src.exists():
-        # Copy user-proxy.md (default: autonomous mode OFF)
-        user_proxy = agents_src / 'user-proxy.md'
+        # Copy user.md (default: autonomous mode OFF)
+        user_proxy = agents_src / 'user.md'
         if user_proxy.exists():
-            shutil.copy(user_proxy, claude_dir / 'agents' / 'user-proxy.md')
+            shutil.copy(user_proxy, claude_dir / 'agents' / 'user.md')
             results["agents"] += 1
             if verbose:
-                print(f"  ✓ Copied agent: user-proxy")
-
-        # Copy worker-template.md to .flow-claude/WORKER_INSTRUCTIONS.md
-        worker_template = agents_src / 'worker-template.md'
-        if worker_template.exists():
-            shutil.copy(worker_template, flow_claude_dir / 'WORKER_INSTRUCTIONS.md')
-            results["worker_template"] = True
-            if verbose:
-                print(f"  ✓ Copied worker instructions")
+                print(f"  [OK] Copied agent: user")
 
     return results
 
@@ -170,7 +157,7 @@ Toggle with `\\auto` command:
 - **OFF** (default): Asks for confirmation before executing
 - **ON**: Executes plans automatically
 
-Controlled by `.claude/agents/user-proxy.md` existence.
+Controlled by `.claude/agents/user.md` existence.
 
 ### Max Parallel Workers
 Set with `\\parallel <1-10>` command.
@@ -218,7 +205,7 @@ Example:
 }
 ```
 
-Orchestrator grants workers access to needed tools dynamically.
+Orchestrator creates dynamic worker agents (worker-01.md, worker-02.md, etc.) in `.claude/agents/` when needed, granting them access to required tools.
 
 ---
 
@@ -244,7 +231,7 @@ def main(verbose):
 
         project_root = Path.cwd()
 
-        print("\n🚀 Flow-Claude Initialization\n")
+        print("\n>>> Flow-Claude Initialization\n")
         print("=" * 60)
 
         # Step 1: Run setup UI (flow branch + CLAUDE.md)
@@ -255,75 +242,71 @@ def main(verbose):
             # Report what was set up
             if setup_results.get("flow_branch_created"):
                 base_branch = setup_results.get('base_branch', 'unknown')
-                print(f"  ✓ Created 'flow' branch from '{base_branch}'")
+                print(f"  [OK] Created 'flow' branch from '{base_branch}'")
 
             if setup_results.get("claude_md_generated"):
-                print("  ✓ CLAUDE.md generated and committed to flow branch")
+                print("  [OK] CLAUDE.md generated and committed to flow branch")
             elif not setup_results.get("claude_md_generated"):
                 # Setup UI might not have generated CLAUDE.md
                 # Create minimal template ourselves
                 if create_claude_md_template(project_root):
-                    print("  ✓ CLAUDE.md created (minimal template)")
+                    print("  [OK] CLAUDE.md created (minimal template)")
 
             if not setup_results.get("flow_branch_created") and not setup_results.get("claude_md_generated"):
-                print("  ✓ Flow branch and CLAUDE.md already exist")
+                print("  [OK] Flow branch and CLAUDE.md already exist")
 
         except Exception as e:
-            print(f"  ⚠ Warning: Setup UI encountered an issue: {e}")
+            print(f"  [WARN] Warning: Setup UI encountered an issue: {e}")
             if verbose:
                 import traceback
                 traceback.print_exc()
-            print("  → Continuing with template file creation...")
+            print("  --> Continuing with template file creation...")
 
         # Step 2: Copy template files
         print("\n[2/3] Creating Claude Code project structure...\n")
         results = copy_template_files(project_root, verbose=verbose)
 
         if "error" in results:
-            print(f"  ✗ Error: {results['error']}")
+            print(f"  [ERROR] Error: {results['error']}")
             sys.exit(1)
 
         if not verbose:
             # Summary output
-            print(f"  ✓ Created {results['skills']} skills")
-            print(f"  ✓ Created {results['commands']} commands")
-            print(f"  ✓ Created {results['agents']} agent(s)")
-            if results['worker_template']:
-                print(f"  ✓ Created worker instructions")
+            print(f"  [OK] Created {results['skills']} skills")
+            print(f"  [OK] Created {results['commands']} commands")
+            print(f"  [OK] Created {results['agents']} agent(s)")
 
         # Step 3: Final instructions
         print("\n[3/3] Initialization complete!\n")
         print("=" * 60)
-        print("\n📁 Project structure created:\n")
+        print("\n[FILES] Project structure created:\n")
         print("  .claude/")
-        print("    ├── skills/")
-        print("    │   ├── git-tools/       # Git state management")
-        print("    │   ├── sdk-workers/     # Worker coordination")
-        print("    │   └── orchestrator/    # Main orchestrator")
-        print("    ├── commands/")
-        print("    │   ├── auto.md          # Toggle autonomous mode")
-        print("    │   └── parallel.md      # Set max workers")
-        print("    └── agents/")
-        print("        └── user-proxy.md    # User confirmation agent")
-        print("  .flow-claude/")
-        print("    └── WORKER_INSTRUCTIONS.md  # Worker template")
+        print("    |-- skills/")
+        print("    |   |-- git-tools/       # Git state management")
+        print("    |   |-- sdk-workers/     # Worker coordination")
+        print("    |   +-- orchestrator/    # Main orchestrator")
+        print("    |-- commands/")
+        print("    |   |-- auto.md          # Toggle autonomous mode")
+        print("    |   +-- parallel.md      # Set max workers")
+        print("    +-- agents/")
+        print("        +-- user.md    # User confirmation agent")
         print("  CLAUDE.md                   # Main project instructions")
 
-        print("\n✨ Next steps:\n")
+        print("\n[NEXT] Next steps:\n")
         print("  1. Open this project in Claude Code UI")
         print("  2. Start a chat and describe what you want to build")
         print("  3. The orchestrator will handle the rest!\n")
 
-        print("📚 Configuration:\n")
-        print("  • Autonomous mode: OFF (type \\auto to toggle)")
-        print("  • Max parallel workers: 3 (type \\parallel <N> to change)")
-        print("  • Flow branch: 'flow' (all development happens here)")
+        print("[CONFIG] Configuration:\n")
+        print("  - Autonomous mode: OFF (type \\auto to toggle)")
+        print("  - Max parallel workers: 3 (type \\parallel <N> to change)")
+        print("  - Flow branch: 'flow' (all development happens here)")
 
-        print("\n🎯 Example request:\n")
+        print("\n[EXAMPLE] Example request:\n")
         print('  "Add user authentication with JWT and bcrypt"\n')
 
         print("=" * 60)
-        print("\n✓ Initialization complete. Happy coding! 🚀\n")
+        print("\n[OK] Initialization complete. Happy coding!\n")
 
     except ImportError as e:
         print(f"ERROR: Required module not found: {e}", file=sys.stderr)

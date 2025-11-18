@@ -61,7 +61,7 @@ flow-claude/
 │   │   │   ├── auto.md
 │   │   │   └── parallel.md
 │   │   └── agents/
-│   │       ├── user-proxy.md
+│   │       ├── user.md
 │   │       └── worker-template.md
 │   └── utils/
 │       └── __init__.py
@@ -85,7 +85,7 @@ project/
 │   │   ├── auto.md              # Toggle 自动模式
 │   │   └── parallel.md          # 设置并行数
 │   └── agents/
-│       └── user-proxy.md        # 用户确认 subagent
+│       └── user.md        # 用户确认 subagent
 ├── .flow-claude/
 │   └── WORKER_INSTRUCTIONS.md   # Worker 模板
 ├── .mcp.json                    # 外部 MCP servers（可选）
@@ -135,7 +135,7 @@ max_parallel: 3
 **主要职责**:
 - 分析开发请求
 - 创建执行计划
-- 检查自动模式（user-proxy.md 是否存在）
+- 检查自动模式（user.md 是否存在）
 - Spawn workers 并监控进度
 - 合并结果
 
@@ -150,11 +150,11 @@ max_parallel: 3
 **文件**: `.claude/commands/auto.md`
 
 **机制**:
-- 切换 `.claude/agents/user-proxy.md` 的存在
+- 切换 `.claude/agents/user.md` 的存在
 - 存在 = 自动模式 OFF（需要确认）
 - 不存在 = 自动模式 ON（直接执行）
 
-**默认**: OFF（user-proxy.md 存在）
+**默认**: OFF（user.md 存在）
 
 ### \parallel - 设置并行数
 

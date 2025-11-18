@@ -101,7 +101,7 @@ Use mcp__git__parse_plan tool with:
 
 **Returns**:
 - `architecture`: System architecture overview
-- `design_patterns`: Design patterns in use
+- `design_doc`: Design of new features and project framework
 - `technology_stack`: Technologies and libraries
 - `tasks`: All tasks in this session
 

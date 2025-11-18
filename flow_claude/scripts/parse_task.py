@@ -8,10 +8,10 @@ import sys
 from pathlib import Path
 
 try:
-    from .parsers import parse_task_metadata
+    from .parsers import parse_task_metadata, parse_commit_message
 except ImportError:
     # Fallback for direct execution
-    from parsers import parse_task_metadata
+    from parsers import parse_task_metadata, parse_commit_message
 
 
 async def parse_task(branch: str) -> dict:
@@ -42,7 +42,8 @@ async def parse_task(branch: str) -> dict:
             }
 
         # Parse using shared parser
-        metadata = parse_task_metadata(commit_message)
+        sections = parse_commit_message(commit_message)
+        metadata = parse_task_metadata(sections)
 
         return {
             "success": True,

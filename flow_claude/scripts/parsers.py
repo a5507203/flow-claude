@@ -250,7 +250,7 @@ def parse_plan_commit(message: str) -> Dict[str, Any]:
             'user_request': 'Add user authentication',
             'plan_version': 'v1',
             'architecture': 'System uses MVC pattern...',
-            'design_patterns': 'Repository pattern for...',
+            'design_doc': 'Repository pattern for...',
             'technology_stack': 'Python 3.10, Flask...',
             'tasks': [
                 {'id': '001', 'description': '...', ...},
@@ -278,7 +278,7 @@ def parse_plan_commit(message: str) -> Dict[str, Any]:
 
     # Extract architecture sections (commit-only architecture)
     architecture_text = sections.get('architecture', '')
-    design_patterns_text = sections.get('design_patterns', '')
+    design_doc_text = sections.get('design_doc', '') or sections.get('design doc', '')
     tech_stack_text = sections.get('technology_stack', '')
 
     # Extract tasks (each starts with ### Task NNN)
@@ -323,7 +323,7 @@ def parse_plan_commit(message: str) -> Dict[str, Any]:
         'created': extract_field(session_text, 'Created'),
         'plan_version': plan_version or 'v1',
         'architecture': architecture_text,
-        'design_patterns': design_patterns_text,
+        'design_doc': design_doc_text,
         'technology_stack': tech_stack_text,
         'tasks': tasks,
         'total_tasks': len(tasks),

@@ -197,7 +197,7 @@ USER_DECISION: APPROVED
 
 ## Autonomous Mode Toggle
 
-This file (`.claude/agents/user-proxy.md`) controls autonomous mode:
+This file (`.claude/agents/user.md`) controls autonomous mode:
 - **File EXISTS** → Autonomous mode **OFF** (you will be invoked)
 - **File DELETED** → Autonomous mode **ON** (orchestrator executes without confirmation)
 

@@ -21,7 +21,10 @@ async def create_plan_branch(
         user_request: Original user request
         architecture: Architecture description
         tasks: List of task definitions
-        **kwargs: Additional fields (design_patterns, tech_stack, waves, etc.)
+        **kwargs: Additional fields:
+            - design_doc: Design of new features and project framework
+            - tech_stack: Technology stack
+            - waves: Execution waves
 
     Returns:
         Dict with success status
@@ -52,10 +55,10 @@ async def create_plan_branch(
         ]
 
         # Add optional sections
-        if kwargs.get('design_patterns'):
+        if kwargs.get('design_doc'):
             commit_lines.extend([
-                "## Design Patterns",
-                kwargs['design_patterns'],
+                "## Design Doc",
+                kwargs['design_doc'],
                 ""
             ])
 
@@ -123,7 +126,7 @@ def main():
     parser.add_argument('--user-request', required=True)
     parser.add_argument('--architecture', required=True)
     parser.add_argument('--tasks', required=True, help='JSON array of tasks')
-    parser.add_argument('--design-patterns', default='')
+    parser.add_argument('--design-doc', default='', help='Design of new features and project framework')
     parser.add_argument('--tech-stack', default='')
     parser.add_argument('--waves', default='', help='JSON array of waves')
 
@@ -143,7 +146,7 @@ def main():
         user_request=args.user_request,
         architecture=args.architecture,
         tasks=tasks,
-        design_patterns=args.design_patterns,
+        design_doc=args.design_doc,
         technology_stack=args.tech_stack,
         waves=waves
     ))

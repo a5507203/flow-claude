@@ -236,7 +236,7 @@ Coordinates autonomous development using git-tools and sdk-workers.
 ## Workflow
 
 1. Analyze request
-2. Check `.claude/agents/user-proxy.md` (exists = need confirmation)
+2. Check `.claude/agents/user.md` (exists = need confirmation)
 3. Create plan: `python -m flow_claude.scripts.create_plan_branch ...`
 4. Create tasks: `python -m flow_claude.scripts.create_task_branch ...`
 5. Launch workers: `python -m flow_claude.scripts.launch_worker ...`
