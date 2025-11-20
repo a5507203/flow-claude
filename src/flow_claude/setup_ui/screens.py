@@ -92,10 +92,10 @@ class ClaudeMdPromptScreen(Screen):
         yield Container(
             Label("[bold cyan]CLAUDE.md Initialization[/bold cyan]", id="title-label"),
             Label("", id="line1"),
-            Label("This directory doesn't have a CLAUDE.md file.", id="line2"),
-            Label("CLAUDE.md helps Claude Code understand your project better.", id="line3"),
+            Label("Flow-Claude will add workflow instructions to CLAUDE.md.", id="line2"),
+            Label("This helps Claude Code understand how to use Flow-Claude.", id="line3"),
             Label("", id="line4"),
-            Label("[bold]Would you like to initialize CLAUDE.md now?[/bold]", id="question-label"),
+            Label("[bold]Initialize CLAUDE.md for Flow-Claude?[/bold]", id="question-label"),
             Label("", id="line5"),
         )
 
@@ -109,7 +109,7 @@ class ClaudeMdPromptScreen(Screen):
     def on_mount(self) -> None:
         """Populate ListView after it's mounted."""
         list_view = self.query_one("#claude-md-list", ListView)
-        list_view.append(ListItem(Label("Yes, generate CLAUDE.md"), id="option-yes"))
+        list_view.append(ListItem(Label("Yes, initialize CLAUDE.md"), id="option-yes"))
         list_view.append(ListItem(Label("No, skip"), id="option-no"))
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -123,26 +123,19 @@ class ClaudeMdPromptScreen(Screen):
             self.dismiss(result={"generate_claude_md": False})
 
     def start_generation(self) -> None:
-        """Show progress UI and start background generation."""
+        """Show progress UI and start background update/creation."""
         # Update UI to show progress immediately
         list_view = self.query_one("#claude-md-list", ListView)
         list_view.display = False  # Hide the list
 
         # Update labels to show progress
-        self.query_one("#title-label", Label).update("[bold cyan]Generating CLAUDE.md...[/bold cyan]")
+        self.query_one("#title-label", Label).update("[bold cyan]Initializing CLAUDE.md...[/bold cyan]")
         self.query_one("#line1", Label).update("")
+        self.query_one("#line2", Label).update("[yellow]Updating CLAUDE.md...[/yellow]")
+        self.query_one("#line3", Label).update("[dim]Adding Flow-Claude instructions...[/dim]")
         self.query_one("#question-label", Label).update("")
-        self.query_one("#line5", Label).update("")
-
-        # Check if Claude Code is available
-        if claude_generator.check_claude_code_available():
-            self.query_one("#line2", Label).update("[yellow]Analyzing project with Claude Code...[/yellow]")
-            self.query_one("#line3", Label).update("[dim]This may take up to 3 minutes...[/dim]")
-        else:
-            self.query_one("#line2", Label).update("[yellow]Claude Code not found[/yellow]")
-            self.query_one("#line3", Label).update("[dim]Using template instead...[/dim]")
-
         self.query_one("#line4", Label).update("")
+        self.query_one("#line5", Label).update("")
 
         # Start background worker
         self.generate_and_commit()
@@ -162,17 +155,21 @@ class ClaudeMdPromptScreen(Screen):
         """Worker function that runs in background thread."""
         cwd = Path.cwd()
 
-        # Generate CLAUDE.md (runs in background thread)
-        success, method, error = claude_generator.generate_claude_md(cwd)
+        # Update/create CLAUDE.md (runs in background thread)
+        success, status, error = claude_generator.update_claude_md(cwd)
 
         if success:
-            if method == "claude_code":
+            if status == "created":
                 self.app.call_from_thread(
-                    self.query_one("#line2", Label).update, "[green]✓ CLAUDE.md generated with AI[/green]"
+                    self.query_one("#line2", Label).update, "[green]✓ CLAUDE.md created[/green]"
                 )
-            elif method == "template":
+            elif status == "updated":
                 self.app.call_from_thread(
-                    self.query_one("#line2", Label).update, "[green]✓ CLAUDE.md created from template[/green]"
+                    self.query_one("#line2", Label).update, "[green]✓ CLAUDE.md updated (instruction prepended)[/green]"
+                )
+            elif status == "unchanged":
+                self.app.call_from_thread(
+                    self.query_one("#line2", Label).update, "[green]✓ CLAUDE.md already has Flow-Claude instruction[/green]"
                 )
 
             self.app.call_from_thread(
@@ -180,7 +177,8 @@ class ClaudeMdPromptScreen(Screen):
             )
 
             # Commit to flow branch (runs in background thread)
-            commit_success, commit_error = git_utils.commit_to_flow_branch('CLAUDE.md', 'Initialize CLAUDE.md for Flow-Claude')
+            commit_message = f'Initialize CLAUDE.md for Flow-Claude ({status})'
+            commit_success, commit_error = git_utils.commit_to_flow_branch('CLAUDE.md', commit_message)
 
             if commit_success:
                 self.app.call_from_thread(
@@ -208,7 +206,7 @@ class ClaudeMdPromptScreen(Screen):
                 )
                 self.app.call_from_thread(
                     self.query_one("#question-label", Label).update,
-                    "[yellow]CLAUDE.md created but not committed. Press any key to continue...[/yellow]"
+                    "[yellow]CLAUDE.md updated but not committed. Press any key to continue...[/yellow]"
                 )
                 self.generation_complete = True
                 self.generation_result = {"generate_claude_md": True}
@@ -224,7 +222,7 @@ class ClaudeMdPromptScreen(Screen):
             )
             self.app.call_from_thread(
                 self.query_one("#question-label", Label).update,
-                "[red]Failed to create CLAUDE.md. Press any key to continue...[/red]"
+                "[red]Failed to update CLAUDE.md. Press any key to continue...[/red]"
             )
             self.generation_complete = True
             self.generation_result = {"generate_claude_md": False}

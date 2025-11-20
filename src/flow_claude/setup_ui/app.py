@@ -98,41 +98,29 @@ class SetupUI(App):
             self.push_screen(screen, callback=handle_branch_selection)
 
     def check_and_prompt_claude_md(self) -> None:
-        """Check if CLAUDE.md exists in flow branch and prompt for generation.
+        """Automatically update CLAUDE.md with Flow-Claude instruction.
 
-        Always runs, even if flow branch exists. Checks if CLAUDE.md exists
-        specifically in the flow branch.
+        No prompt needed - just updates/creates CLAUDE.md automatically.
         """
-        # Check if CLAUDE.md exists in flow branch
-        if git_utils.check_claude_md_in_flow_branch():
-            # CLAUDE.md already exists in flow branch - checkout flow and exit
-            git_utils.checkout_flow_branch()
-            self.exit(result=self.setup_results)
-            return
+        from . import claude_generator
 
-        # Check if directory is empty (only non-hidden files)
-        files = [f for f in Path.cwd().iterdir() if not f.name.startswith('.')]
-        if not files:
-            # Empty directory, skip prompt but checkout flow branch
-            git_utils.checkout_flow_branch()
-            self.exit(result=self.setup_results)
-            return
+        cwd = Path.cwd()
 
-        # Show CLAUDE.md prompt screen
-        def handle_claude_md_selection(result):
-            # Screen already handled generation and commit synchronously
-            # (which includes checkout to flow branch)
-            if result and result.get("generate_claude_md"):
-                self.setup_results["claude_md_generated"] = True
-            else:
-                # User skipped CLAUDE.md, still need to checkout flow
-                git_utils.checkout_flow_branch()
+        # Update/create CLAUDE.md automatically
+        success, status, error = claude_generator.update_claude_md(cwd)
 
-            # Exit setup
-            self.exit(result=self.setup_results)
+        if success:
+            self.setup_results["claude_md_generated"] = True
+            self.setup_results["claude_md_status"] = status
 
-        screen = ClaudeMdPromptScreen()
-        self.push_screen(screen, callback=handle_claude_md_selection)
+            # Commit to flow branch if changes were made
+            if status in ["created", "updated"]:
+                commit_message = f'Initialize CLAUDE.md for Flow-Claude ({status})'
+                git_utils.commit_to_flow_branch('CLAUDE.md', commit_message)
+
+        # Checkout flow branch and exit
+        git_utils.checkout_flow_branch()
+        self.exit(result=self.setup_results)
 
 
 def run_setup_ui() -> dict:

@@ -108,27 +108,6 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
     return results
 
 
-def create_claude_md_template(project_root: Path) -> bool:
-    """Create minimal CLAUDE.md template if it doesn't exist.
-
-    Args:
-        project_root: Project root directory
-
-    Returns:
-        True if file was created, False if already exists
-    """
-    claude_md = project_root / 'CLAUDE.md'
-
-    if claude_md.exists():
-        return False
-
-    content = """Understand your-workflow and read the SKILL.md before working
-"""
-
-    claude_md.write_text(content, encoding='utf-8')
-    return True
-
-
 @click.command()
 @click.option('--verbose', is_flag=True,
               help='Show detailed progress')
@@ -148,7 +127,7 @@ def main(verbose):
         print("=" * 60)
 
         # Step 1: Run setup UI (flow branch + CLAUDE.md)
-        print("\n[1/3] Setting up git repository and flow branch...\n")
+        print("\n[1/4] Setting up git repository and flow branch...\n")
         try:
             setup_results = run_setup_ui()
 
@@ -156,17 +135,17 @@ def main(verbose):
             if setup_results.get("flow_branch_created"):
                 base_branch = setup_results.get('base_branch', 'unknown')
                 print(f"  [OK] Created 'flow' branch from '{base_branch}'")
+            else:
+                print("  [OK] Flow branch already exists")
 
             if setup_results.get("claude_md_generated"):
-                print("  [OK] CLAUDE.md generated and committed to flow branch")
-            elif not setup_results.get("claude_md_generated"):
-                # Setup UI might not have generated CLAUDE.md
-                # Create minimal template ourselves
-                if create_claude_md_template(project_root):
-                    print("  [OK] CLAUDE.md created (minimal template)")
-
-            if not setup_results.get("flow_branch_created") and not setup_results.get("claude_md_generated"):
-                print("  [OK] Flow branch and CLAUDE.md already exist")
+                status = setup_results.get("claude_md_status", "updated")
+                if status == "created":
+                    print("  [OK] CLAUDE.md created with Flow-Claude instruction")
+                elif status == "updated":
+                    print("  [OK] CLAUDE.md updated (instruction prepended)")
+                elif status == "unchanged":
+                    print("  [OK] CLAUDE.md already has Flow-Claude instruction")
 
         except Exception as e:
             print(f"  [WARN] Warning: Setup UI encountered an issue: {e}")

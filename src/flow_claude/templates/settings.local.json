@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python C:/Users/Yu/Downloads/flow-claude/flow_claude/stop_hook_handler.py",
+            "command": "python -m flow_claude.scripts.stop_hook_handler.py",
             "timeout": 100000
           }
         ]
