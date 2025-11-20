@@ -51,16 +51,13 @@ git branch --show-current
 
 ## Step 2: Read Task Metadata
 
-Use the `mcp__git__parse_task` MCP tool to get your task details.
+Use the `parse_task` script to get your task details.
 
 **Task branch name** is provided in your prompt.
 
 ```bash
 # Example: Read task metadata for task/001-user-model
-Use mcp__git__parse_task tool with:
-{
-  "branch": "task/001-user-model"
-}
+python -m flow_claude.scripts.parse_task --branch="task/001-user-model"
 ```
 
 **Returns structured JSON**:
@@ -93,10 +90,7 @@ Use mcp__git__parse_task tool with:
 If you need broader context, read the execution plan:
 
 ```bash
-Use mcp__git__parse_plan tool with:
-{
-  "branch": "plan/session-20250115-120000"
-}
+python -m flow_claude.scripts.parse_plan --branch="plan/session-20250115-120000"
 ```
 
 **Returns**:
@@ -110,18 +104,14 @@ Use mcp__git__parse_plan tool with:
 Query capabilities from completed tasks:
 
 ```bash
-Use mcp__git__get_provides tool:
-{}
+python -m flow_claude.scripts.get_provides
 ```
 
 Returns list of available capabilities (from merged tasks on flow branch).
 
 **To see implementation details** of a completed task:
 ```bash
-Use mcp__git__parse_task tool with:
-{
-  "branch": "task/XXX-previous-task"
-}
+python -m flow_claude.scripts.parse_task --branch="task/XXX-previous-task"
 ```
 
 ---
@@ -411,7 +401,7 @@ Task incomplete. Awaiting guidance.
 ### Common Issues
 
 **Import errors**:
-- Check if preconditions are met (use `mcp__git__get_provides`)
+- Check if preconditions are met (use `python -m flow_claude.scripts.get_provides`)
 - Verify dependent tasks completed successfully
 - Read implementation of dependent tasks
 
@@ -444,10 +434,10 @@ Awaiting manual resolution.
 
 ### Git Tools (Always Available)
 
-- `mcp__git__parse_task` - Read task metadata
-- `mcp__git__parse_plan` - Read execution plan
-- `mcp__git__parse_worker_commit` - Read your own progress
-- `mcp__git__get_provides` - Query completed capabilities
+- `python -m flow_claude.scripts.parse_task` - Read task metadata
+- `python -m flow_claude.scripts.parse_plan` - Read execution plan
+- `python -m flow_claude.scripts.parse_worker_commit` - Read your own progress
+- `python -m flow_claude.scripts.get_provides` - Query completed capabilities
 
 ### Standard Tools (Always Available)
 
@@ -455,14 +445,6 @@ Awaiting manual resolution.
 - `WebFetch`, `WebSearch`, `TodoWrite`
 - `BashOutput`, `KillShell`
 
-### External MCP Tools (Optional)
-
-The orchestrator may grant you access to external MCP tools based on task requirements:
-
-- `mcp__playwright__*` - Web automation
-- `mcp__custom__*` - Project-specific tools
-
-These are loaded from `.mcp.json` and filtered based on your `allowed_tools`.
 
 ---
 
@@ -484,7 +466,7 @@ These are loaded from `.mcp.json` and filtered based on your `allowed_tools`.
 cd .worktrees/worker-{id}
 
 # 2. Read task
-mcp__git__parse_task({"branch": "task/XXX-description"})
+python -m flow_claude.scripts.parse_task --branch="task/XXX-description"
 
 # 3. Design commit
 git commit --allow-empty -m "Design: ..."

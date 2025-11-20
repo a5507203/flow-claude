@@ -7,18 +7,10 @@ for parallel task execution.
 import asyncio
 import json
 import os
-import sys
+import subprocess
 import traceback
 from pathlib import Path
 from typing import Dict, Any, List, AsyncGenerator, Optional
-
-# Fix Windows console encoding for Unicode support
-if sys.platform == 'win32':
-    import io
-    if isinstance(sys.stdout, io.TextIOWrapper):
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    if isinstance(sys.stderr, io.TextIOWrapper):
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, query, tool, create_sdk_mcp_server
 from flow_claude.utils.mcp_loader import load_project_mcp_config
@@ -142,23 +134,7 @@ def _validate_worker_params(worker_id: str, task_branch: str,
     if model not in valid_models:
         return False, f"Invalid model {model!r}, must be one of: {valid_models}"
 
-    # Validate task_branch exists in git
-    try:
-        result = subprocess.run(
-            ['git', 'rev-parse', '--verify', task_branch],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            cwd=Path.cwd()  # Check from main repo
-        )
-        if result.returncode != 0:
-            return False, f"Task branch {task_branch!r} does not exist in git repository"
-    except subprocess.TimeoutExpired:
-        return False, f"Git command timed out while checking branch {task_branch!r}"
-    except Exception as e:
-        return False, f"Failed to verify task branch {task_branch!r}: {e}"
-
-    # Validate working directory
+    # Validate working directory FIRST (needed for git branch check)
     working_dir = Path(cwd)
     if not working_dir.exists():
         return False, f"Working directory does not exist: {cwd}"
@@ -175,16 +151,24 @@ def _validate_worker_params(worker_id: str, task_branch: str,
     if not git_dir.exists():
         return False, f"Working directory is not a git repository (no .git): {cwd}"
 
-    # Validate instruction file exists and is readable
-    # Check for package template first, then fall back to worktree
-    import pkg_resources
+    # Validate task_branch exists in git (check from working directory)
     try:
-        worker_template_file = pkg_resources.resource_filename('flow_claude', 'templates/agents/worker-template.md')
-        instruction_file = Path(worker_template_file)
-    except:
-        # Fallback to worktree location
-        instruction_file = working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md'
+        result = subprocess.run(
+            ['git', 'rev-parse', '--verify', task_branch],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=working_dir  # Check from working directory (git repo or worktree)
+        )
+        if result.returncode != 0:
+            return False, f"Task branch {task_branch!r} does not exist in git repository"
+    except subprocess.TimeoutExpired:
+        return False, f"Git command timed out while checking branch {task_branch!r}"
+    except Exception as e:
+        return False, f"Failed to verify task branch {task_branch!r}: {e}"
 
+    # Validate instruction file exists and is readable
+    instruction_file = working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md'
     if not instruction_file.exists():
         return False, f"Worker instruction file not found: {instruction_file}"
 
@@ -229,7 +213,7 @@ async def run_worker(worker_id: str, task_branch: str,
         # Validation failed - report error
         error_msg = f"Worker-{worker_id} validation failed: {validation_error}"
         print(f"[Worker-{worker_id}] ERROR: {error_msg}")
-        return
+        raise RuntimeError(error_msg)
     # Convert to absolute path (support both relative and absolute input)
     # Orchestrator typically provides relative path like ".worktrees/worker-1"
     if not os.path.isabs(cwd):
@@ -243,10 +227,24 @@ async def run_worker(worker_id: str, task_branch: str,
     working_dir = working_dir.resolve()
     print(f"[Worker-{worker_id}]   Working directory: {working_dir}")
 
+    # Create uncomplete marker file in worktree
+    from datetime import datetime
+    uncomplete_file = working_dir / ".worker-uncomplete.json"
+    uncomplete_data = {
+        "worker_id": worker_id,
+        "task_branch": task_branch,
+        "session_id": session_info['session_id'],
+        "plan_branch": session_info['plan_branch'],
+        "started_at": datetime.now().isoformat(),
+        "status": "running"
+    }
+    uncomplete_file.write_text(json.dumps(uncomplete_data, indent=2))
+    print(f"[Worker-{worker_id}] Created marker: {uncomplete_file.name}")
+
     # Determine worker prompt file path
     import pkg_resources
     try:
-        worker_prompt_file = pkg_resources.resource_filename('flow_claude', 'templates/agents/worker-template.md')
+        worker_prompt_file = pkg_resources.resource_filename('flow_claude', 'templates/WORKER_INSTRUCTIONS.md')
     except:
         # Fallback to worktree if package resource not found
         worker_prompt_file = str(working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md')
@@ -260,7 +258,6 @@ async def run_worker(worker_id: str, task_branch: str,
 
         # Build worker allowed tools list
         # Core tools always available to workers
-        # NOTE: AskUserQuestion is excluded - workers must work autonomously
         core_worker_tools = [
             'Bash', 'Glob', 'Grep', 'Read', 'Edit', 'Write', 'NotebookEdit',
             'WebFetch', 'TodoWrite', 'WebSearch', 'BashOutput', 'KillShell',
@@ -276,22 +273,9 @@ async def run_worker(worker_id: str, task_branch: str,
         if allowed_tools:
             worker_allowed_tools.extend(allowed_tools)
 
-        # Remove AskUserQuestion if accidentally added - workers must be autonomous
-        if 'AskUserQuestion' in worker_allowed_tools:
-            worker_allowed_tools.remove('AskUserQuestion')
-            print(f"[Worker-{worker_id}] Warning: Removed AskUserQuestion tool - workers must work autonomously")
-
         # Build MCP servers configuration for this worker
         # Uses helper function to load .mcp.json and filter based on allowed_tools
         worker_mcp_servers = build_worker_mcp_servers(working_dir, allowed_tools)
-
-        # Find Claude CLI path
-        import shutil
-        cli_path = shutil.which('claude')
-        if not cli_path and os.name == 'nt':  # Windows fallback
-            cli_path = shutil.which('claude.cmd')
-
-        print(f"[Worker-{worker_id}] Claude CLI path: {cli_path}")
 
         # Create worker-specific options
         options = ClaudeAgentOptions(
@@ -301,9 +285,7 @@ async def run_worker(worker_id: str, task_branch: str,
             mcp_servers=worker_mcp_servers,  # Dynamically built from .mcp.json
             cwd=str(working_dir),
             permission_mode='acceptEdits',
-            setting_sources=["user", "project", "local"],
-            cli_path=cli_path,
-            hooks={}  # Explicitly set CLI path
+            setting_sources=["user", "project", "local"]
         )
 
         # Use the instructions provided by the orchestrator
@@ -315,46 +297,57 @@ async def run_worker(worker_id: str, task_branch: str,
         first_message_received = False
         message_count = 0
 
-        # Execute worker using query() function
+        # Execute worker using ClaudeSDKClient (persistent session)
+        # This properly supports MCP servers unlike query()
         try:
             print(f"[Worker-{worker_id}] Initializing Claude SDK...")
 
-            async for message in query(prompt=prompt, options=options):
-                message_count += 1
+            async with ClaudeSDKClient(options=options) as client:
+                # Send the prompt to the client
+                await client.query(prompt)
 
-                # Mark initialization as successful after first message
-                if not first_message_received:
-                    first_message_received = True
-                    print(f"[Worker-{worker_id}] Initialized successfully (first message received)")
+                # Receive responses
+                async for message in client.receive_response():
+                    message_count += 1
 
-                # Handle message display (parse, format, log)
-                print(message)
+                    # Mark initialization as successful after first message
+                    if not first_message_received:
+                        first_message_received = True
+                        print(f"[SDKWorkerManager] Worker-{worker_id} initialized successfully (first message received)")
+
+                    # Handle message display (parse, format, log)
+                    print(message)
+
+        
 
         except Exception as sdk_error:
             # Distinguish between initialization and runtime errors
             if not first_message_received:
                 # Initialization error - SDK failed before first message
                 error_phase = "initialization"
-                print(f"[Worker-{worker_id}] INITIALIZATION ERROR")
-                print(f"[Worker-{worker_id}]   SDK failed before receiving first message")
-                print(f"[Worker-{worker_id}]   This usually indicates:")
-                print(f"[Worker-{worker_id}]     - Working directory issues (doesn't exist, not accessible)")
-                print(f"[Worker-{worker_id}]     - Git repository issues (invalid worktree)")
-                print(f"[Worker-{worker_id}]     - Claude CLI configuration issues")
-                print(f"[Worker-{worker_id}]     - Permission or path problems")
-                print(f"[Worker-{worker_id}]     - MCP server initialization failures")
+                print(f"[SDKWorkerManager] Worker-{worker_id} INITIALIZATION ERROR")
+                print(f"[SDKWorkerManager]   SDK failed before receiving first message")
+                print(f"[SDKWorkerManager]   This usually indicates:")
+                print(f"[SDKWorkerManager]     - Working directory issues (doesn't exist, not accessible)")
+                print(f"[SDKWorkerManager]     - Git repository issues (invalid worktree)")
+                print(f"[SDKWorkerManager]     - Claude CLI configuration issues")
+                print(f"[SDKWorkerManager]     - Permission or path problems")
+                print(f"[SDKWorkerManager]     - MCP server initialization failures")
             else:
                 # Runtime error - SDK failed after receiving messages
                 error_phase = "runtime"
-                print(f"[Worker-{worker_id}] RUNTIME ERROR")
-                print(f"[Worker-{worker_id}]   Worker was running successfully ({message_count} messages processed)")
-                print(f"[Worker-{worker_id}]   Error occurred during execution")
+                print(f"[SDKWorkerManager] Worker-{worker_id} RUNTIME ERROR")
+                print(f"[SDKWorkerManager]   Worker was running successfully ({message_count} messages processed)")
+                print(f"[SDKWorkerManager]   Error occurred during execution")
 
             # Re-raise to be handled by main exception handler
             raise sdk_error
 
-        # Query completed naturally
+        # Query completed naturally - remove uncomplete marker using rm command
         print(f"[Worker-{worker_id}] Completed task {task_branch}")
+        # Use rm command instead of unlink() to potentially trigger hooks
+        subprocess.run(['rm', str(uncomplete_file)], check=True)
+        print(f"[Worker-{worker_id}] Removed marker: {uncomplete_file.name}")
         return
 
     except Exception as e:
@@ -453,6 +446,16 @@ async def run_worker(worker_id: str, task_branch: str,
         print(f"{error_traceback}")
         print(f"[Worker-{worker_id}] ===== END DIAGNOSTIC =====")
 
+        # Update marker with error status
+        try:
+            uncomplete_data["status"] = "failed"
+            uncomplete_data["error"] = str(e)
+            uncomplete_data["failed_at"] = datetime.now().isoformat()
+            uncomplete_file.write_text(json.dumps(uncomplete_data, indent=2))
+            print(f"[Worker-{worker_id}] Updated marker with error status")
+        except Exception as file_error:
+            print(f"[Worker-{worker_id}] Warning: Could not update error marker: {file_error}")
+
 
 async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
     """Launch worker in background using SDK query() function.
@@ -499,25 +502,24 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
                 "isError": True
             }
 
-        # Validation passed - run worker synchronously
-        print(f"[launch_worker] Starting worker-{worker_id} synchronously...")
-
-        await run_worker(
-            worker_id,
-            task_branch,
-            session_info,
-            cwd,
-            instructions,
-            args.get("allowed_tools")  # Optional additional tools to allow
+        # Validation passed - create async task for worker
+        worker_task = asyncio.create_task(
+            run_worker(
+                worker_id,
+                task_branch,
+                session_info,
+                cwd,
+                instructions,
+                args.get("allowed_tools")  # Optional additional tools to allow
+            )
         )
+        print(f"[launch_worker] Created async task for worker-{worker_id}")
 
-        print(f"[launch_worker] Worker-{worker_id} completed")
-
-        # Return success message after worker completes
+        # Return a simple, clean message without JSON
         return {
             "content": [{
                 "type": "text",
-                "text": f"Worker-{worker_id} has completed task branch {task_branch}."
+                "text": f"Worker-{worker_id} has been launched in the background for task branch {task_branch}. The worker is now executing the task autonomously."
             }],
             "isError": False
         }
@@ -549,27 +551,27 @@ def main():
 
     args = parser.parse_args()
 
-    # Build args dict
-    args_dict = {
-        "worker_id": args.worker_id,
-        "task_branch": args.task_branch,
-        "cwd": args.cwd,
-        "session_id": args.session_id,
-        "plan_branch": args.plan_branch,
-        "model": args.model,
-        "instructions": args.instructions
+    # Build session_info
+    session_info = {
+        'session_id': args.session_id,
+        'plan_branch': args.plan_branch,
+        'model': args.model
     }
 
-    # Run async function
-    result = asyncio.run(launch_worker(args_dict))
-
-    # Print result
-    if result.get("isError"):
-        print(json.dumps({"success": False, "error": result["content"][0]["text"]}, indent=2), file=sys.stderr)
-        return 1
-    else:
-        print(json.dumps({"success": True, "message": result["content"][0]["text"]}, indent=2))
+    # Run worker directly (waits until completion)
+    try:
+        asyncio.run(run_worker(
+            worker_id=args.worker_id,
+            task_branch=args.task_branch,
+            session_info=session_info,
+            cwd=args.cwd,
+            instructions=args.instructions
+        ))
+        print(json.dumps({"success": True, "message": f"Worker-{args.worker_id} completed successfully"}, indent=2))
         return 0
+    except Exception as e:
+        print(json.dumps({"success": False, "error": str(e)}, indent=2), file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':

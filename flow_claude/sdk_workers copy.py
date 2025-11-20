@@ -7,18 +7,9 @@ for parallel task execution.
 import asyncio
 import json
 import os
-import sys
 import traceback
 from pathlib import Path
 from typing import Dict, Any, List, AsyncGenerator, Optional
-
-# Fix Windows console encoding for Unicode support
-if sys.platform == 'win32':
-    import io
-    if isinstance(sys.stdout, io.TextIOWrapper):
-        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    if isinstance(sys.stderr, io.TextIOWrapper):
-        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, query, tool, create_sdk_mcp_server
 from flow_claude.utils.mcp_loader import load_project_mcp_config
@@ -176,15 +167,7 @@ def _validate_worker_params(worker_id: str, task_branch: str,
         return False, f"Working directory is not a git repository (no .git): {cwd}"
 
     # Validate instruction file exists and is readable
-    # Check for package template first, then fall back to worktree
-    import pkg_resources
-    try:
-        worker_template_file = pkg_resources.resource_filename('flow_claude', 'templates/agents/worker-template.md')
-        instruction_file = Path(worker_template_file)
-    except:
-        # Fallback to worktree location
-        instruction_file = working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md'
-
+    instruction_file = working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md'
     if not instruction_file.exists():
         return False, f"Worker instruction file not found: {instruction_file}"
 
@@ -205,7 +188,7 @@ def _validate_worker_params(worker_id: str, task_branch: str,
 async def run_worker(worker_id: str, task_branch: str,
                     session_info: Dict[str, Any],
                     cwd: str, instructions: str,
-                    allowed_tools: Optional[List[str]] = None) -> None:
+                    allowed_tools: Optional[List[str]] = None) -> AsyncGenerator:
     """Run a single worker using SDK query() function.
 
     Args:
@@ -215,21 +198,54 @@ async def run_worker(worker_id: str, task_branch: str,
         cwd: Working directory - the worktree path where worker operates (REQUIRED - absolute path)
         instructions: Task-specific instructions written by the orchestrator LLM
         allowed_tools: Optional list of additional MCP tools to allow beyond core tools
+
+    Yields:
+        Dict with worker_id, message type, and content
     """
-    print(f"[Worker-{worker_id}] Starting...")
-    print(f"[Worker-{worker_id}]   Task branch: {task_branch}")
-    print(f"[Worker-{worker_id}]   Session: {session_info['session_id']}")
+    # Check max_parallel limit
+    if len(self.active_workers) >= self.max_parallel:
+        error_msg = f"Cannot launch worker-{worker_id}: max_parallel limit ({self.max_parallel}) reached. Currently {len(self.active_workers)} workers active: {list(self.active_workers.keys())}"
+        print(f"[SDKWorkerManager] ERROR: {error_msg}")
+        yield {
+            'worker_id': worker_id,
+            'type': 'error',
+            'message': error_msg
+        }
+        return
+
+    # Log startup in debug mode only
+    if self.debug:
+        print(f"[SDKWorkerManager] Launching worker-{worker_id} for {task_branch}")
 
     # VALIDATION: Validate parameters before expensive SDK initialization
-    validation_success, validation_error = _validate_worker_params(
+    validation_success, validation_error = self._validate_worker_params(
         worker_id, task_branch, session_info, cwd, instructions
     )
 
     if not validation_success:
-        # Validation failed - report error
+        
+        # Validation failed - report error immediately via control queue
         error_msg = f"Worker-{worker_id} validation failed: {validation_error}"
-        print(f"[Worker-{worker_id}] ERROR: {error_msg}")
+        print(f"[SDKWorkerManager] ERROR: {error_msg}")
+
+        # Inject completion event to control queue (orchestrator needs to know)
+        if self.control_queue:
+            elapsed_time = 0.0  # No execution time - failed before start
+            await self._inject_completion_event(
+                worker_id, task_branch, exit_code=1,
+                elapsed_time=elapsed_time,
+                error_message=validation_error
+            )
+
+        # Yield error message (for generator consumer)
+        yield {
+            'worker_id': worker_id,
+            'type': 'error',
+            'message': validation_error
+        }
         return
+
+    # TODO create the uncomplete file
     # Convert to absolute path (support both relative and absolute input)
     # Orchestrator typically provides relative path like ".worktrees/worker-1"
     if not os.path.isabs(cwd):
@@ -241,17 +257,17 @@ async def run_worker(worker_id: str, task_branch: str,
 
     # Resolve to canonical absolute path
     working_dir = working_dir.resolve()
-    print(f"[Worker-{worker_id}]   Working directory: {working_dir}")
 
-    # Determine worker prompt file path
-    import pkg_resources
-    try:
-        worker_prompt_file = pkg_resources.resource_filename('flow_claude', 'templates/agents/worker-template.md')
-    except:
-        # Fallback to worktree if package resource not found
-        worker_prompt_file = str(working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md')
+    # All pre-flight checks now handled by _validate_worker_params()
+    # Determine worker prompt file path (shared prompts in parent directory)
+
+    parent_dir = Path(os.getcwd())
+    #TODO change to the path in the flow-claude package e.g., \flow_claude\templates
+    worker_prompt_file = ""
+
 
     try:
+
         worker_prompt = {
             "type": "preset",
             "preset": "claude_code",
@@ -260,7 +276,6 @@ async def run_worker(worker_id: str, task_branch: str,
 
         # Build worker allowed tools list
         # Core tools always available to workers
-        # NOTE: AskUserQuestion is excluded - workers must work autonomously
         core_worker_tools = [
             'Bash', 'Glob', 'Grep', 'Read', 'Edit', 'Write', 'NotebookEdit',
             'WebFetch', 'TodoWrite', 'WebSearch', 'BashOutput', 'KillShell',
@@ -276,22 +291,13 @@ async def run_worker(worker_id: str, task_branch: str,
         if allowed_tools:
             worker_allowed_tools.extend(allowed_tools)
 
-        # Remove AskUserQuestion if accidentally added - workers must be autonomous
-        if 'AskUserQuestion' in worker_allowed_tools:
-            worker_allowed_tools.remove('AskUserQuestion')
-            print(f"[Worker-{worker_id}] Warning: Removed AskUserQuestion tool - workers must work autonomously")
-
         # Build MCP servers configuration for this worker
         # Uses helper function to load .mcp.json and filter based on allowed_tools
         worker_mcp_servers = build_worker_mcp_servers(working_dir, allowed_tools)
 
-        # Find Claude CLI path
-        import shutil
-        cli_path = shutil.which('claude')
-        if not cli_path and os.name == 'nt':  # Windows fallback
-            cli_path = shutil.which('claude.cmd')
-
-        print(f"[Worker-{worker_id}] Claude CLI path: {cli_path}")
+        # Log loaded MCP servers in debug mode
+        if self.debug and worker_mcp_servers:
+            print(f"[SDKWorkerManager] Worker-{worker_id} MCP servers: {list(worker_mcp_servers.keys())}")
 
         # Create worker-specific options
         options = ClaudeAgentOptions(
@@ -301,9 +307,7 @@ async def run_worker(worker_id: str, task_branch: str,
             mcp_servers=worker_mcp_servers,  # Dynamically built from .mcp.json
             cwd=str(working_dir),
             permission_mode='acceptEdits',
-            setting_sources=["user", "project", "local"],
-            cli_path=cli_path,
-            hooks={}  # Explicitly set CLI path
+            setting_sources=["user", "project", "local"]
         )
 
         # Use the instructions provided by the orchestrator
@@ -315,47 +319,72 @@ async def run_worker(worker_id: str, task_branch: str,
         first_message_received = False
         message_count = 0
 
-        # Execute worker using query() function
+        # Execute worker using ClaudeSDKClient (persistent session)
+        # This properly supports MCP servers unlike query()
         try:
-            print(f"[Worker-{worker_id}] Initializing Claude SDK...")
+            #TODO debug can be removed
+            if self.debug:
+                print(f"[SDKWorkerManager] Initializing ClaudeSDKClient for worker-{worker_id}...")
 
-            async for message in query(prompt=prompt, options=options):
-                message_count += 1
+            async with ClaudeSDKClient(options=options) as client:
+                # Send the prompt to the client
+                await client.query(prompt)
 
-                # Mark initialization as successful after first message
-                if not first_message_received:
-                    first_message_received = True
-                    print(f"[Worker-{worker_id}] Initialized successfully (first message received)")
+                # Receive responses
+                async for message in client.receive_response():
+                    message_count += 1
 
-                # Handle message display (parse, format, log)
-                print(message)
+                    # Mark initialization as successful after first message
+                    if not first_message_received:
+                        first_message_received = True
+                        print(f"[SDKWorkerManager] Worker-{worker_id} initialized successfully (first message received)")
+
+                    # Handle message display (parse, format, log)
+                    print(message)
+
+        
 
         except Exception as sdk_error:
             # Distinguish between initialization and runtime errors
             if not first_message_received:
                 # Initialization error - SDK failed before first message
                 error_phase = "initialization"
-                print(f"[Worker-{worker_id}] INITIALIZATION ERROR")
-                print(f"[Worker-{worker_id}]   SDK failed before receiving first message")
-                print(f"[Worker-{worker_id}]   This usually indicates:")
-                print(f"[Worker-{worker_id}]     - Working directory issues (doesn't exist, not accessible)")
-                print(f"[Worker-{worker_id}]     - Git repository issues (invalid worktree)")
-                print(f"[Worker-{worker_id}]     - Claude CLI configuration issues")
-                print(f"[Worker-{worker_id}]     - Permission or path problems")
-                print(f"[Worker-{worker_id}]     - MCP server initialization failures")
+                print(f"[SDKWorkerManager] Worker-{worker_id} INITIALIZATION ERROR")
+                print(f"[SDKWorkerManager]   SDK failed before receiving first message")
+                print(f"[SDKWorkerManager]   This usually indicates:")
+                print(f"[SDKWorkerManager]     - Working directory issues (doesn't exist, not accessible)")
+                print(f"[SDKWorkerManager]     - Git repository issues (invalid worktree)")
+                print(f"[SDKWorkerManager]     - Claude CLI configuration issues")
+                print(f"[SDKWorkerManager]     - Permission or path problems")
+                print(f"[SDKWorkerManager]     - MCP server initialization failures")
             else:
                 # Runtime error - SDK failed after receiving messages
                 error_phase = "runtime"
-                print(f"[Worker-{worker_id}] RUNTIME ERROR")
-                print(f"[Worker-{worker_id}]   Worker was running successfully ({message_count} messages processed)")
-                print(f"[Worker-{worker_id}]   Error occurred during execution")
+                print(f"[SDKWorkerManager] Worker-{worker_id} RUNTIME ERROR")
+                print(f"[SDKWorkerManager]   Worker was running successfully ({message_count} messages processed)")
+                print(f"[SDKWorkerManager]   Error occurred during execution")
 
             # Re-raise to be handled by main exception handler
             raise sdk_error
 
-        # Query completed naturally
-        print(f"[Worker-{worker_id}] Completed task {task_branch}")
-        return
+        # TODO delele the file Query completed naturally - mark worker as complete
+    
+            elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
+            print(f"[SDKWorkerManager] Worker-{worker_id} completed task {task_branch}")
+
+            # IMPORTANT: Inject completion event BEFORE yielding the message
+            # This ensures the event reaches control_queue even if consumer breaks early
+            if self.control_queue:
+                await self._inject_completion_event(worker_id, task_branch, 0, elapsed)
+
+            # Now yield the completed message (consumer can safely break after this)
+            yield {
+                'worker_id': worker_id,
+                'type': 'completed',
+                'elapsed_time': elapsed,
+                'task_branch': task_branch
+            }
+            return
 
     except Exception as e:
         # Handle errors - log full traceback AND diagnostic information
@@ -445,16 +474,47 @@ async def run_worker(worker_id: str, task_branch: str,
         except Exception as env_error:
             diagnostic_info.append(f"  - Could not collect environment info: {env_error}")
 
+        # Calculate elapsed time
+        if worker_id in self.active_workers:
+            elapsed = asyncio.get_event_loop().time() - self.active_workers[worker_id]['start_time']
+            diagnostic_info.append(f"Elapsed Time: {elapsed:.2f}s")
+        else:
+            elapsed = 0
+            diagnostic_info.append(f"Elapsed Time: Worker never started properly")
+
         # Log comprehensive error information
-        print(f"[Worker-{worker_id}] ===== WORKER ERROR DIAGNOSTIC =====")
+        print(f"[SDKWorkerManager] ===== WORKER ERROR DIAGNOSTIC =====")
         for line in diagnostic_info:
-            print(f"[Worker-{worker_id}] {line}")
-        print(f"[Worker-{worker_id}] ===== TRACEBACK =====")
+            print(f"[SDKWorkerManager] {line}")
+        print(f"[SDKWorkerManager] ===== TRACEBACK =====")
         print(f"{error_traceback}")
-        print(f"[Worker-{worker_id}] ===== END DIAGNOSTIC =====")
+        print(f"[SDKWorkerManager] ===== END DIAGNOSTIC =====")
+
+        # IMPORTANT: Inject error event BEFORE yielding the message
+        # This ensures the event reaches control_queue even if consumer breaks early
+        if self.control_queue:
+            # Create concise error summary for orchestrator
+            error_summary = f"{type(e).__name__}: {str(e)}"
+            if error_phase != 'unknown':
+                error_summary = f"[{error_phase}] {error_summary}"
+
+            await self._inject_completion_event(
+                worker_id, task_branch, exit_code=1,
+                elapsed_time=elapsed,
+                error_message=error_summary
+            )
+
+        # Now yield the error message with comprehensive diagnostics
+        yield {
+            'worker_id': worker_id,
+            'type': 'error',
+            'error': str(e),
+            'traceback': error_traceback,
+            'diagnostics': '\n'.join(diagnostic_info)
+        }
 
 
-async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
+async def launch_worker_async(args: Dict[str, Any]) -> Dict[str, Any]:
     """Launch worker in background using SDK query() function.
 
     This allows the orchestrator to continue immediately without blocking,
@@ -469,9 +529,13 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         Dict with success status message
     """
     try:
+        # Get SDK worker manager (it will already be initialized with proper logger)
+ 
         import asyncio
+        import logging
 
         # VALIDATE PARAMETERS BEFORE CREATING BACKGROUND TASK
+        # This gives immediate feedback to orchestrator instead of waiting for control queue
         worker_id = args["worker_id"]
         task_branch = args["task_branch"]
         cwd = args["cwd"]
@@ -499,25 +563,40 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
                 "isError": True
             }
 
-        # Validation passed - run worker synchronously
-        print(f"[launch_worker] Starting worker-{worker_id} synchronously...")
+        # Validation passed - create async task for worker
+        # Create a wrapped task that handles exceptions properly
+        async def safe_worker_wrapper():
+            """Wrapper to ensure exceptions don't cause unhandled errors."""
+            try:
+                await _run_sdk_worker_task(
+                    worker_id,
+                    task_branch,
+                    session_info,
+                    cwd,
+                    instructions,
+                    args.get("allowed_tools")  # Optional additional tools to allow
+                )
+            except Exception as e:
+                # Log but don't raise - prevents unhandled exception in TaskGroup
+                logger = logging.getLogger("flow_claude.orchestrator")
+                logger.error(f"Worker-{worker_id} wrapper caught exception: {e}")
 
-        await run_worker(
-            worker_id,
-            task_branch,
-            session_info,
-            cwd,
-            instructions,
-            args.get("allowed_tools")  # Optional additional tools to allow
-        )
+        # Start worker with safe wrapper
+        worker_task = asyncio.create_task(safe_worker_wrapper())
 
-        print(f"[launch_worker] Worker-{worker_id} completed")
+        # Store the task reference in manager for stop_worker functionality
+        # Note: Worker is added to active_workers in run_worker after validation
+        if worker_id in manager.active_workers:
+            manager.active_workers[worker_id]['task'] = worker_task
 
-        # Return success message after worker completes
+        logger = logging.getLogger("flow_claude.orchestrator")
+        logger.debug(f"Created async task for worker-{worker_id}: {worker_task}")
+
+        # Return a simple, clean message without JSON
         return {
             "content": [{
                 "type": "text",
-                "text": f"Worker-{worker_id} has completed task branch {task_branch}."
+                "text": f"Worker-{worker_id} has been launched in the background for task branch {task_branch}. The worker is now executing the task autonomously."
             }],
             "isError": False
         }
@@ -533,45 +612,83 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def main():
-    """CLI entry point."""
-    import argparse
-    import sys
+async def _run_sdk_worker_task(worker_id: str, task_branch: str,
+                               session_info: Dict[str, Any],
+                               cwd: str, instructions: str,
+                               allowed_tools: Optional[List[str]] = None):
+    """Helper to run SDK worker as async task.
 
-    parser = argparse.ArgumentParser(description='Launch worker agent')
-    parser.add_argument('--worker-id', required=True, help='Worker ID (e.g., "1", "2")')
-    parser.add_argument('--task-branch', required=True, help='Task branch name')
-    parser.add_argument('--cwd', required=True, help='Working directory (worktree path)')
-    parser.add_argument('--session-id', required=True, help='Session ID')
-    parser.add_argument('--plan-branch', required=True, help='Plan branch name')
-    parser.add_argument('--model', default='sonnet', help='Claude model (sonnet, opus, haiku)')
-    parser.add_argument('--instructions', required=True, help='Task instructions')
+    This collects all output from the worker and handles completion.
+    """
+    import logging
+    logger = logging.getLogger(f"flow_claude.worker-{worker_id}")
 
-    args = parser.parse_args()
+    try:
+        logger.info(f"Starting SDK worker-{worker_id} for {task_branch}")
+        logger.debug(f"Working directory: {cwd}")
+        if allowed_tools:
+            logger.debug(f"Additional allowed tools: {allowed_tools}")
 
-    # Build args dict
-    args_dict = {
-        "worker_id": args.worker_id,
-        "task_branch": args.task_branch,
-        "cwd": args.cwd,
-        "session_id": args.session_id,
-        "plan_branch": args.plan_branch,
-        "model": args.model,
-        "instructions": args.instructions
-    }
+        # Collect all messages from the worker
+        messages_received = 0
+        async for message in run_worker(worker_id, task_branch,
+                                                session_info, cwd, instructions,
+                                                allowed_tools):
+            messages_received += 1
+            # Log the message for debugging
+            if message.get('type') == 'error':
+                error_msg = message.get('error', message.get('message'))
+                logger.error(f"Worker-{worker_id} error: {error_msg}")
+                # Log traceback if available
+                if 'traceback' in message:
+                    logger.error(f"Worker-{worker_id} traceback:\n{message['traceback']}")
+                # Important: Still continue processing other messages
+            elif message.get('type') == 'completed':
+                logger.info(f"Worker-{worker_id} completed task {task_branch}")
+                break  # Exit cleanly on completion
+            # Messages are already logged by the manager
 
-    # Run async function
-    result = asyncio.run(launch_worker(args_dict))
+        if messages_received == 0:
+            logger.warning(f"Worker-{worker_id} produced no output")
 
-    # Print result
-    if result.get("isError"):
-        print(json.dumps({"success": False, "error": result["content"][0]["text"]}, indent=2), file=sys.stderr)
-        return 1
-    else:
-        print(json.dumps({"success": True, "message": result["content"][0]["text"]}, indent=2))
-        return 0
+    except asyncio.CancelledError:
+        # Task was cancelled - this is normal during shutdown
+        logger.info(f"Worker-{worker_id} task was cancelled")
+        raise  # Re-raise to properly handle cancellation
+    except Exception as e:
+        # Log the actual error with full traceback for debugging
+        logger.error(f"Worker-{worker_id} task failed with exception: {str(e)}", exc_info=True)
+        # Don't re-raise - this prevents the "unhandled error in TaskGroup" issue
+        # The error has been logged and the manager already injected a completion event
 
 
-if __name__ == '__main__':
-    import sys
-    sys.exit(main())
+def create_worker_tools_server():
+    """Create MCP server with worker management tools.
+
+    Returns:
+        MCP server instance with worker tools
+
+    Usage:
+        In CLI setup:
+            options = ClaudeAgentOptions(
+                mcp_servers={
+                    "git": create_git_tools_server(),
+                    "workers": create_worker_tools_server()
+                },
+                ...
+            )
+
+        Agents can then use:
+            - mcp__workers__launch_worker_async: Launch worker in background
+            - mcp__workers__get_worker_status: Check status of all worker slots
+            - mcp__workers__stop_worker: Stop a running worker by worker ID
+    """
+    return create_sdk_mcp_server(
+        name="workers",
+        version="1.0.0",
+        tools=[
+            launch_worker_async,
+            get_worker_status,
+            stop_worker
+        ]
+    )
