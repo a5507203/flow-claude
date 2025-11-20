@@ -2,7 +2,6 @@ README.md
 pyproject.toml
 src/flow_claude/__init__.py
 src/flow_claude/post_hook_handler.py
-src/flow_claude/stop_hook_handler.py
 src/flow_claude/test_launch_worker.py
 src/flow_claude.egg-info/PKG-INFO
 src/flow_claude.egg-info/SOURCES.txt
@@ -22,6 +21,7 @@ src/flow_claude/scripts/launch_worker.py
 src/flow_claude/scripts/parse_branch_latest_commit.py
 src/flow_claude/scripts/read_plan_metadata.py
 src/flow_claude/scripts/read_task_metadata.py
+src/flow_claude/scripts/stop_hook_handler.py
 src/flow_claude/scripts/update_plan_branch.py
 src/flow_claude/setup_ui/__init__.py
 src/flow_claude/setup_ui/app.py
