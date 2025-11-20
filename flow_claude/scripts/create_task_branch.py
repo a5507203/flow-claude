@@ -110,19 +110,19 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  # Create a task with no dependencies
+  # Create a task with detailed instruction
   python -m flow_claude.scripts.create_task_branch \\
     --task-id="001" \\
-    --instruction="Create HTML structure with navigation and hero section" \\
+    --instruction="Create HTML structure with navigation and hero section. Use Write tool to create index.html. Include semantic HTML5 tags. Add nav, header, and main sections." \\
     --plan-branch="plan/build-conference-website" \\
     --depends-on='[]' \\
     --key-files='["index.html"]' \\
     --priority="high"
 
-  # Create a task that depends on task 001
+  # Create a task with tool usage guidance
   python -m flow_claude.scripts.create_task_branch \\
     --task-id="002" \\
-    --instruction="Add CSS styling for responsive layout" \\
+    --instruction="Add CSS styling for responsive layout. Use Write tool to create css/styles.css. Implement mobile-first design with breakpoints at 768px and 1024px. Use Flexbox for navigation layout." \\
     --plan-branch="plan/build-conference-website" \\
     --depends-on='["001"]' \\
     --key-files='["css/styles.css"]' \\
@@ -144,7 +144,7 @@ Output:
         type=str,
         required=True,
         metavar='TEXT',
-        help='Clear, specific task instruction (what needs to be done, not how). Will be slugified for branch name.'
+        help='Detailed task instruction: what needs to be done, which MCP tools to use (if any), and specific implementation guidance. Will be slugified for branch name.'
     )
     parser.add_argument(
         '--plan-branch',

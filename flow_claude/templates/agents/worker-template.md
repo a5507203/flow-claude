@@ -90,7 +90,7 @@ python -m flow_claude.scripts.read_task_metadata --branch="task/001-xxx"
 
 **To check latest progress** on a task branch:
 ```bash
-python -m flow_claude.scripts.parse_latest_branch_commit --branch="task/001-xxx"
+python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-xxx"
 ```
 
 ---
@@ -371,7 +371,7 @@ Awaiting manual resolution.
 
 - `python -m flow_claude.scripts.read_task_metadata` - Read task metadata from first commit
 - `python -m flow_claude.scripts.read_plan_metadata` - Read execution plan from latest commit
-- `python -m flow_claude.scripts.parse_latest_branch_commit` - Read latest commit on any branch
+- `python -m flow_claude.scripts.parse_branch_latest_commit` - Read latest commit on any branch
 
 
 ---

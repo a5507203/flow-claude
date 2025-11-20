@@ -26,7 +26,7 @@ def set_parallel_workers(num_workers: int, project_root: Path = None) -> dict:
             'message': f'Error: Number must be between 1 and 10 (got {num_workers})'
         }
 
-    skill_file = project_root / '.claude' / 'skills' / 'orchestrator' / 'SKILL.md'
+    skill_file = project_root / '.claude' / 'skills' / 'your-workflow' / 'SKILL.md'
 
     if not skill_file.exists():
         return {

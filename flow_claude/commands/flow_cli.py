@@ -148,7 +148,7 @@ Location: `.claude/skills/git-tools/skill.md`
 
 ### SDK Workers Skill
 Manages worker agents and MCP configuration.
-Location: `.claude/skills/sdk-workers/skill.md`
+Location: `.claude/skills/launch-workers/skill.md`
 
 ## Configuration
 
@@ -283,7 +283,7 @@ def main(verbose):
         print("  .claude/")
         print("    |-- skills/")
         print("    |   |-- git-tools/       # Git state management")
-        print("    |   |-- sdk-workers/     # Worker coordination")
+        print("    |   |-- launch-workers/     # Worker coordination")
         print("    |   +-- orchestrator/    # Main orchestrator")
         print("    |-- commands/")
         print("    |   |-- auto.md          # Toggle autonomous mode")

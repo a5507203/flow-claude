@@ -1,6 +1,6 @@
 ---
 name: git-tools
-description: Git-based state management. Provides 7 command-line tools for managing execution plans and tasks using structured git commits.
+description: Git-based state management. Provides 6 command-line tools for managing execution plans and tasks using structured git commits.
 ---
 
 # Git Tools Skill
@@ -19,7 +19,7 @@ This skill provides 6 command-line tools for managing Flow-Claude execution plan
 **Task Commands:**
 - `create_task_branch` - Create a task branch with metadata
 - `read_task_metadata` - Read task metadata from first commit on task branch
-- `parse_latest_branch_commit` - Read latest commit message from any branch
+- `parse_branch_latest_commit` - Read latest commit message from any branch
 
 ### Command Usage Patterns
 
@@ -29,7 +29,7 @@ This skill provides 6 command-line tools for managing Flow-Claude execution plan
 - Use `create_task_branch` before launching a worker for each task in the current wave
 - Use `read_task_metadata` to read task requirements before or after worker execution
 - Use `read_plan_metadata` to understand the overall plan structure and track progress
-- Use `parse_latest_branch_commit` to monitor worker progress during execution
+- Use `parse_branch_latest_commit` to monitor worker progress during execution
 - Use `update_plan_branch` after each task completes to mark it done and update the plan version
 
 ### General Command Format
@@ -169,7 +169,7 @@ python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authent
 ### Example 7: Checking Worker Progress
 
 ```bash
-python -m flow_claude.scripts.parse_worker_commit --branch="task/001-create-user-model"
+python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-create-user-model"
 ```
 
 **Output:**
@@ -177,16 +177,7 @@ python -m flow_claude.scripts.parse_worker_commit --branch="task/001-create-user
 {
   "success": true,
   "branch": "task/001-create-user-model",
-  "task_id": "001",
-  "status": "in_progress",
-  "design": "Created SQLAlchemy model with User table. Fields: id (primary key), email (unique, indexed), password_hash (bcrypt).",
-  "todo": [
-    {"item": "Write model class", "status": "completed"},
-    {"item": "Add email validation", "status": "in_progress"},
-    {"item": "Write unit tests", "status": "pending"}
-  ],
-  "progress": "66%",
-  "last_updated": "2025-01-19T14:32:15Z"
+  "message": "Update task progress\n\nTask ID: 001\nStatus: in_progress\n\nCompleted:\n- Created SQLAlchemy model with User table\n- Added email validation\n\nIn Progress:\n- Writing unit tests"
 }
 ```
 
@@ -207,7 +198,7 @@ python -m flow_claude.scripts.update_plan_branch --completed='["001"]' --version
 python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authentication"
 
 # 5. Check latest commit on task branch
-python -m flow_claude.scripts.parse_latest_branch_commit --branch="task/001-create-user-model"
+python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-create-user-model"
 ```
 
 ### Example 9: Handling Errors

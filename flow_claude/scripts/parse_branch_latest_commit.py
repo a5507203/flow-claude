@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 
-async def parse_latest_branch_commit(branch: str) -> dict:
+async def parse_branch_latest_commit(branch: str) -> dict:
     """Read the latest commit on a git branch.
 
     Args:
@@ -63,11 +63,11 @@ def main():
         epilog='''
 Examples:
   # Check worker progress on task branch
-  python -m flow_claude.scripts.parse_latest_branch_commit \\
+  python -m flow_claude.scripts.parse_branch_latest_commit \\
     --branch="task/001-create-html-structure"
 
   # Check plan branch latest update
-  python -m flow_claude.scripts.parse_latest_branch_commit \\
+  python -m flow_claude.scripts.parse_branch_latest_commit \\
     --branch="plan/build-conference-website"
 
 Output:
@@ -84,7 +84,7 @@ Output:
 
     args = parser.parse_args()
 
-    result = asyncio.run(parse_latest_branch_commit(args.branch))
+    result = asyncio.run(parse_branch_latest_commit(args.branch))
     print(json.dumps(result, indent=2))
 
     return 0 if result.get('success') else 1

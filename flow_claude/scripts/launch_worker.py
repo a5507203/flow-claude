@@ -100,7 +100,7 @@ def build_worker_mcp_servers(working_dir: Path, allowed_tools: Optional[List[str
 
 def _validate_worker_params(worker_id: str, task_branch: str,
                             session_info: Dict[str, Any],
-                            cwd: str, instructions: str) -> tuple[bool, Optional[str]]:
+                            cwd: str) -> tuple[bool, Optional[str]]:
     """Validate essential worker parameters before launching.
 
     Performs minimal validation to catch critical errors early before expensive
@@ -111,7 +111,6 @@ def _validate_worker_params(worker_id: str, task_branch: str,
         task_branch: Git branch for the task
         session_info: Session metadata
         cwd: Working directory path
-        instructions: Task instructions
 
     Returns:
         Tuple of (success: bool, error_message: Optional[str])
@@ -148,17 +147,13 @@ def _validate_worker_params(worker_id: str, task_branch: str,
     if not git_dir.exists():
         return False, f"Not a git repository (no .git): {cwd}"
 
-    # Validate instructions aren't empty
-    if not instructions or not instructions.strip():
-        return False, "Task instructions cannot be empty"
-
     # All validations passed
     return True, None
 
 
 async def run_worker(worker_id: str, task_branch: str,
                     session_info: Dict[str, Any],
-                    cwd: str, instructions: str,
+                    cwd: str,
                     allowed_tools: Optional[List[str]] = None) -> None:
     """Run a single worker using SDK query() function.
 
@@ -167,7 +162,6 @@ async def run_worker(worker_id: str, task_branch: str,
         task_branch: Git branch for the task
         session_info: Session metadata (plan_branch, model). session_id is extracted from plan_branch.
         cwd: Working directory - the worktree path where worker operates (REQUIRED - absolute path)
-        instructions: Task-specific instructions written by the orchestrator LLM
         allowed_tools: Optional list of additional MCP tools to allow beyond core tools
     """
     # Extract session_id from plan_branch
@@ -180,7 +174,7 @@ async def run_worker(worker_id: str, task_branch: str,
 
     # VALIDATION: Validate parameters before expensive SDK initialization
     validation_success, validation_error = _validate_worker_params(
-        worker_id, task_branch, session_info, cwd, instructions
+        worker_id, task_branch, session_info, cwd
     )
 
     if not validation_success:
@@ -261,8 +255,8 @@ async def run_worker(worker_id: str, task_branch: str,
             hooks={}  # Explicitly set CLI path
         )
 
-        # Use the instructions provided by the orchestrator
-        prompt = instructions
+        # Worker will read task instruction from the task branch's first commit
+        prompt = f"You are worker {worker_id}. Read your task instruction from task branch {task_branch} using read_task_metadata, then complete the task."
 
 
 
@@ -417,7 +411,7 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
 
     Args:
         args: Dict with worker_id, task_branch, cwd (relative or absolute path to worktree),
-              plan_branch, model, and instructions. session_id is extracted from plan_branch.
+              plan_branch, model. session_id is extracted from plan_branch.
               Relative paths are resolved relative to project root.
 
     Returns:
@@ -430,14 +424,13 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         worker_id = args["worker_id"]
         task_branch = args["task_branch"]
         cwd = args["cwd"]
-        instructions = args["instructions"]
         session_info = {
             'plan_branch': args["plan_branch"],
             'model': args.get("model", "sonnet")
         }
 
         validation_success, validation_error = _validate_worker_params(
-            worker_id, task_branch, session_info, cwd, instructions
+            worker_id, task_branch, session_info, cwd
         )
 
         if not validation_success:
@@ -461,7 +454,6 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
             task_branch,
             session_info,
             cwd,
-            instructions,
             args.get("allowed_tools")  # Optional additional tools to allow
         )
 
@@ -498,7 +490,6 @@ def main():
     parser.add_argument('--cwd', type=str, required=True, help='Working directory (worktree path)')
     parser.add_argument('--plan-branch', type=str, required=True, help='Plan branch name (session ID extracted from this)')
     parser.add_argument('--model', type=str, default='sonnet', help='Claude model (sonnet, opus, haiku)')
-    parser.add_argument('--instructions', type=str, required=True, help='Task instructions')
 
     args = parser.parse_args()
 
@@ -508,8 +499,7 @@ def main():
         "task_branch": args.task_branch,
         "cwd": args.cwd,
         "plan_branch": args.plan_branch,
-        "model": args.model,
-        "instructions": args.instructions
+        "model": args.model
     }
 
     # Run async function
