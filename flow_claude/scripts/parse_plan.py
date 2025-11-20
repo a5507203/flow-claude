@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
-"""Parse execution plan from the latest commit on a plan branch."""
+"""Read execution plan from the latest commit on a plan branch."""
 import argparse
 import asyncio
 import json
 import subprocess
 import sys
 
-try:
-    from .parsers import parse_plan_commit
-except ImportError:
-    from parsers import parse_plan_commit
-
 
 async def parse_plan(branch: str) -> dict:
-    """Parse execution plan from latest commit on plan branch.
+    """Read execution plan from latest commit on plan branch.
 
     Args:
-        branch: Plan branch name (e.g., 'plan/session-20250118-120000')
+        branch: Plan branch name (e.g., 'plan/build-conference-website')
 
     Returns:
-        Dict with plan metadata
+        Dict with commit message
     """
     try:
         # Get latest commit message on plan branch
@@ -35,32 +30,33 @@ async def parse_plan(branch: str) -> dict:
 
         if not commit_message:
             return {
+                "success": False,
                 "error": f"No commits found on branch {branch}",
                 "branch": branch
             }
 
-        # Parse using shared parser
-        plan_data = parse_plan_commit(commit_message)
-
         return {
             "success": True,
             "branch": branch,
-            **plan_data
+            "message": commit_message
         }
 
     except subprocess.CalledProcessError as e:
         return {
+            "success": False,
             "error": f"Git command failed: {e.stderr}",
             "branch": branch
         }
     except subprocess.TimeoutExpired:
         return {
+            "success": False,
             "error": f"Git command timed out for branch {branch}",
             "branch": branch
         }
     except Exception as e:
         return {
-            "error": f"Failed to parse plan: {str(e)}",
+            "success": False,
+            "error": f"Failed to read plan: {str(e)}",
             "branch": branch
         }
 
@@ -68,12 +64,23 @@ async def parse_plan(branch: str) -> dict:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Parse execution plan from git branch'
+        description='Read execution plan commit message from git branch',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  # Read plan commit message
+  python -m flow_claude.scripts.parse_plan \\
+    --branch="plan/build-conference-website"
+
+Output:
+  JSON with commit message that Claude can read directly
+        '''
     )
     parser.add_argument(
         '--branch',
         required=True,
-        help='Plan branch name (e.g., plan/session-20250118-120000)'
+        metavar='BRANCH',
+        help='Plan branch name (e.g., "plan/build-conference-website")'
     )
 
     args = parser.parse_args()

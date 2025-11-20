@@ -23,9 +23,11 @@ When a user makes a development request, follow this workflow:
    - If file EXISTS: Autonomous mode is OFF. Present the plan to user and wait for approval.
    - If file MISSING: Autonomous mode is ON. Execute the plan automatically.
 
-3. **Create execution plan** - Generate a unique session ID using format `session-YYYYMMDD-HHMMSS`. Use the `create_plan_branch` script to create a plan branch with all tasks, dependencies, and execution waves.
+3. **Create execution plan** - Generate a unique session name. Use the `create_plan_branch` script to create a plan branch with all tasks and their dependencies (DAG).
 
-4. **Execute tasks in waves** - For each wave:
+4. **Calculate execution waves** - Automatically compute execution order from task dependencies. Tasks with no dependencies run in wave 1, tasks depending only on wave 1 run in wave 2, etc.
+
+5. **Execute tasks in waves** - For each wave:
    - Create task branches using `create_task_branch` script
    - Create git worktrees for parallel execution: `git worktree add .worktrees/worker-N task/NNN-description`
    - Launch workers using `launch_worker` script (up to max_parallel limit)
@@ -46,7 +48,7 @@ From **git-tools** skill:
 - `python -m flow_claude.scripts.update_plan_branch` - Update plan with completed tasks
 - `python -m flow_claude.scripts.parse_plan` - Read current plan state
 - `python -m flow_claude.scripts.parse_task` - Read task metadata
-- `python -m flow_claude.scripts.get_provides` - Query available capabilities
+- `python -m flow_claude.scripts.get_provides` - Query completed tasks (may be redesigned or removed)
 
 From **sdk-workers** skill:
 - `python -m flow_claude.scripts.launch_worker` - Launch task worker
@@ -59,7 +61,7 @@ From **sdk-workers** skill:
 - Clean up worktrees immediately after task completion
 - Respect the max_parallel limit from configuration
 - Update the plan after EACH task completes, not just after waves
-- Use `get_provides` to track what capabilities are available
+- Calculate wave assignments based on task dependencies (topological sort)
 - Create meaningful session IDs with timestamps
 - Keep task descriptions clear and specific
 - Handle worker failures gracefully (stop worker, clean worktree, analyze error)
@@ -73,7 +75,7 @@ User request: "Add user authentication with JWT and bcrypt"
 **Step 1: Create Plan**
 ```bash
 python -m flow_claude.scripts.create_plan_branch \
-  --session-id="session-20250119-143000" \
+  --session-name="add-user-authentication" \
   --user-request="Add user authentication with JWT and bcrypt" \
   --architecture="Use MVC pattern with Flask backend. JWT tokens for auth, bcrypt for password hashing." \
   --design-doc="Current project uses src/models, src/api, src/utils module structure. User authentication will be added as: User model in src/models/user.py with SQLAlchemy ORM, auth endpoints in src/api/auth.py (register, login, logout), password hashing utilities in src/utils/auth.py using bcrypt with 12 salt rounds, JWT token generation in src/utils/jwt.py. Using Repository pattern for data access to isolate database operations, Service layer for authentication business rules, Controller layer for RESTful API endpoints." \
@@ -82,69 +84,58 @@ python -m flow_claude.scripts.create_plan_branch \
     {
       "id": "001",
       "description": "Create User model with email and password fields",
-      "preconditions": [],
-      "provides": ["User model", "User.email field", "User.password_hash field"],
-      "files": ["src/models/user.py"],
-      "estimated_time": "8 minutes",
+      "depends_on": [],
+      "key_files": ["src/models/user.py"],
       "priority": "high"
     },
     {
       "id": "002",
       "description": "Implement password hashing utilities",
-      "preconditions": [],
-      "provides": ["hash_password function", "verify_password function"],
-      "files": ["src/utils/auth.py"],
-      "estimated_time": "5 minutes",
+      "depends_on": [],
+      "key_files": ["src/utils/auth.py"],
       "priority": "high"
     },
     {
       "id": "003",
       "description": "Create JWT token generation",
-      "preconditions": [],
-      "provides": ["generate_token function", "verify_token function"],
-      "files": ["src/utils/jwt.py"],
-      "estimated_time": "10 minutes",
+      "depends_on": [],
+      "key_files": ["src/utils/jwt.py"],
       "priority": "high"
     },
     {
       "id": "004",
       "description": "Implement user registration endpoint",
-      "preconditions": ["User model", "hash_password function"],
-      "provides": ["POST /api/register endpoint"],
-      "files": ["src/api/auth.py"],
-      "estimated_time": "12 minutes",
+      "depends_on": ["001", "002"],
+      "key_files": ["src/api/auth.py"],
       "priority": "medium"
     }
-  ]' \
-  --waves='[
-    {"wave": 1, "tasks": ["001", "002", "003"], "reason": "No dependencies"},
-    {"wave": 2, "tasks": ["004"], "reason": "Depends on wave 1"}
   ]'
 ```
+
+Execution waves (computed automatically):
+- Wave 1: [001, 002, 003] - No dependencies, can run in parallel
+- Wave 2: [004] - Depends on 001 and 002
 
 **Step 2: Execute Wave 1 (3 tasks in parallel)**
 ```bash
 # Create task branches
 python -m flow_claude.scripts.create_task_branch \
   --task-id="001" --description="Create User model" \
-  --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" \
-  --preconditions='[]' --provides='["User model"]' \
-  --files='["src/models/user.py"]'
+  --plan-branch="plan/add-user-authentication" \
+  --depends-on='[]' --key-files='["src/models/user.py"]' \
+  --priority="high"
 
 python -m flow_claude.scripts.create_task_branch \
   --task-id="002" --description="Implement password hashing" \
-  --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" \
-  --preconditions='[]' --provides='["hash_password function"]' \
-  --files='["src/utils/auth.py"]'
+  --plan-branch="plan/add-user-authentication" \
+  --depends-on='[]' --key-files='["src/utils/auth.py"]' \
+  --priority="high"
 
 python -m flow_claude.scripts.create_task_branch \
   --task-id="003" --description="Create JWT tokens" \
-  --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" \
-  --preconditions='[]' --provides='["generate_token function"]' \
-  --files='["src/utils/jwt.py"]'
+  --plan-branch="plan/add-user-authentication" \
+  --depends-on='[]' --key-files='["src/utils/jwt.py"]' \
+  --priority="high"
 
 # Create worktrees
 git worktree add .worktrees/worker-1 task/001-create-user-model
@@ -154,18 +145,18 @@ git worktree add .worktrees/worker-3 task/003-create-jwt-tokens
 # Launch workers
 python -m flow_claude.scripts.launch_worker \
   --worker-id="1" --task-branch="task/001-create-user-model" \
-  --cwd=".worktrees/worker-1" --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" --model="sonnet"
+  --cwd=".worktrees/worker-1" --plan-branch="plan/add-user-authentication" \
+  --model="sonnet"
 
 python -m flow_claude.scripts.launch_worker \
   --worker-id="2" --task-branch="task/002-implement-password-hashing" \
-  --cwd=".worktrees/worker-2" --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" --model="sonnet"
+  --cwd=".worktrees/worker-2" --plan-branch="plan/add-user-authentication" \
+  --model="sonnet"
 
 python -m flow_claude.scripts.launch_worker \
   --worker-id="3" --task-branch="task/003-create-jwt-tokens" \
-  --cwd=".worktrees/worker-3" --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" --model="sonnet"
+  --cwd=".worktrees/worker-3" --plan-branch="plan/add-user-authentication" \
+  --model="sonnet"
 ```
 
 **Step 3: Monitor and Handle Completion**

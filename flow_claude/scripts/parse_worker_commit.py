@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
-"""Parse worker's latest commit with design and TODO progress."""
+"""Read worker's latest commit with progress information."""
 import argparse
 import asyncio
 import json
 import subprocess
 import sys
 
-try:
-    from .parsers import parse_worker_commit
-except ImportError:
-    from parsers import parse_worker_commit
 
-
-async def parse_worker_commit_script(branch: str) -> dict:
-    """Parse the latest commit on a worker's task branch.
+async def parse_worker_commit(branch: str) -> dict:
+    """Read the latest commit on a worker's task branch.
 
     Args:
         branch: Task branch name
 
     Returns:
-        Dict with worker progress (design, todo, status)
+        Dict with commit message
     """
     try:
         # Get latest commit message
@@ -35,27 +30,27 @@ async def parse_worker_commit_script(branch: str) -> dict:
 
         if not commit_message:
             return {
+                "success": False,
                 "error": f"No commits found on branch {branch}",
                 "branch": branch
             }
 
-        # Parse using shared parser
-        progress = parse_worker_commit(commit_message)
-
         return {
             "success": True,
             "branch": branch,
-            **progress
+            "message": commit_message
         }
 
     except subprocess.CalledProcessError as e:
         return {
+            "success": False,
             "error": f"Git command failed: {e.stderr}",
             "branch": branch
         }
     except Exception as e:
         return {
-            "error": f"Failed to parse worker commit: {str(e)}",
+            "success": False,
+            "error": f"Failed to read worker commit: {str(e)}",
             "branch": branch
         }
 
@@ -63,13 +58,28 @@ async def parse_worker_commit_script(branch: str) -> dict:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Parse worker progress from git commit'
+        description='Read worker progress commit message from git branch',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  # Check worker progress
+  python -m flow_claude.scripts.parse_worker_commit \\
+    --branch="task/001-create-html-structure"
+
+Output:
+  JSON with commit message showing worker's design, TODO list, and progress
+        '''
     )
-    parser.add_argument('--branch', required=True, help='Task branch name')
+    parser.add_argument(
+        '--branch',
+        required=True,
+        metavar='BRANCH',
+        help='Task branch name (e.g., "task/001-create-html-structure")'
+    )
 
     args = parser.parse_args()
 
-    result = asyncio.run(parse_worker_commit_script(args.branch))
+    result = asyncio.run(parse_worker_commit(args.branch))
     print(json.dumps(result, indent=2))
 
     return 0 if result.get('success') else 1

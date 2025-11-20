@@ -8,29 +8,26 @@ import sys
 
 
 async def create_plan_branch(
-    session_id: str,
+    session_name: str,
     user_request: str,
-    architecture: str,
     tasks: list,
     **kwargs
 ) -> dict:
     """Create plan branch with structured metadata commit.
 
     Args:
-        session_id: Unique session ID
+        session_name: Unique session name
         user_request: Original user request
-        architecture: Architecture description
         tasks: List of task definitions
-        **kwargs: Additional fields:
-            - design_doc: Design of new features and project framework
+        **kwargs: Optional fields:
+            - design_doc: Complete design documentation (architecture, patterns, structure)
             - tech_stack: Technology stack
-            - waves: Execution waves
 
     Returns:
         Dict with success status
     """
     try:
-        branch_name = f"plan/{session_id}"
+        branch_name = f"plan/{session_name}"
 
         # Create branch from flow
         subprocess.run(
@@ -45,12 +42,9 @@ async def create_plan_branch(
             f"Initialize execution plan v1",
             "",
             "## Session Information",
-            f"Session ID: {session_id}",
+            f"Session name: {session_name}",
             f"User Request: {user_request}",
             "Plan Version: v1",
-            "",
-            "## Architecture",
-            architecture,
             ""
         ]
 
@@ -72,22 +66,18 @@ async def create_plan_branch(
         # Add tasks
         commit_lines.append("## Tasks")
         for task in tasks:
+            depends_on = task.get('depends_on', [])
+            key_files = task.get('key_files', [])
+
             commit_lines.extend([
                 f"### Task {task['id']}",
                 f"ID: {task['id']}",
                 f"Description: {task['description']}",
                 f"Priority: {task.get('priority', 'medium')}",
-                f"Estimated Time: {task.get('estimated_time', 'N/A')}",
+                f"Depends on: {', '.join(depends_on) if depends_on else 'None'}",
+                f"Key files: {', '.join(key_files) if key_files else 'None'}",
                 ""
             ])
-
-        # Add waves if provided
-        if kwargs.get('waves'):
-            commit_lines.append("## Dependency Graph")
-            for wave in kwargs['waves']:
-                wave_num = wave['wave']
-                task_ids = ', '.join(wave['tasks'])
-                commit_lines.append(f"Wave {wave_num}: [{task_ids}]")
 
         commit_message = '\n'.join(commit_lines)
 
@@ -102,7 +92,7 @@ async def create_plan_branch(
         return {
             "success": True,
             "branch": branch_name,
-            "session_id": session_id
+            "session_name": session_name
         }
 
     except subprocess.CalledProcessError as e:
@@ -120,35 +110,69 @@ async def create_plan_branch(
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Create plan branch with metadata'
-    )
-    parser.add_argument('--session-id', required=True)
-    parser.add_argument('--user-request', required=True)
-    parser.add_argument('--architecture', required=True)
-    parser.add_argument('--tasks', required=True, help='JSON array of tasks')
-    parser.add_argument('--design-doc', default='', help='Design of new features and project framework')
-    parser.add_argument('--tech-stack', default='')
-    parser.add_argument('--waves', default='', help='JSON array of waves')
+        description='Create plan branch with metadata',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  # Create a plan with task dependencies (DAG)
+  python -m flow_claude.scripts.create_plan_branch \\
+    --session-name="build-conference-website" \\
+    --user-request="Build a conference website" \\
+    --architecture="Static HTML/CSS/JS website with responsive design" \\
+    --design-doc="Project Structure: index.html (main page), css/ (styles), js/ (scripts). Design: Modern single-page layout with sticky navigation, hero section, schedule grid, speaker cards. Mobile-first responsive design with breakpoints at 768px and 1024px. Components organized by section (nav, hero, schedule, speakers, footer). Follow BEM naming convention for CSS classes." \\
+    --tech-stack="HTML5, CSS3, JavaScript ES6" \\
+    --tasks='[{"id":"001","description":"Create HTML structure","depends_on":[],"key_files":["index.html"],"priority":"high"},{"id":"002","description":"Add CSS styling","depends_on":["001"],"key_files":["css/styles.css"],"priority":"medium"},{"id":"003","description":"Add JavaScript","depends_on":["001"],"key_files":["js/main.js"],"priority":"medium"},{"id":"004","description":"Test layout","depends_on":["002","003"],"key_files":[],"priority":"low"}]'
 
+Output:
+  JSON with success status and plan branch information
+        '''
+    )
+    parser.add_argument(
+        '--session-name',
+        required=True,
+        metavar='NAME',
+        help='Meaningful session name describing the work (e.g., "build-user-authentication", "add-responsive-nav"). Use lowercase with hyphens.'
+    )
+    parser.add_argument(
+        '--user-request',
+        required=True,
+        metavar='TEXT',
+        help='Original user request describing what needs to be built'
+    )
+    parser.add_argument(
+        '--tasks',
+        required=True,
+        metavar='JSON',
+        help='JSON array of task objects. Each task must have: id, description, depends_on (upstream task IDs), key_files, priority'
+    )
+    parser.add_argument(
+        '--design-doc',
+        default='',
+        metavar='TEXT',
+        help='Complete design documentation (can be long, like CLAUDE.md). Should include: architecture overview, how features integrate with existing codebase, project structure, design patterns, architectural decisions, interface contracts. This is worker\'s primary reference document.'
+    )
+    parser.add_argument(
+        '--tech-stack',
+        default='',
+        metavar='TEXT',
+        help='Technology stack: languages, frameworks, libraries, tools (e.g., "Python 3.10, Flask 2.3, SQLAlchemy")'
+    )
     args = parser.parse_args()
 
     # Parse JSON fields
     try:
         tasks = json.loads(args.tasks)
-        waves = json.loads(args.waves) if args.waves else []
     except json.JSONDecodeError as e:
         print(json.dumps({"error": f"Invalid JSON: {e}"}), file=sys.stderr)
         return 1
 
     # Run async function
     result = asyncio.run(create_plan_branch(
-        session_id=args.session_id,
+        session_name=args.session_name,
         user_request=args.user_request,
-        architecture=args.architecture,
         tasks=tasks,
         design_doc=args.design_doc,
-        technology_stack=args.tech_stack,
-        waves=waves
+        technology_stack=args.tech_stack
     ))
 
     print(json.dumps(result, indent=2))

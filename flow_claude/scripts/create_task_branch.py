@@ -10,7 +10,6 @@ import sys
 async def create_task_branch(
     task_id: str,
     description: str,
-    session_id: str,
     plan_branch: str,
     **kwargs
 ) -> dict:
@@ -19,13 +18,14 @@ async def create_task_branch(
     Args:
         task_id: Task ID (e.g., '001')
         description: Task description
-        session_id: Parent session ID
-        plan_branch: Parent plan branch name
-        **kwargs: preconditions, provides, files, priority, estimated_time, etc.
+        plan_branch: Parent plan branch name (session-id is extracted from this)
+        **kwargs: depends_on, key_files, priority
 
     Returns:
         Dict with success status
     """
+    # Extract session_id from plan_branch (e.g., "plan/session-name" -> "session-name")
+    session_id = plan_branch.replace('plan/', '') if plan_branch.startswith('plan/') else plan_branch
     try:
         branch_name = f"task/{task_id}-{description.lower().replace(' ', '-')[:30]}"
 
@@ -49,26 +49,22 @@ async def create_task_branch(
         ]
 
         # Dependencies
-        preconditions = kwargs.get('preconditions', [])
-        provides = kwargs.get('provides', [])
-        commit_lines.extend([
-            "## Dependencies",
-            "Preconditions:",
-        ])
-        for pre in preconditions:
-            commit_lines.append(f"  - {pre}")
-        commit_lines.append("Provides:")
-        for prov in provides:
-            commit_lines.append(f"  - {prov}")
-        commit_lines.append("")
+        depends_on = kwargs.get('depends_on', [])
+        if depends_on:
+            commit_lines.extend([
+                "## Dependencies",
+                f"Depends on: {', '.join(depends_on)}",
+                ""
+            ])
 
-        # Files
-        files = kwargs.get('files', [])
-        commit_lines.append("## Files")
-        commit_lines.append("Files to modify:")
-        for f in files:
-            commit_lines.append(f"  - {f}")
-        commit_lines.append("")
+        # Key files
+        key_files = kwargs.get('key_files', [])
+        if key_files:
+            commit_lines.extend([
+                "## Key Files",
+                ', '.join(key_files),
+                ""
+            ])
 
         # Context
         commit_lines.extend([
@@ -76,7 +72,6 @@ async def create_task_branch(
             f"Session ID: {session_id}",
             f"Plan Branch: {plan_branch}",
             f"Priority: {kwargs.get('priority', 'medium')}",
-            f"Estimated Time: {kwargs.get('estimated_time', 'N/A')}",
             ""
         ])
 
@@ -110,24 +105,77 @@ async def create_task_branch(
 
 def main():
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description='Create task branch')
-    parser.add_argument('--task-id', required=True)
-    parser.add_argument('--description', required=True)
-    parser.add_argument('--session-id', required=True)
-    parser.add_argument('--plan-branch', required=True)
-    parser.add_argument('--preconditions', default='[]', help='JSON array')
-    parser.add_argument('--provides', default='[]', help='JSON array')
-    parser.add_argument('--files', default='[]', help='JSON array')
-    parser.add_argument('--priority', default='medium')
-    parser.add_argument('--estimated-time', default='N/A')
+    parser = argparse.ArgumentParser(
+        description='Create task branch with metadata commit',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  # Create a task with no dependencies
+  python -m flow_claude.scripts.create_task_branch \\
+    --task-id="001" \\
+    --description="Create HTML structure with navigation and hero section" \\
+    --plan-branch="plan/build-conference-website" \\
+    --depends-on='[]' \\
+    --key-files='["index.html"]' \\
+    --priority="high"
+
+  # Create a task that depends on task 001
+  python -m flow_claude.scripts.create_task_branch \\
+    --task-id="002" \\
+    --description="Add CSS styling for responsive layout" \\
+    --plan-branch="plan/build-conference-website" \\
+    --depends-on='["001"]' \\
+    --key-files='["css/styles.css"]' \\
+    --priority="medium"
+
+Output:
+  JSON with success status and task branch name (e.g., task/001-create-html-structure)
+        '''
+    )
+    parser.add_argument(
+        '--task-id',
+        required=True,
+        metavar='ID',
+        help='Unique task ID (e.g., "001", "002a"). Use zero-padded numbers for proper sorting.'
+    )
+    parser.add_argument(
+        '--description',
+        required=True,
+        metavar='TEXT',
+        help='Clear, specific task description (what needs to be done, not how). Will be slugified for branch name.'
+    )
+    parser.add_argument(
+        '--plan-branch',
+        required=True,
+        metavar='BRANCH',
+        help='Parent plan branch name (e.g., "plan/build-user-authentication"). Session ID is extracted from this.'
+    )
+    parser.add_argument(
+        '--depends-on',
+        default='[]',
+        metavar='JSON',
+        help='JSON array of upstream task IDs that must complete before this task (e.g., ["001", "002"]). Empty array [] means no dependencies.'
+    )
+    parser.add_argument(
+        '--key-files',
+        default='[]',
+        metavar='JSON',
+        help='JSON array of key files this task will create or modify (e.g., ["index.html", "css/styles.css"]). Use relative paths from project root.'
+    )
+    parser.add_argument(
+        '--priority',
+        default='medium',
+        metavar='LEVEL',
+        choices=['low', 'medium', 'high'],
+        help='Task priority: low, medium, or high. Default: medium'
+    )
 
     args = parser.parse_args()
 
     # Parse JSON
     try:
-        preconditions = json.loads(args.preconditions)
-        provides = json.loads(args.provides)
-        files = json.loads(args.files)
+        depends_on = json.loads(args.depends_on)
+        key_files = json.loads(args.key_files)
     except json.JSONDecodeError as e:
         print(json.dumps({"error": f"Invalid JSON: {e}"}), file=sys.stderr)
         return 1
@@ -135,13 +183,10 @@ def main():
     result = asyncio.run(create_task_branch(
         task_id=args.task_id,
         description=args.description,
-        session_id=args.session_id,
         plan_branch=args.plan_branch,
-        preconditions=preconditions,
-        provides=provides,
-        files=files,
-        priority=args.priority,
-        estimated_time=args.estimated_time
+        depends_on=depends_on,
+        key_files=key_files,
+        priority=args.priority
     ))
 
     print(json.dumps(result, indent=2))
