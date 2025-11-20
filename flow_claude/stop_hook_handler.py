@@ -137,11 +137,11 @@ worker_id_str = ", ".join(worker_ids)
 result = {
     "continue": True,
     "decision": "block",
-    "reason": f"{len(initial_pids)} background worker(s) still running (Worker IDs: {worker_id_str}). Wait for background tasks to finish.",
+    "reason": f"{len(initial_pids)} background worker(s) still running (Worker IDs: {worker_id_str}). sleep 5 mins and wait for background tasks to finish.",
     "details": {
         "running_workers": running_worker_info,
         "total_running": len(initial_pids),
-        "action_needed": "sleep 5 mins and Wait for workers to complete their tasks"
+        "action_needed": "Wait for workers to complete their tasks"
     }
 }
 

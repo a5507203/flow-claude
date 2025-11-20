@@ -40,7 +40,8 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
     results = {
         "skills": 0,
         "commands": 0,
-        "agents": 0
+        "agents": 0,
+        "settings": 0
     }
 
     # Create .claude directory structure
@@ -88,6 +89,22 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
             if verbose:
                 print(f"  [OK] Copied agent: user")
 
+    # Copy settings.local.json to .claude/ directory
+    settings_file = template_dir / 'settings.local.json'
+    if settings_file.exists():
+        dest_settings = claude_dir / 'settings.local.json'
+        if not dest_settings.exists():  # Don't overwrite existing settings
+            shutil.copy(settings_file, dest_settings)
+            results["settings"] = 1
+            if verbose:
+                print(f"  [OK] Copied settings.local.json")
+        else:
+            results["settings"] = 0
+            if verbose:
+                print(f"  [SKIP] settings.local.json already exists")
+    else:
+        results["settings"] = 0
+
     return results
 
 
@@ -105,111 +122,7 @@ def create_claude_md_template(project_root: Path) -> bool:
     if claude_md.exists():
         return False
 
-    content = """# Project AI Assistant
-
-This project uses Flow-Claude for autonomous development.
-
-## How to Use
-
-Simply describe your development request in Claude Code chat:
-
-```
-"Add user authentication with JWT"
-"Implement email validation"
-"Create API endpoint for user profile"
-```
-
-The orchestrator will automatically:
-1. Analyze your request
-2. Create an execution plan
-3. Decompose into tasks
-4. Execute tasks in parallel
-5. Merge results to flow branch
-
-## Architecture
-
-Flow-Claude uses a git-first architecture where:
-- **Plans** are stored as structured git commits
-- **Tasks** are executed on separate branches
-- **Workers** run in parallel git worktrees
-- **State** is tracked through commit history
-
-## Skills
-
-This project has access to the following skills:
-
-### Orchestrator Skill
-Main coordination logic for autonomous development.
-Location: `.claude/skills/orchestrator/skill.md`
-
-### Git Tools Skill
-Provides 7 tools for git-based state management.
-Location: `.claude/skills/git-tools/skill.md`
-
-### SDK Workers Skill
-Manages worker agents and MCP configuration.
-Location: `.claude/skills/launch-workers/skill.md`
-
-## Configuration
-
-### Autonomous Mode
-Toggle with `\\auto` command:
-- **OFF** (default): Asks for confirmation before executing
-- **ON**: Executes plans automatically
-
-Controlled by `.claude/agents/user.md` existence.
-
-### Max Parallel Workers
-Set with `\\parallel <1-10>` command.
-
-Default: 3 workers
-Location: `.claude/skills/orchestrator/skill.md` (YAML frontmatter)
-
-## Workflow
-
-When you make a development request:
-
-1. Orchestrator analyzes request
-2. Creates plan branch (`plan/session-*`)
-3. Creates task branches (`task/*`)
-4. Spawns workers in git worktrees
-5. Workers execute tasks in parallel
-6. Results merge to `flow` branch
-
-## Branches
-
-- `main/master`: Production code
-- `flow`: Development base (created by `flow` init)
-- `plan/session-*`: Execution plans
-- `task/*`: Individual tasks
-
-## Commands
-
-- `\\auto`: Toggle autonomous mode
-- `\\parallel <N>`: Set max parallel workers (1-10)
-
-## External MCP Tools
-
-Workers can access external MCP servers defined in `.mcp.json`.
-
-Example:
-```json
-{
-  "mcpServers": {
-    "playwright": {
-      "type": "stdio",
-      "command": "cmd",
-      "args": ["/c", "npx", "@playwright/mcp@latest"]
-    }
-  }
-}
-```
-
-Orchestrator creates dynamic worker agents (worker-01.md, worker-02.md, etc.) in `.claude/agents/` when needed, granting them access to required tools.
-
----
-
-**Ready to start?** Just describe what you want to build!
+    content = """Understand your-workflow and read the SKILL.md before working
 """
 
     claude_md.write_text(content, encoding='utf-8')
@@ -263,7 +176,7 @@ def main(verbose):
             print("  --> Continuing with template file creation...")
 
         # Step 2: Copy template files
-        print("\n[2/3] Creating Claude Code project structure...\n")
+        print("\n[2/4] Creating Claude Code project structure...\n")
         results = copy_template_files(project_root, verbose=verbose)
 
         if "error" in results:
@@ -275,9 +188,54 @@ def main(verbose):
             print(f"  [OK] Created {results['skills']} skills")
             print(f"  [OK] Created {results['commands']} commands")
             print(f"  [OK] Created {results['agents']} agent(s)")
+            if results.get('settings', 0) > 0:
+                print(f"  [OK] Copied settings.local.json")
 
-        # Step 3: Final instructions
-        print("\n[3/3] Initialization complete!\n")
+        # Step 3: Commit the changes to flow branch
+        print("\n[3/4] Committing Flow-Claude configuration to flow branch...\n")
+        try:
+            import subprocess
+
+            # Check current branch
+            result = subprocess.run(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                capture_output=True, text=True, check=True
+            )
+            current_branch = result.stdout.strip()
+
+            # Switch to flow branch if not already on it
+            if current_branch != 'flow':
+                print(f"  [INFO] Switching from '{current_branch}' to 'flow' branch...")
+                subprocess.run(['git', 'checkout', 'flow'], check=True, capture_output=True)
+                print(f"  [OK] Switched to 'flow' branch")
+
+            # Add all .claude files
+            subprocess.run(['git', 'add', '.claude/'], check=True)
+
+            # Commit the changes
+            commit_result = subprocess.run(
+                ['git', 'commit', '-m', 'Initialize Flow-Claude configuration\n\nAdded .claude/ directory with skills, commands, agents, and settings.'],
+                capture_output=True, text=True
+            )
+
+            if commit_result.returncode == 0:
+                print(f"  [OK] Committed Flow-Claude configuration to 'flow' branch")
+            else:
+                # Check if nothing to commit
+                if 'nothing to commit' in commit_result.stdout or 'nothing to commit' in commit_result.stderr:
+                    print(f"  [OK] Flow-Claude configuration already committed")
+                else:
+                    print(f"  [WARN] Could not commit: {commit_result.stderr.strip()}")
+
+        except subprocess.CalledProcessError as e:
+            print(f"  [WARN] Git commit failed: {e}")
+            print("  --> You can manually commit the .claude/ directory to flow branch")
+        except Exception as e:
+            print(f"  [WARN] Could not commit changes: {e}")
+            print("  --> You can manually commit the .claude/ directory to flow branch")
+
+        # Step 4: Final instructions
+        print("\n[4/4] Initialization complete!\n")
         print("=" * 60)
         print("\n[FILES] Project structure created:\n")
         print("  .claude/")
@@ -288,8 +246,9 @@ def main(verbose):
         print("    |-- commands/")
         print("    |   |-- auto.md          # Toggle autonomous mode")
         print("    |   +-- parallel.md      # Set max workers")
-        print("    +-- agents/")
-        print("        +-- user.md    # User confirmation agent")
+        print("    |-- agents/")
+        print("    |   +-- user.md          # User confirmation agent")
+        print("    +-- settings.local.json  # Claude Code settings")
         print("  CLAUDE.md                   # Main project instructions")
 
         print("\n[NEXT] Next steps:\n")
