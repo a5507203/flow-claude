@@ -30,7 +30,7 @@ description: |
     - **Immediately launch:** If idle workers + ready tasks exist:
       - Create task branch via `create_task_branch`
       - Create worktree via `git worktree add`
-      - Spawn worker via `launch_worker` with run_in_background=true
+      - Spawn worker via `launch_worker` with run_in_background=true and timeout be at least 60 mins for safety
   6. **Repeat:** Continue step 5 until all tasks complete
   7. **Final Report:** Generate session summary
 

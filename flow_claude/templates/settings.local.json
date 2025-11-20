@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git worktree:*)",
+      "Bash(while read dir)",
+      "Bash(for dir in .worktrees/*)",
+      "Bash(do git worktree remove *)",
+      "Skill(launch-workers)",
+      "Skill(git-tools)",
+      "Bash(mkdir:*)",
+      "Bash(git *)",
+      "Skill(your-workflow)",
+      "Bash(timeout /t *)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/Yu/Downloads/flow-claude/flow_claude/stop_hook_handler.py",
+            "timeout": 100000
+          }
+        ]
+      }
+    ]
+  }
+}
