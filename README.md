@@ -20,13 +20,38 @@ pip install flow-claude
 
 ### 1. Initialize Your Project
 
-Navigate to your git repository and run:
+Navigate to your git repository and initialize Flow-Claude:
 
+**Method 1: Using Python Module (Works Immediately)**
+```bash
+python -m flow_claude.commands.flow_cli
+```
+
+**Method 2: Using `flow` Command (Requires PATH Setup)**
+
+On **Windows**, add Python Scripts to PATH first:
+```powershell
+# Find your Python Scripts directory
+python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
+
+# Add to PATH (PowerShell - current session)
+$env:PATH += ";C:\Users\YourUsername\AppData\Roaming\Python\Python3XX\Scripts"
+
+# Or add permanently via System Environment Variables
+# Then run:
+flow init
+```
+
+On **Linux/Mac**, `flow` command works immediately after pip install:
 ```bash
 flow init
 ```
 
-This creates the `.claude/` directory structure with skills, commands, and settings.
+**What happens during initialization:**
+- Interactive UI to select base branch for `flow` branch (if needed)
+- Automatic CLAUDE.md creation/update with Flow-Claude instruction
+- `.claude/` directory created with skills, commands, agents, and settings
+- All changes committed to `flow` branch
 
 ### 2. Open in Claude Code
 
@@ -103,24 +128,47 @@ Set maximum parallel workers (1-10, default: 3):
 \parallel 5
 ```
 
-## Commands
+## Usage
 
-### CLI
+### Initialization
 
+**Option 1: Python Module (Recommended for Windows)**
 ```bash
-# Initialize project
-flow init
-
-# Initialize with verbose output
-flow init --verbose
+python -m flow_claude.commands.flow_cli
 ```
 
-### Python Module
-
+**Option 2: Direct Command (After PATH Setup)**
 ```bash
-# After pip install -e .
-python -m flow_claude.commands.flow_cli
-python -m flow_claude.commands.flow_cli --verbose
+flow init
+```
+
+### Setting up PATH on Windows
+
+If you want to use the `flow` command directly:
+
+1. **Find your Python Scripts directory:**
+```bash
+python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
+```
+
+2. **Add to PATH:**
+   - **Temporary (current PowerShell session):**
+     ```powershell
+     $env:PATH += ";C:\Users\YourUsername\AppData\Roaming\Python\Python3XX\Scripts"
+     ```
+   - **Permanent:**
+     1. Open System Properties → Environment Variables
+     2. Edit `Path` variable
+     3. Add your Python Scripts directory
+     4. Restart terminal
+
+### Configuration Commands
+
+Once initialized, use these slash commands in Claude Code:
+
+```
+\auto       - Toggle autonomous mode (ON/OFF)
+\parallel 5 - Set max parallel workers (1-10)
 ```
 
 ## Project Structure
@@ -224,14 +272,47 @@ python -m flow_claude.scripts.create_task_branch \
 git clone https://github.com/yourusername/flow-claude.git
 cd flow-claude
 
-# Install in editable mode
+# Install in editable mode (from src/ layout)
 pip install -e .
+
+# After installation, run with:
+python -m flow_claude.commands.flow_cli
+
+# Or (if PATH configured):
+flow init
 
 # Run tests
 pytest
 
 # Lint
 ruff check .
+```
+
+## Troubleshooting
+
+### Windows: 'flow' command not found
+
+**Solution:** Use `python -m flow_claude.commands.flow_cli` or add Python Scripts to PATH:
+```powershell
+# Find Scripts location
+python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
+
+# Add to PATH (see "Setting up PATH on Windows" section)
+```
+
+### Import Error after installation
+
+**Solution:** Reinstall in editable mode:
+```bash
+pip install -e .
+```
+
+### Setup UI issues
+
+The setup UI uses Textual for interactive branch selection. If you encounter issues:
+```bash
+# Install with UI dependencies
+pip install flow-claude[setup-ui]
 ```
 
 ## License
@@ -249,4 +330,14 @@ Contributions welcome! Please open an issue or submit a pull request.
 
 ---
 
-**Ready to start?** Run `flow init` in your project and describe what you want to build!
+**Ready to start?**
+
+```bash
+# Run initialization
+python -m flow_claude.commands.flow_cli
+
+# Or (with PATH configured)
+flow init
+```
+
+Then open your project in Claude Code and describe what you want to build!
