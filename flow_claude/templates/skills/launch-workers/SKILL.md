@@ -3,7 +3,7 @@ name: launch-workers
 description: |
   Worker management for parallel task execution. Provides the `launch_worker` command-line tool for spawning worker agents in git worktrees.
 
-  IMPORTANT: Always run launch_worker with `run_in_background=true` using the Bash tool so workers execute in parallel without blocking.
+  IMPORTANT: Always run launch_worker with `run_in_background=true` using the Bash tool so workers execute in parallel without blocking, the timeout should be 60 mins for safety.
 
   WORKER LIFECYCLE:
   1. Progressive commit - worker commits all progress to the task branch
