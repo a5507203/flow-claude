@@ -141,7 +141,7 @@ result = {
     "details": {
         "running_workers": running_worker_info,
         "total_running": len(initial_pids),
-        "action_needed": "Wait for workers to complete their tasks"
+        "action_needed": "sleep 5 mins and Wait for workers to complete their tasks"
     }
 }
 

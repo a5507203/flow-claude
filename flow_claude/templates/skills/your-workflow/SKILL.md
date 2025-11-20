@@ -5,7 +5,7 @@ description: |
 
 
   YOUR GENERAL WORKFLOW:
-  1. **Initial Planning:** Analyze user request → design execution plan with all tasks
+  1. **Initial Planning:** Analyze the user request and design an execution plan with tasks of approximately 10 minutes each. It is better to desgin the each task self contained and diferent tasks less dependent which allow a pareallel workflow and allow multiple workers can work in parallel.
   2. **Check autonomous mode:** If User subagent EXISTS: present plan & wait for approval. If MISSING: execute automatically
   3. **Create Plan Branch:** Call `create_plan_branch` (stores plan, not task branches)
   4. **Start Initial Tasks:**

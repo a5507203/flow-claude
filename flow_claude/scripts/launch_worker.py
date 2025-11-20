@@ -256,7 +256,7 @@ async def run_worker(worker_id: str, task_branch: str,
         )
 
         # Worker will read task instruction from the task branch's first commit
-        prompt = f"You are worker {worker_id}. Read your task instruction from task branch {task_branch} using read_task_metadata, then complete the task."
+        prompt = f"You are worker {worker_id}. 1. Read your workflow {worker_prompt_file} before implement 2. find your task from task branch {task_branch} using read_task_metadata, then complete the task."
 
 
 
