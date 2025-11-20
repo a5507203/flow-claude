@@ -22,12 +22,12 @@ def copy_template_files(project_root: Path) -> dict:
     Returns:
         Dict with counts of files copied
     """
-    import pkg_resources
+    from importlib.resources import files
 
     # Get templates directory from package
     try:
         # Try to get from installed package
-        template_dir = Path(pkg_resources.resource_filename('flow_claude', 'templates'))
+        template_dir = Path(files('flow_claude') / 'templates')
     except:
         # Fallback to relative path (development mode)
         template_dir = Path(__file__).parent.parent / 'templates'
