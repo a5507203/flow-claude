@@ -168,9 +168,9 @@ async def run_worker(worker_id: str, task_branch: str,
     plan_branch = session_info['plan_branch']
     session_id = plan_branch.replace('plan/', '') if plan_branch.startswith('plan/') else plan_branch
 
-    print(f"[Worker-{worker_id}] Starting...")
-    print(f"[Worker-{worker_id}]   Task branch: {task_branch}")
-    print(f"[Worker-{worker_id}]   Session: {session_id}")
+    print(f"[Worker-{worker_id}] Starting...", flush=True)
+    print(f"[Worker-{worker_id}]   Task branch: {task_branch}", flush=True)
+    print(f"[Worker-{worker_id}]   Session: {session_id}", flush=True)
 
     # VALIDATION: Validate parameters before expensive SDK initialization
     validation_success, validation_error = _validate_worker_params(
@@ -180,7 +180,7 @@ async def run_worker(worker_id: str, task_branch: str,
     if not validation_success:
         # Validation failed - report error
         error_msg = f"Worker-{worker_id} validation failed: {validation_error}"
-        print(f"[Worker-{worker_id}] ERROR: {error_msg}")
+        print(f"[Worker-{worker_id}] ERROR: {error_msg}", flush=True)
         return
     # Convert to absolute path (support both relative and absolute input)
     # Orchestrator typically provides relative path like ".worktrees/worker-1"
@@ -193,7 +193,7 @@ async def run_worker(worker_id: str, task_branch: str,
 
     # Resolve to canonical absolute path
     working_dir = working_dir.resolve()
-    print(f"[Worker-{worker_id}]   Working directory: {working_dir}")
+    print(f"[Worker-{worker_id}]   Working directory: {working_dir}", flush=True)
 
     # Determine worker prompt file path
     from importlib.resources import files
@@ -228,7 +228,7 @@ async def run_worker(worker_id: str, task_branch: str,
         # Remove AskUserQuestion if accidentally added - workers must be autonomous
         if 'AskUserQuestion' in worker_allowed_tools:
             worker_allowed_tools.remove('AskUserQuestion')
-            print(f"[Worker-{worker_id}] Warning: Removed AskUserQuestion tool - workers must work autonomously")
+            print(f"[Worker-{worker_id}] Warning: Removed AskUserQuestion tool - workers must work autonomously", flush=True)
 
         # Build MCP servers configuration for this worker
         # Uses helper function to load .mcp.json and filter based on allowed_tools
@@ -240,7 +240,7 @@ async def run_worker(worker_id: str, task_branch: str,
         if not cli_path and os.name == 'nt':  # Windows fallback
             cli_path = shutil.which('claude.cmd')
 
-        print(f"[Worker-{worker_id}] Claude CLI path: {cli_path}")
+        print(f"[Worker-{worker_id}] Claude CLI path: {cli_path}", flush=True)
 
         # Create worker-specific options
         options = ClaudeAgentOptions(
@@ -266,7 +266,7 @@ async def run_worker(worker_id: str, task_branch: str,
 
         # Execute worker using query() function
         try:
-            print(f"[Worker-{worker_id}] Initializing Claude SDK...")
+            print(f"[Worker-{worker_id}] Initializing Claude SDK...", flush=True)
 
             async for message in query(prompt=prompt, options=options):
                 message_count += 1
@@ -274,36 +274,36 @@ async def run_worker(worker_id: str, task_branch: str,
                 # Mark initialization as successful after first message
                 if not first_message_received:
                     first_message_received = True
-                    print(f"[Worker-{worker_id}] Initialized successfully (first message received)")
+                    print(f"[Worker-{worker_id}] Initialized successfully (first message received)", flush=True)
 
                 # Handle message display (parse, format, log)
-                print(message)
+                print(message, flush=True)
 
         except Exception as sdk_error:
             # Distinguish between initialization and runtime errors
             if not first_message_received:
                 # Initialization error - SDK failed before first message
                 error_phase = "initialization"
-                print(f"[Worker-{worker_id}] INITIALIZATION ERROR")
-                print(f"[Worker-{worker_id}]   SDK failed before receiving first message")
-                print(f"[Worker-{worker_id}]   This usually indicates:")
-                print(f"[Worker-{worker_id}]     - Working directory issues (doesn't exist, not accessible)")
-                print(f"[Worker-{worker_id}]     - Git repository issues (invalid worktree)")
-                print(f"[Worker-{worker_id}]     - Claude CLI configuration issues")
-                print(f"[Worker-{worker_id}]     - Permission or path problems")
-                print(f"[Worker-{worker_id}]     - MCP server initialization failures")
+                print(f"[Worker-{worker_id}] INITIALIZATION ERROR", flush=True)
+                print(f"[Worker-{worker_id}]   SDK failed before receiving first message", flush=True)
+                print(f"[Worker-{worker_id}]   This usually indicates:", flush=True)
+                print(f"[Worker-{worker_id}]     - Working directory issues (doesn't exist, not accessible)", flush=True)
+                print(f"[Worker-{worker_id}]     - Git repository issues (invalid worktree)", flush=True)
+                print(f"[Worker-{worker_id}]     - Claude CLI configuration issues", flush=True)
+                print(f"[Worker-{worker_id}]     - Permission or path problems", flush=True)
+                print(f"[Worker-{worker_id}]     - MCP server initialization failures", flush=True)
             else:
                 # Runtime error - SDK failed after receiving messages
                 error_phase = "runtime"
-                print(f"[Worker-{worker_id}] RUNTIME ERROR")
-                print(f"[Worker-{worker_id}]   Worker was running successfully ({message_count} messages processed)")
-                print(f"[Worker-{worker_id}]   Error occurred during execution")
+                print(f"[Worker-{worker_id}] RUNTIME ERROR", flush=True)
+                print(f"[Worker-{worker_id}]   Worker was running successfully ({message_count} messages processed)", flush=True)
+                print(f"[Worker-{worker_id}]   Error occurred during execution", flush=True)
 
             # Re-raise to be handled by main exception handler
             raise sdk_error
 
         # Query completed naturally
-        print(f"[Worker-{worker_id}] Completed task {task_branch}")
+        print(f"[Worker-{worker_id}] Completed task {task_branch}", flush=True)
         return
 
     except Exception as e:
@@ -395,12 +395,12 @@ async def run_worker(worker_id: str, task_branch: str,
             diagnostic_info.append(f"  - Could not collect environment info: {env_error}")
 
         # Log comprehensive error information
-        print(f"[Worker-{worker_id}] ===== WORKER ERROR DIAGNOSTIC =====")
+        print(f"[Worker-{worker_id}] ===== WORKER ERROR DIAGNOSTIC =====", flush=True)
         for line in diagnostic_info:
-            print(f"[Worker-{worker_id}] {line}")
-        print(f"[Worker-{worker_id}] ===== TRACEBACK =====")
-        print(f"{error_traceback}")
-        print(f"[Worker-{worker_id}] ===== END DIAGNOSTIC =====")
+            print(f"[Worker-{worker_id}] {line}", flush=True)
+        print(f"[Worker-{worker_id}] ===== TRACEBACK =====", flush=True)
+        print(f"{error_traceback}", flush=True)
+        print(f"[Worker-{worker_id}] ===== END DIAGNOSTIC =====", flush=True)
 
 
 async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -436,7 +436,7 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         if not validation_success:
             # Validation failed - return error immediately to orchestrator
             error_msg = f"Worker-{worker_id} validation failed: {validation_error}"
-            print(f"[SDKWorkerManager] ERROR: {error_msg}")
+            print(f"[SDKWorkerManager] ERROR: {error_msg}", flush=True)
 
             return {
                 "content": [{
@@ -447,7 +447,7 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
             }
 
         # Validation passed - run worker synchronously
-        print(f"[launch_worker] Starting worker-{worker_id} synchronously...")
+        print(f"[launch_worker] Starting worker-{worker_id} synchronously...", flush=True)
 
         await run_worker(
             worker_id,
@@ -457,7 +457,7 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
             args.get("allowed_tools")  # Optional additional tools to allow
         )
 
-        print(f"[launch_worker] Worker-{worker_id} completed")
+        print(f"[launch_worker] Worker-{worker_id} completed", flush=True)
 
         # Return success message after worker completes
         return {
