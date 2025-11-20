@@ -11,14 +11,13 @@ import click
 from pathlib import Path
 
 
-def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
+def copy_template_files(project_root: Path) -> dict:
     """Copy template files to project directory.
 
     Creates .claude/ directory structure and copies all templates.
 
     Args:
         project_root: Project root directory
-        verbose: Print detailed progress
 
     Returns:
         Dict with counts of files copied
@@ -66,8 +65,6 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
                 if skill_file.exists():
                     shutil.copy(skill_file, dest_dir / 'SKILL.md')
                     results["skills"] += 1
-                    if verbose:
-                        print(f"  [OK] Copied skill: {skill_dir.name}")
 
     # Copy commands
     commands_src = template_dir / 'commands'
@@ -75,8 +72,6 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
         for cmd_file in commands_src.glob('*.md'):
             shutil.copy(cmd_file, claude_dir / 'commands' / cmd_file.name)
             results["commands"] += 1
-            if verbose:
-                print(f"  [OK] Copied command: {cmd_file.stem}")
 
     # Copy agents
     agents_src = template_dir / 'agents'
@@ -86,8 +81,6 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
         if user_proxy.exists():
             shutil.copy(user_proxy, claude_dir / 'agents' / 'user.md')
             results["agents"] += 1
-            if verbose:
-                print(f"  [OK] Copied agent: user")
 
     # Copy settings.local.json to .claude/ directory
     settings_file = template_dir / 'settings.local.json'
@@ -96,12 +89,8 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
         if not dest_settings.exists():  # Don't overwrite existing settings
             shutil.copy(settings_file, dest_settings)
             results["settings"] = 1
-            if verbose:
-                print(f"  [OK] Copied settings.local.json")
         else:
             results["settings"] = 0
-            if verbose:
-                print(f"  [SKIP] settings.local.json already exists")
     else:
         results["settings"] = 0
 
@@ -109,9 +98,7 @@ def copy_template_files(project_root: Path, verbose: bool = False) -> dict:
 
 
 @click.command()
-@click.option('--verbose', is_flag=True,
-              help='Show detailed progress')
-def main(verbose):
+def main():
     """
     Initialize Flow-Claude for Claude Code UI.
 
@@ -149,26 +136,22 @@ def main(verbose):
 
         except Exception as e:
             print(f"  [WARN] Warning: Setup UI encountered an issue: {e}")
-            if verbose:
-                import traceback
-                traceback.print_exc()
             print("  --> Continuing with template file creation...")
 
         # Step 2: Copy template files
         print("\n[2/4] Creating Claude Code project structure...\n")
-        results = copy_template_files(project_root, verbose=verbose)
+        results = copy_template_files(project_root)
 
         if "error" in results:
             print(f"  [ERROR] Error: {results['error']}")
             sys.exit(1)
 
-        if not verbose:
-            # Summary output
-            print(f"  [OK] Created {results['skills']} skills")
-            print(f"  [OK] Created {results['commands']} commands")
-            print(f"  [OK] Created {results['agents']} agent(s)")
-            if results.get('settings', 0) > 0:
-                print(f"  [OK] Copied settings.local.json")
+        # Summary output
+        print(f"  [OK] Created {results['skills']} skills")
+        print(f"  [OK] Created {results['commands']} commands")
+        print(f"  [OK] Created {results['agents']} agent(s)")
+        if results.get('settings', 0) > 0:
+            print(f"  [OK] Copied settings.local.json")
 
         # Step 3: Commit the changes to flow branch
         print("\n[3/4] Committing Flow-Claude configuration to flow branch...\n")
@@ -217,44 +200,25 @@ def main(verbose):
         print("\n[4/4] Initialization complete!\n")
         print("=" * 60)
         print("\n[FILES] Project structure created:\n")
-        print("  .claude/")
-        print("    |-- skills/")
-        print("    |   |-- git-tools/       # Git state management")
-        print("    |   |-- launch-workers/     # Worker coordination")
-        print("    |   +-- orchestrator/    # Main orchestrator")
-        print("    |-- commands/")
-        print("    |   |-- auto.md          # Toggle autonomous mode")
-        print("    |   +-- parallel.md      # Set max workers")
-        print("    |-- agents/")
-        print("    |   +-- user.md          # User confirmation agent")
-        print("    +-- settings.local.json  # Claude Code settings")
-        print("  CLAUDE.md                   # Main project instructions")
+
+        print("[CONFIG] Configuration:\n")
+        print("  - Autonomous mode: OFF (type \\auto to toggle)")
+        print("  - Max parallel workers: 5 (type \\parallel <N> to change)")
+        print("  - Flow branch: 'flow' (all development happens here)")
+        print("\n[OK] Initialization complete.\n")
+        print("=" * 60)
 
         print("\n[NEXT] Next steps:\n")
         print("  1. Open this project in Claude Code UI")
         print("  2. Start a chat and describe what you want to build")
         print("  3. The orchestrator will handle the rest!\n")
-
-        print("[CONFIG] Configuration:\n")
-        print("  - Autonomous mode: OFF (type \\auto to toggle)")
-        print("  - Max parallel workers: 3 (type \\parallel <N> to change)")
-        print("  - Flow branch: 'flow' (all development happens here)")
-
-        print("\n[EXAMPLE] Example request:\n")
-        print('  "Add user authentication with JWT and bcrypt"\n')
-
-        print("=" * 60)
-        print("\n[OK] Initialization complete. Happy coding!\n")
-
+        print("\n Happy vibe coding!\n")
     except ImportError as e:
         print(f"ERROR: Required module not found: {e}", file=sys.stderr)
         print("Install Flow-Claude with: pip install -e .", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         print(f"ERROR: Initialization failed: {e}", file=sys.stderr)
-        if verbose:
-            import traceback
-            traceback.print_exc()
         sys.exit(1)
 
 
