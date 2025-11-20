@@ -42,7 +42,8 @@
       "Bash(do echo \"[$script]\")",
       "Bash(echo:*)",
       "Bash(for script in create_plan_branch parse_plan create_task_branch parse_task get_provides update_plan_branch launch_worker get_worker_status parse_worker_commit stop_worker)",
-      "Bash(do echo \"\")"
+      "Bash(do echo \"\")",
+      "WebFetch(domain:packaging.python.org)"
     ],
     "deny": [],
     "ask": []

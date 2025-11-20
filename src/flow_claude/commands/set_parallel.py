@@ -38,7 +38,7 @@ def set_parallel_workers(num_workers: int, project_root: Path = None) -> dict:
     content = skill_file.read_text(encoding='utf-8')
 
     # Update the description line
-    pattern = r'(description:.*Max number of parallel workers is )\d+'
+    pattern = r'(description:.*Max parallel workers: )\d+'
     replacement = rf'\g<1>{num_workers}'
 
     new_content, count = re.subn(pattern, replacement, content)
@@ -46,7 +46,7 @@ def set_parallel_workers(num_workers: int, project_root: Path = None) -> dict:
     if count == 0:
         return {
             'success': False,
-            'message': 'Error: Could not find "Max number of parallel workers is X" in description'
+            'message': 'Error: Could not find "Max parallel workers: X" in description'
         }
 
     # Write back
@@ -54,7 +54,7 @@ def set_parallel_workers(num_workers: int, project_root: Path = None) -> dict:
 
     return {
         'success': True,
-        'message': f'Max parallel workers set to {num_workers}'
+        'message': f'Max parallel workers set to {num_workers}, plrease restart the claude.'
     }
 
 

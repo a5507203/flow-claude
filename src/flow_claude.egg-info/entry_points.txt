@@ -1,0 +1,4 @@
+[console_scripts]
+flow = flow_claude.commands.flow_cli:main
+flow-auto = flow_claude.commands.toggle_auto:main
+flow-claude = flow_claude.commands.flow_cli:main

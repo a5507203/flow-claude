@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "Bash(dir:*)",
+      "Bash(mkdir:*)",
       "Bash(git worktree:*)",
       "Bash(while read dir)",
       "Bash(for dir in .worktrees/*)",
