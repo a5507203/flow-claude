@@ -98,13 +98,17 @@ def build_worker_mcp_servers(working_dir: Path, allowed_tools: Optional[List[str
     return worker_mcp_servers
 
 
-def _validate_worker_params(worker_id: str, task_branch: str,
-                            session_info: Dict[str, Any],
-                            cwd: str, instructions: str) -> tuple[bool, Optional[str]]:
-    """Validate worker parameters before launching.
+def _validate_worker_params(
+    worker_id: str,
+    task_branch: str,
+    session_info: Dict[str, Any],
+    cwd: str,
+    instructions: str
+) -> tuple[bool, Optional[str]]:
+    """Validate essential worker parameters before launching.
 
-    Performs comprehensive validation to catch errors early before expensive
-    SDK initialization. Returns validation result and error message.
+    Performs minimal validation to catch critical errors early before expensive
+    SDK initialization (fail fast).
 
     Args:
         worker_id: Worker identifier
@@ -118,38 +122,16 @@ def _validate_worker_params(worker_id: str, task_branch: str,
         - (True, None) if all validations pass
         - (False, error_msg) if validation fails
     """
-    import re
     import subprocess
 
-    # Validate worker_id format (should be numeric string)
-    if not re.match(r'^\d+$', worker_id):
-        return False, f"Worker ID must be numeric string (e.g., '1', '2'), got: {worker_id!r}"
-
-    # Validate session_info has required fields
-    if not isinstance(session_info, dict):
-        return False, f"session_info must be dict, got: {type(session_info).__name__}"
-
-    required_session_fields = ['session_id', 'plan_branch', 'model']
-    for field in required_session_fields:
-        if field not in session_info:
-            return False, f"session_info missing required field: {field!r}"
-        if not session_info[field]:
-            return False, f"session_info field {field!r} is empty"
-
-    # Validate model is valid
-    valid_models = ['sonnet', 'opus', 'haiku']
-    model = session_info.get('model', '').lower()
-    if model not in valid_models:
-        return False, f"Invalid model {model!r}, must be one of: {valid_models}"
-
-    # Validate task_branch exists in git
+    # Validate task_branch exists in git (fail fast - avoid wasting SDK initialization)
     try:
         result = subprocess.run(
             ['git', 'rev-parse', '--verify', task_branch],
             capture_output=True,
             text=True,
             timeout=5,
-            cwd=Path.cwd()  # Check from main repo
+            cwd=Path.cwd()
         )
         if result.returncode != 0:
             return False, f"Task branch {task_branch!r} does not exist in git repository"
@@ -158,41 +140,17 @@ def _validate_worker_params(worker_id: str, task_branch: str,
     except Exception as e:
         return False, f"Failed to verify task branch {task_branch!r}: {e}"
 
-    # Validate working directory
+    # Validate working directory exists and is a git repository
     working_dir = Path(cwd)
     if not working_dir.exists():
         return False, f"Working directory does not exist: {cwd}"
 
     if not working_dir.is_dir():
-        return False, f"Working directory path is not a directory: {cwd}"
+        return False, f"Working directory is not a directory: {cwd}"
 
-    # Check if it's accessible
-    if not os.access(working_dir, os.R_OK | os.X_OK):
-        return False, f"Working directory not accessible (read/execute permissions required): {cwd}"
-
-    # Validate it's a git repository (worktree or regular)
     git_dir = working_dir / '.git'
     if not git_dir.exists():
-        return False, f"Working directory is not a git repository (no .git): {cwd}"
-
-    # Validate instruction file exists and is readable
-    # Check for package template first, then fall back to worktree
-    import pkg_resources
-    try:
-        worker_template_file = pkg_resources.resource_filename('flow_claude', 'templates/agents/worker-template.md')
-        instruction_file = Path(worker_template_file)
-    except:
-        # Fallback to worktree location
-        instruction_file = working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md'
-
-    if not instruction_file.exists():
-        return False, f"Worker instruction file not found: {instruction_file}"
-
-    if not instruction_file.is_file():
-        return False, f"Worker instruction file is not a regular file: {instruction_file}"
-
-    if not os.access(instruction_file, os.R_OK):
-        return False, f"Worker instruction file not readable: {instruction_file}"
+        return False, f"Not a git repository (no .git): {cwd}"
 
     # Validate instructions aren't empty
     if not instructions or not instructions.strip():
@@ -202,23 +160,31 @@ def _validate_worker_params(worker_id: str, task_branch: str,
     return True, None
 
 
-async def run_worker(worker_id: str, task_branch: str,
-                    session_info: Dict[str, Any],
-                    cwd: str, instructions: str,
-                    allowed_tools: Optional[List[str]] = None) -> None:
+async def run_worker(
+    worker_id: str,
+    task_branch: str,
+    session_info: Dict[str, Any],
+    cwd: str,
+    instructions: str,
+    allowed_tools: Optional[List[str]] = None
+) -> None:
     """Run a single worker using SDK query() function.
 
     Args:
         worker_id: Worker identifier (e.g., "1", "2")
         task_branch: Git branch for the task
-        session_info: Session metadata (session_id, plan_branch, model)
+        session_info: Session metadata (plan_branch, model). session_id is extracted from plan_branch.
         cwd: Working directory - the worktree path where worker operates (REQUIRED - absolute path)
         instructions: Task-specific instructions written by the orchestrator LLM
         allowed_tools: Optional list of additional MCP tools to allow beyond core tools
     """
+    # Extract session_id from plan_branch
+    plan_branch = session_info['plan_branch']
+    session_id = plan_branch.replace('plan/', '') if plan_branch.startswith('plan/') else plan_branch
+
     print(f"[Worker-{worker_id}] Starting...")
     print(f"[Worker-{worker_id}]   Task branch: {task_branch}")
-    print(f"[Worker-{worker_id}]   Session: {session_info['session_id']}")
+    print(f"[Worker-{worker_id}]   Session: {session_id}")
 
     # VALIDATION: Validate parameters before expensive SDK initialization
     validation_success, validation_error = _validate_worker_params(
@@ -244,12 +210,9 @@ async def run_worker(worker_id: str, task_branch: str,
     print(f"[Worker-{worker_id}]   Working directory: {working_dir}")
 
     # Determine worker prompt file path
-    import pkg_resources
-    try:
-        worker_prompt_file = pkg_resources.resource_filename('flow_claude', 'templates/agents/worker-template.md')
-    except:
-        # Fallback to worktree if package resource not found
-        worker_prompt_file = str(working_dir / '.flow-claude' / 'WORKER_INSTRUCTIONS.md')
+    from importlib.resources import files
+
+    worker_prompt_file = str(files('flow_claude').joinpath('templates/agents/worker-template.md'))
 
     try:
         worker_prompt = {
@@ -462,7 +425,7 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
 
     Args:
         args: Dict with worker_id, task_branch, cwd (relative or absolute path to worktree),
-              session_id, plan_branch, model, and instructions.
+              plan_branch, model, and instructions. session_id is extracted from plan_branch.
               Relative paths are resolved relative to project root.
 
     Returns:
@@ -477,7 +440,6 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         cwd = args["cwd"]
         instructions = args["instructions"]
         session_info = {
-            'session_id': args["session_id"],
             'plan_branch': args["plan_branch"],
             'model': args.get("model", "sonnet")
         }
@@ -533,7 +495,7 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def main():
+def main() -> int:
     """CLI entry point."""
     import argparse
     import sys
@@ -542,8 +504,7 @@ def main():
     parser.add_argument('--worker-id', required=True, help='Worker ID (e.g., "1", "2")')
     parser.add_argument('--task-branch', required=True, help='Task branch name')
     parser.add_argument('--cwd', required=True, help='Working directory (worktree path)')
-    parser.add_argument('--session-id', required=True, help='Session ID')
-    parser.add_argument('--plan-branch', required=True, help='Plan branch name')
+    parser.add_argument('--plan-branch', required=True, help='Plan branch name (session ID extracted from this)')
     parser.add_argument('--model', default='sonnet', help='Claude model (sonnet, opus, haiku)')
     parser.add_argument('--instructions', required=True, help='Task instructions')
 
@@ -554,7 +515,6 @@ def main():
         "worker_id": args.worker_id,
         "task_branch": args.task_branch,
         "cwd": args.cwd,
-        "session_id": args.session_id,
         "plan_branch": args.plan_branch,
         "model": args.model,
         "instructions": args.instructions
