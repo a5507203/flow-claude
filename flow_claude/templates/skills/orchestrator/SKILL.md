@@ -33,7 +33,7 @@ When a user makes a development request, follow this workflow:
    - Launch workers using `launch_worker` script (up to max_parallel limit)
    - Monitor worker progress using `get_worker_status` script
    - When a worker completes:
-     - Parse the worker's final commit using `parse_worker_commit`
+     - Parse the worker's final commit using `parse_latest_branch_commit`
      - Clean up the worktree: `git worktree remove .worktrees/worker-N`
      - Update the plan using `update_plan_branch`
      - Launch the next available task if any remain
@@ -46,9 +46,9 @@ From **git-tools** skill:
 - `python -m flow_claude.scripts.create_plan_branch` - Create execution plan
 - `python -m flow_claude.scripts.create_task_branch` - Create task branches
 - `python -m flow_claude.scripts.update_plan_branch` - Update plan with completed tasks
-- `python -m flow_claude.scripts.parse_plan` - Read current plan state
-- `python -m flow_claude.scripts.parse_task` - Read task metadata
-- `python -m flow_claude.scripts.get_provides` - Query completed tasks (may be redesigned or removed)
+- `python -m flow_claude.scripts.read_plan_metadata` - Read current plan state
+- `python -m flow_claude.scripts.read_task_metadata` - Read task metadata
+- `python -m flow_claude.scripts.parse_latest_branch_commit` - Read latest commit on any branch
 
 From **sdk-workers** skill:
 - `python -m flow_claude.scripts.launch_worker` - Launch task worker
@@ -144,19 +144,19 @@ git worktree add .worktrees/worker-3 task/003-create-jwt-tokens
 
 # Launch workers
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="1" --task-branch="task/001-create-user-model" \
+  --worker-id=1 --task-branch="task/001-create-user-model" \
   --cwd=".worktrees/worker-1" --plan-branch="plan/add-user-authentication" \
-  --model="sonnet"
+  --model="sonnet" --instructions="Complete task 001..."
 
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="2" --task-branch="task/002-implement-password-hashing" \
+  --worker-id=2 --task-branch="task/002-implement-password-hashing" \
   --cwd=".worktrees/worker-2" --plan-branch="plan/add-user-authentication" \
-  --model="sonnet"
+  --model="sonnet" --instructions="Complete task 002..."
 
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="3" --task-branch="task/003-create-jwt-tokens" \
+  --worker-id=3 --task-branch="task/003-create-jwt-tokens" \
   --cwd=".worktrees/worker-3" --plan-branch="plan/add-user-authentication" \
-  --model="sonnet"
+  --model="sonnet" --instructions="Complete task 003..."
 ```
 
 **Step 3: Monitor and Handle Completion**
@@ -166,7 +166,7 @@ python -m flow_claude.scripts.get_worker_status
 
 # When worker 2 completes first:
 # 1. Parse final commit
-python -m flow_claude.scripts.parse_worker_commit --branch="task/002-implement-password-hashing"
+python -m flow_claude.scripts.parse_latest_branch_commit --branch="task/002-implement-password-hashing"
 
 # 2. Clean up worktree
 git worktree remove .worktrees/worker-2
@@ -184,18 +184,18 @@ python -m flow_claude.scripts.update_plan_branch \
 # Create task branch for task 004
 python -m flow_claude.scripts.create_task_branch \
   --task-id="004" --description="Implement registration endpoint" \
-  --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" \
-  --preconditions='["User model", "hash_password function"]' \
-  --provides='["POST /api/register endpoint"]' \
-  --files='["src/api/auth.py"]'
+  --plan-branch="plan/add-user-authentication" \
+  --depends-on='["001", "002"]' \
+  --key-files='["src/api/auth.py"]' \
+  --priority="medium"
 
 # Create worktree and launch worker
 git worktree add .worktrees/worker-1 task/004-implement-registration
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="1" --task-branch="task/004-implement-registration" \
-  --cwd=".worktrees/worker-1" --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" --model="sonnet"
+  --worker-id=1 --task-branch="task/004-implement-registration" \
+  --cwd=".worktrees/worker-1" \
+  --plan-branch="plan/add-user-authentication" --model="sonnet" \
+  --instructions="Complete task 004..."
 ```
 
 ### Example 2: Checking Autonomous Mode
@@ -230,17 +230,15 @@ git worktree remove .worktrees/worker-1
 # Option 3: Retry with different approach
 ```
 
-### Example 4: Query Available Capabilities
+### Example 4: Checking Task Progress
 
 ```bash
-# Before creating tasks that have dependencies, check what's available
-python -m flow_claude.scripts.get_provides
+# Read latest commit on a task branch to check progress
+python -m flow_claude.scripts.parse_latest_branch_commit --branch="task/002-implement-password-hashing"
 
-# Output shows what previous tasks have provided:
-# {
-#   "provides": ["User model", "hash_password function", "verify_password function"],
-#   "tasks_scanned": 2
-# }
+# Read original task metadata
+python -m flow_claude.scripts.read_task_metadata --branch="task/002-implement-password-hashing"
 
-# Use this to verify preconditions are met before launching dependent tasks
+# Output shows task definition and current state
+# Use this to track task status and verify dependencies
 ```

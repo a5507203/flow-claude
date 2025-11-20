@@ -12,7 +12,7 @@ This skill provides 2 command-line tools for managing worker agents that execute
 ### Available Commands
 
 - `launch_worker` - Launch a worker agent to execute a specific task
-- `parse_worker_commit` - Parse worker's progress from commits
+- `parse_latest_branch_commit` - Read latest commit from any branch (for monitoring worker progress)
 
 ### Worker Lifecycle
 
@@ -65,22 +65,20 @@ All commands return JSON with a `success` field:
 python -m flow_claude.scripts.create_task_branch \
   --task-id="001" \
   --description="Create User model" \
-  --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" \
-  --preconditions='[]' \
-  --provides='["User model"]' \
-  --files='["src/models/user.py"]'
+  --plan-branch="plan/add-user-authentication" \
+  --depends-on='[]' \
+  --key-files='["src/models/user.py"]' \
+  --priority="high"
 
 # Create git worktree
 git worktree add .worktrees/worker-1 task/001-create-user-model
 
 # Launch the worker
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="1" \
+  --worker-id=1 \
   --task-branch="task/001-create-user-model" \
   --cwd=".worktrees/worker-1" \
-  --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" \
+  --plan-branch="plan/add-user-authentication" \
   --model="sonnet" \
   --instructions="You are a development worker. Implement the task described in the task branch metadata. Follow best practices and write clean code."
 ```
@@ -101,26 +99,26 @@ python -m flow_claude.scripts.launch_worker \
 # When orchestrator detects a worker has completed (through SDK message stream):
 
 # 1. Parse the worker's final commit to verify completion
-python -m flow_claude.scripts.parse_worker_commit --branch="task/002-password-hashing"
+python -m flow_claude.scripts.parse_latest_branch_commit --branch="task/002-password-hashing"
 
 # 2. Clean up the worktree
 git worktree remove .worktrees/worker-2
 
 # 3. Update the plan
 python -m flow_claude.scripts.update_plan_branch \
-  --plan-branch="plan/session-20250119-143000" \
+  --plan-branch="plan/add-user-authentication" \
   --completed='["002"]' \
   --version="v2"
 
 # 4. Launch next task if available (reusing worker ID)
 git worktree add .worktrees/worker-2 task/004-registration-endpoint
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="2" \
+  --worker-id=2 \
   --task-branch="task/004-registration-endpoint" \
   --cwd=".worktrees/worker-2" \
-  --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" \
-  --model="sonnet"
+  --plan-branch="plan/add-user-authentication" \
+  --model="sonnet" \
+  --instructions="Complete task 004..."
 ```
 
 ### Example 3: Parallel Execution (3 Workers)
@@ -140,19 +138,22 @@ git worktree add .worktrees/worker-3 task/003-jwt-tokens
 
 # Launch all workers
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="1" --task-branch="task/001-create-user-model" \
-  --cwd=".worktrees/worker-1" --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" --model="sonnet"
+  --worker-id=1 --task-branch="task/001-create-user-model" \
+  --cwd=".worktrees/worker-1" \
+  --plan-branch="plan/add-user-authentication" --model="sonnet" \
+  --instructions="Complete task 001..."
 
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="2" --task-branch="task/002-password-hashing" \
-  --cwd=".worktrees/worker-2" --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" --model="sonnet"
+  --worker-id=2 --task-branch="task/002-password-hashing" \
+  --cwd=".worktrees/worker-2" \
+  --plan-branch="plan/add-user-authentication" --model="sonnet" \
+  --instructions="Complete task 002..."
 
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="3" --task-branch="task/003-jwt-tokens" \
-  --cwd=".worktrees/worker-3" --session-id="session-20250119-143000" \
-  --plan-branch="plan/session-20250119-143000" --model="sonnet"
+  --worker-id=3 --task-branch="task/003-jwt-tokens" \
+  --cwd=".worktrees/worker-3" \
+  --plan-branch="plan/add-user-authentication" --model="sonnet" \
+  --instructions="Complete task 003..."
 
 # Orchestrator monitors all workers through SDK message stream
 ```
@@ -162,7 +163,7 @@ python -m flow_claude.scripts.launch_worker \
 **Error: Worktree doesn't exist**
 ```bash
 python -m flow_claude.scripts.launch_worker \
-  --worker-id="1" --task-branch="task/001-..." \
+  --worker-id=1 --task-branch="task/001-..." \
   --cwd=".worktrees/worker-1" ...
 ```
 

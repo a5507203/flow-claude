@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read worker's latest commit with progress information."""
+"""Read the latest commit message from any git branch."""
 import argparse
 import asyncio
 import json
@@ -7,11 +7,11 @@ import subprocess
 import sys
 
 
-async def parse_worker_commit(branch: str) -> dict:
-    """Read the latest commit on a worker's task branch.
+async def parse_latest_branch_commit(branch: str) -> dict:
+    """Read the latest commit on a git branch.
 
     Args:
-        branch: Task branch name
+        branch: Branch name (e.g., task/001-xxx, plan/xxx, or any branch)
 
     Returns:
         Dict with commit message
@@ -50,7 +50,7 @@ async def parse_worker_commit(branch: str) -> dict:
     except Exception as e:
         return {
             "success": False,
-            "error": f"Failed to read worker commit: {str(e)}",
+            "error": f"Failed to read branch commit: {str(e)}",
             "branch": branch
         }
 
@@ -58,28 +58,33 @@ async def parse_worker_commit(branch: str) -> dict:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Read worker progress commit message from git branch',
+        description='Read the latest commit message from any git branch',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  # Check worker progress
-  python -m flow_claude.scripts.parse_worker_commit \\
+  # Check worker progress on task branch
+  python -m flow_claude.scripts.parse_latest_branch_commit \\
     --branch="task/001-create-html-structure"
 
+  # Check plan branch latest update
+  python -m flow_claude.scripts.parse_latest_branch_commit \\
+    --branch="plan/build-conference-website"
+
 Output:
-  JSON with commit message showing worker's design, TODO list, and progress
+  JSON with the latest commit message from the specified branch
         '''
     )
     parser.add_argument(
         '--branch',
+        type=str,
         required=True,
         metavar='BRANCH',
-        help='Task branch name (e.g., "task/001-create-html-structure")'
+        help='Branch name (e.g., "task/001-xxx", "plan/xxx", or any git branch)'
     )
 
     args = parser.parse_args()
 
-    result = asyncio.run(parse_worker_commit(args.branch))
+    result = asyncio.run(parse_latest_branch_commit(args.branch))
     print(json.dumps(result, indent=2))
 
     return 0 if result.get('success') else 1

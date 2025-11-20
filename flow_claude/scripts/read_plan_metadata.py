@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read task metadata from the first commit on a task branch."""
+"""Read execution plan from the latest commit on a plan branch."""
 import argparse
 import asyncio
 import json
@@ -7,19 +7,19 @@ import subprocess
 import sys
 
 
-async def parse_task(branch: str) -> dict:
-    """Read task metadata from first commit on task branch.
+async def read_plan_metadata(branch: str) -> dict:
+    """Read execution plan from latest commit on plan branch.
 
     Args:
-        branch: Task branch name (e.g., 'task/001-create-html-structure')
+        branch: Plan branch name (e.g., 'plan/build-conference-website')
 
     Returns:
         Dict with commit message
     """
     try:
-        # Get first commit message on branch
+        # Get latest commit message on plan branch
         result = subprocess.run(
-            ['git', 'log', branch, '--reverse', '--format=%B', '-n', '1'],
+            ['git', 'log', branch, '--format=%B', '-n', '1'],
             capture_output=True,
             text=True,
             check=True,
@@ -56,7 +56,7 @@ async def parse_task(branch: str) -> dict:
     except Exception as e:
         return {
             "success": False,
-            "error": f"Failed to read task: {str(e)}",
+            "error": f"Failed to read plan: {str(e)}",
             "branch": branch
         }
 
@@ -64,13 +64,13 @@ async def parse_task(branch: str) -> dict:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description='Read task metadata commit message from git branch',
+        description='Read execution plan commit message from git branch',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  # Read task metadata
-  python -m flow_claude.scripts.parse_task \\
-    --branch="task/001-create-html-structure"
+  # Read plan commit message
+  python -m flow_claude.scripts.read_plan_metadata \\
+    --branch="plan/build-conference-website"
 
 Output:
   JSON with commit message that Claude can read directly
@@ -78,15 +78,16 @@ Output:
     )
     parser.add_argument(
         '--branch',
+        type=str,
         required=True,
         metavar='BRANCH',
-        help='Task branch name (e.g., "task/001-create-html-structure")'
+        help='Plan branch name (e.g., "plan/build-conference-website")'
     )
 
     args = parser.parse_args()
 
     # Run async function
-    result = asyncio.run(parse_task(args.branch))
+    result = asyncio.run(read_plan_metadata(args.branch))
 
     # Output JSON
     print(json.dumps(result, indent=2))

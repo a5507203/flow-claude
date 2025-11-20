@@ -9,7 +9,7 @@ import sys
 
 async def create_task_branch(
     task_id: str,
-    description: str,
+    instruction: str,
     plan_branch: str,
     **kwargs
 ) -> dict:
@@ -17,7 +17,7 @@ async def create_task_branch(
 
     Args:
         task_id: Task ID (e.g., '001')
-        description: Task description
+        instruction: Task instruction (what needs to be done)
         plan_branch: Parent plan branch name (session-id is extracted from this)
         **kwargs: depends_on, key_files, priority
 
@@ -27,7 +27,7 @@ async def create_task_branch(
     # Extract session_id from plan_branch (e.g., "plan/session-name" -> "session-name")
     session_id = plan_branch.replace('plan/', '') if plan_branch.startswith('plan/') else plan_branch
     try:
-        branch_name = f"task/{task_id}-{description.lower().replace(' ', '-')[:30]}"
+        branch_name = f"task/{task_id}-{instruction.lower().replace(' ', '-')[:30]}"
 
         # Create branch from flow
         subprocess.run(
@@ -43,7 +43,7 @@ async def create_task_branch(
             "",
             "## Task Metadata",
             f"ID: {task_id}",
-            f"Description: {description}",
+            f"Instruction: {instruction}",
             f"Status: pending",
             ""
         ]
@@ -113,7 +113,7 @@ Examples:
   # Create a task with no dependencies
   python -m flow_claude.scripts.create_task_branch \\
     --task-id="001" \\
-    --description="Create HTML structure with navigation and hero section" \\
+    --instruction="Create HTML structure with navigation and hero section" \\
     --plan-branch="plan/build-conference-website" \\
     --depends-on='[]' \\
     --key-files='["index.html"]' \\
@@ -122,7 +122,7 @@ Examples:
   # Create a task that depends on task 001
   python -m flow_claude.scripts.create_task_branch \\
     --task-id="002" \\
-    --description="Add CSS styling for responsive layout" \\
+    --instruction="Add CSS styling for responsive layout" \\
     --plan-branch="plan/build-conference-website" \\
     --depends-on='["001"]' \\
     --key-files='["css/styles.css"]' \\
@@ -134,36 +134,42 @@ Output:
     )
     parser.add_argument(
         '--task-id',
+        type=str,
         required=True,
         metavar='ID',
         help='Unique task ID (e.g., "001", "002a"). Use zero-padded numbers for proper sorting.'
     )
     parser.add_argument(
-        '--description',
+        '--instruction',
+        type=str,
         required=True,
         metavar='TEXT',
-        help='Clear, specific task description (what needs to be done, not how). Will be slugified for branch name.'
+        help='Clear, specific task instruction (what needs to be done, not how). Will be slugified for branch name.'
     )
     parser.add_argument(
         '--plan-branch',
+        type=str,
         required=True,
         metavar='BRANCH',
         help='Parent plan branch name (e.g., "plan/build-user-authentication"). Session ID is extracted from this.'
     )
     parser.add_argument(
         '--depends-on',
+        type=str,
         default='[]',
         metavar='JSON',
         help='JSON array of upstream task IDs that must complete before this task (e.g., ["001", "002"]). Empty array [] means no dependencies.'
     )
     parser.add_argument(
         '--key-files',
+        type=str,
         default='[]',
         metavar='JSON',
         help='JSON array of key files this task will create or modify (e.g., ["index.html", "css/styles.css"]). Use relative paths from project root.'
     )
     parser.add_argument(
         '--priority',
+        type=str,
         default='medium',
         metavar='LEVEL',
         choices=['low', 'medium', 'high'],
@@ -182,7 +188,7 @@ Output:
 
     result = asyncio.run(create_task_branch(
         task_id=args.task_id,
-        description=args.description,
+        instruction=args.instruction,
         plan_branch=args.plan_branch,
         depends_on=depends_on,
         key_files=key_files,

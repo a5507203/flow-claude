@@ -98,13 +98,9 @@ def build_worker_mcp_servers(working_dir: Path, allowed_tools: Optional[List[str
     return worker_mcp_servers
 
 
-def _validate_worker_params(
-    worker_id: str,
-    task_branch: str,
-    session_info: Dict[str, Any],
-    cwd: str,
-    instructions: str
-) -> tuple[bool, Optional[str]]:
+def _validate_worker_params(worker_id: str, task_branch: str,
+                            session_info: Dict[str, Any],
+                            cwd: str, instructions: str) -> tuple[bool, Optional[str]]:
     """Validate essential worker parameters before launching.
 
     Performs minimal validation to catch critical errors early before expensive
@@ -160,14 +156,10 @@ def _validate_worker_params(
     return True, None
 
 
-async def run_worker(
-    worker_id: str,
-    task_branch: str,
-    session_info: Dict[str, Any],
-    cwd: str,
-    instructions: str,
-    allowed_tools: Optional[List[str]] = None
-) -> None:
+async def run_worker(worker_id: str, task_branch: str,
+                    session_info: Dict[str, Any],
+                    cwd: str, instructions: str,
+                    allowed_tools: Optional[List[str]] = None) -> None:
     """Run a single worker using SDK query() function.
 
     Args:
@@ -495,24 +487,24 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-def main() -> int:
+def main():
     """CLI entry point."""
     import argparse
     import sys
 
     parser = argparse.ArgumentParser(description='Launch worker agent')
-    parser.add_argument('--worker-id', required=True, help='Worker ID (e.g., "1", "2")')
-    parser.add_argument('--task-branch', required=True, help='Task branch name')
-    parser.add_argument('--cwd', required=True, help='Working directory (worktree path)')
-    parser.add_argument('--plan-branch', required=True, help='Plan branch name (session ID extracted from this)')
-    parser.add_argument('--model', default='sonnet', help='Claude model (sonnet, opus, haiku)')
-    parser.add_argument('--instructions', required=True, help='Task instructions')
+    parser.add_argument('--worker-id', type=int, required=True, help='Worker ID (e.g., 1, 2)')
+    parser.add_argument('--task-branch', type=str, required=True, help='Task branch name')
+    parser.add_argument('--cwd', type=str, required=True, help='Working directory (worktree path)')
+    parser.add_argument('--plan-branch', type=str, required=True, help='Plan branch name (session ID extracted from this)')
+    parser.add_argument('--model', type=str, default='sonnet', help='Claude model (sonnet, opus, haiku)')
+    parser.add_argument('--instructions', type=str, required=True, help='Task instructions')
 
     args = parser.parse_args()
 
     # Build args dict
     args_dict = {
-        "worker_id": args.worker_id,
+        "worker_id": str(args.worker_id),  # Convert to string for internal use
         "task_branch": args.task_branch,
         "cwd": args.cwd,
         "plan_branch": args.plan_branch,

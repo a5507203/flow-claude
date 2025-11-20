@@ -129,30 +129,35 @@ Output:
     )
     parser.add_argument(
         '--session-name',
+        type=str,
         required=True,
         metavar='NAME',
         help='Meaningful session name describing the work (e.g., "build-user-authentication", "add-responsive-nav"). Use lowercase with hyphens.'
     )
     parser.add_argument(
         '--user-request',
+        type=str,
         required=True,
         metavar='TEXT',
         help='Original user request describing what needs to be built'
     )
     parser.add_argument(
         '--tasks',
+        type=str,
         required=True,
         metavar='JSON',
         help='JSON array of task objects. Each task must have: id, description, depends_on (upstream task IDs), key_files, priority'
     )
     parser.add_argument(
         '--design-doc',
+        type=str,
         default='',
         metavar='TEXT',
         help='Complete design documentation (can be long, like CLAUDE.md). Should include: architecture overview, how features integrate with existing codebase, project structure, design patterns, architectural decisions, interface contracts. This is worker\'s primary reference document.'
     )
     parser.add_argument(
         '--tech-stack',
+        type=str,
         default='',
         metavar='TEXT',
         help='Technology stack: languages, frameworks, libraries, tools (e.g., "Python 3.10, Flask 2.3, SQLAlchemy")'

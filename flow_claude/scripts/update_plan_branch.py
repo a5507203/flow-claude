@@ -149,36 +149,42 @@ Output:
     )
     parser.add_argument(
         '--plan-branch',
+        type=str,
         required=True,
         metavar='BRANCH',
         help='Plan branch to update (e.g., "plan/add-user-authentication")'
     )
     parser.add_argument(
         '--user-request',
+        type=str,
         required=True,
         metavar='TEXT',
         help='Original user request (unchanged from initial plan)'
     )
     parser.add_argument(
         '--tasks',
+        type=str,
         required=True,
         metavar='JSON',
         help='Complete JSON array of ALL tasks with current status. Each task: {id, description, depends_on, key_files, priority, status}'
     )
     parser.add_argument(
         '--version',
+        type=str,
         required=True,
         metavar='VERSION',
         help='New plan version (e.g., "v2", "v3")'
     )
     parser.add_argument(
         '--design-doc',
+        type=str,
         default='',
         metavar='TEXT',
         help='Complete design documentation (include all updates and architecture)'
     )
     parser.add_argument(
         '--tech-stack',
+        type=str,
         default='',
         metavar='TEXT',
         help='Technology stack: languages, frameworks, libraries, tools'
