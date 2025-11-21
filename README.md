@@ -1,199 +1,97 @@
 # Flow-Claude
 
-Git-driven autonomous development system for Claude Code. Execute complex development tasks through parallel worker agents coordinated by an intelligent orchestrator.
+**Turn complex development requests into parallel, autonomous execution.**
+
+Flow-Claude extends Claude Code with git-driven task orchestration. Break down large features into parallel subtasks, execute them simultaneously, and merge results automatically.
+
+---
+
+## Why Flow-Claude?
+
+- **Faster Development** - Parallel workers execute independent tasks simultaneously
+- **Git as Database** - All state stored in commits, fully auditable and recoverable
+- **Zero Context Switching** - Orchestrator manages everything, you just describe what you want
+- **Claude Code Native** - Works seamlessly within Claude Code UI
+
+---
 
 ## Features
 
-- **Autonomous Task Execution**: Break down complex requests into parallel tasks
-- **Git-First Architecture**: All state managed through structured git commits and branches
-- **Parallel Workers**: Execute independent tasks simultaneously in isolated git worktrees
-- **Dynamic Replanning**: Adapt execution plan based on implementation discoveries
-- **Claude Code Native**: Seamless integration with Claude Code UI
+- **Autonomous Task Execution** - Break down complex requests into parallel tasks
+- **Git-First Architecture** - All state managed through structured git commits and branches
+- **Parallel Workers** - Execute independent tasks simultaneously in isolated git worktrees
+- **Dynamic Replanning** - Adapt execution plan based on implementation discoveries
 
-## Installation
-
-```bash
-pip install flow-claude
-```
+---
 
 ## Quick Start
 
-### 1. Initialize Your Project
-
-Navigate to your git repository and initialize Flow-Claude:
-
-**Method 1: Using Python Module (Works Immediately)**
 ```bash
-python -m flow_claude.commands.flow_cli
-```
+# 1. Install
+pip install flow-claude
 
-**Method 2: Using `flow` Command (Requires PATH Setup)**
-
-On **Windows**, add Python Scripts to PATH first:
-```powershell
-# Find your Python Scripts directory
-python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
-
-# Add to PATH (PowerShell - current session)
-$env:PATH += ";C:\Users\YourUsername\AppData\Roaming\Python\Python3XX\Scripts"
-
-# Or add permanently via System Environment Variables
-# Then run:
+# 2. Initialize your project
+cd /path/to/your/project
 flow init
-```
 
-On **Linux/Mac**, `flow` command works immediately after pip install:
-```bash
-flow init
-```
+# 3. Open Claude Code
+claude
 
-**What happens during initialization:**
-- Interactive UI to select base branch for `flow` branch (if needed)
-- Automatic CLAUDE.md creation/update with Flow-Claude instruction
-- `.claude/` directory created with skills, commands, agents, and settings
-- All changes committed to `flow` branch
-
-### 2. Open in Claude Code
-
-Open your project in Claude Code UI.
-
-### 3. Start Developing
-
-Simply describe what you want to build:
-
-```
+# 4. Make a request
 "Add user authentication with JWT and bcrypt"
-"Implement product search with Elasticsearch"
-"Create REST API for order management"
 ```
 
-The orchestrator will:
-1. Analyze your request
-2. Design an execution plan with ~10-minute tasks
-3. Create independent, parallel-friendly tasks
-4. Launch workers to execute tasks simultaneously
-5. Merge results to the `flow` branch
+> See [QUICKSTART.md](QUICKSTART.md) for detailed setup instructions.
 
-## Architecture
+---
 
-### Branches
-
-- `main`/`master`: Production code
-- `flow`: Development base (auto-created)
-- `plan/session-*`: Execution plans
-- `task/*`: Individual task branches
-
-### Workflow
+## How It Works
 
 ```
-User Request
-    ↓
-Orchestrator analyzes & plans
-    ↓
-Creates task branches (task/001-*, task/002-*, ...)
-    ↓
-Launches workers in parallel (git worktrees)
-    ↓
-Workers execute & commit progress
-    ↓
-Merge to flow branch
+Your Request
+     ↓
+┌─────────────────────────────────────┐
+│         Orchestrator                │
+│  • Analyzes request                 │
+│  • Designs execution plan           │
+│  • Manages parallel workers         │
+└─────────────────────────────────────┘
+     ↓
+┌─────────┐  ┌─────────┐  ┌─────────┐
+│Worker 1 │  │Worker 2 │  │Worker 3 │
+│(task/001)│  │(task/002)│  │(task/003)│
+└────┬────┘  └────┬────┘  └────┬────┘
+     │            │            │
+     └────────────┼────────────┘
+                  ↓
+           flow branch
+        (merged results)
 ```
 
-### Task Design
+### Git Branch Structure
 
-Each task is:
-- **~10 minutes**: Right-sized for focused work
-- **Self-contained**: Minimal dependencies on other tasks
-- **Independent**: Can run in parallel without conflicts
-- **Specific**: Clear instruction with MCP tool guidance
+```
+main/master (production)
+    ↑
+flow (development base)
+    ├── plan/session-* (execution plans)
+    ├── task/001-*
+    ├── task/002-*
+    └── task/003-*
+```
+
+---
 
 ## Configuration
 
-### Autonomous Mode
+| Command | Description |
+|---------|-------------|
+| `\auto` | Toggle autonomous mode (ON = no approval needed) |
+| `\parallel N` | Set max parallel workers (1-10, default: 3) |
 
-Toggle autonomous execution (default: OFF):
+---
 
-```
-\auto
-```
-
-- **OFF**: Presents plan and waits for approval
-- **ON**: Executes automatically
-
-### Parallel Workers
-
-Set maximum parallel workers (1-10, default: 3):
-
-```
-\parallel 5
-```
-
-## Usage
-
-### Initialization
-
-**Option 1: Python Module (Recommended for Windows)**
-```bash
-python -m flow_claude.commands.flow_cli
-```
-
-**Option 2: Direct Command (After PATH Setup)**
-```bash
-flow init
-```
-
-### Setting up PATH on Windows
-
-If you want to use the `flow` command directly:
-
-1. **Find your Python Scripts directory:**
-```bash
-python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
-```
-
-2. **Add to PATH:**
-   - **Temporary (current PowerShell session):**
-     ```powershell
-     $env:PATH += ";C:\Users\YourUsername\AppData\Roaming\Python\Python3XX\Scripts"
-     ```
-   - **Permanent:**
-     1. Open System Properties → Environment Variables
-     2. Edit `Path` variable
-     3. Add your Python Scripts directory
-     4. Restart terminal
-
-### Configuration Commands
-
-Once initialized, use these slash commands in Claude Code:
-
-```
-\auto       - Toggle autonomous mode (ON/OFF)
-\parallel 5 - Set max parallel workers (1-10)
-```
-
-## Project Structure
-
-```
-your-project/
-├── .claude/
-│   ├── skills/
-│   │   ├── git-tools/          # Git state management (6 commands)
-│   │   ├── launch-workers/     # Worker spawning & management
-│   │   └── your-workflow/      # Main orchestration workflow
-│   ├── commands/
-│   │   ├── auto.md             # Toggle autonomous mode
-│   │   └── parallel.md         # Set max workers
-│   ├── agents/
-│   │   └── user.md             # User confirmation agent
-│   └── settings.local.json     # Claude Code settings
-├── .worktrees/                 # Worker git worktrees (auto-created)
-│   ├── worker-1/
-│   ├── worker-2/
-│   └── worker-3/
-└── CLAUDE.md                   # Project instructions
-```
-
-## Example Session
+## Example
 
 **Request:**
 ```
@@ -202,122 +100,35 @@ your-project/
 
 **Flow-Claude will:**
 
-1. **Plan** (3 independent tasks):
-   - Task 001: Create Post model with SQLAlchemy (blog/models/post.py)
-   - Task 002: Implement post CRUD service (blog/services/post_service.py)
-   - Task 003: Create REST API endpoints (blog/api/posts.py)
+1. **Plan** - Create 3 parallel tasks:
+   - Task 001: Create Post model
+   - Task 002: Implement CRUD service
+   - Task 003: Create API endpoints
 
-2. **Execute** in parallel:
-   - Worker 1 → Task 001
-   - Worker 2 → Task 002
-   - Worker 3 → Task 003
+2. **Execute** - Launch workers in parallel
 
-3. **Merge** all changes to `flow` branch
+3. **Merge** - All changes merged to `flow` branch
 
-## Advanced Usage
+---
 
-### External MCP Tools
+## Documentation
 
-Workers can access MCP servers defined in `.mcp.json`:
+- [QUICKSTART.md](QUICKSTART.md) - Installation & setup guide
+- [DESIGN_PIPELINE.md](DESIGN_PIPELINE.md) - Architecture details
 
-```json
-{
-  "mcpServers": {
-    "playwright": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["@playwright/mcp@latest"]
-    }
-  }
-}
-```
-
-Workers automatically get access to required MCP tools based on task instructions.
-
-### Monitoring Workers
-
-Workers commit progress to their task branches. Monitor via:
-
-```bash
-git log task/001-create-post-model
-```
-
-### Manual Task Creation
-
-```bash
-python -m flow_claude.scripts.create_task_branch \
-  --task-id="001" \
-  --instruction="Create Post model. Use Write tool to create blog/models/post.py with SQLAlchemy Post model (title, content, author, created_at fields). Include tests in tests/test_post_model.py." \
-  --plan-branch="plan/build-blog-api" \
-  --depends-on='[]' \
-  --key-files='["blog/models/post.py","tests/test_post_model.py"]' \
-  --priority="high"
-```
+---
 
 ## Requirements
 
 - Python ≥ 3.10
-- Git repository
-- Claude Code UI (for interactive use)
+- Git
+- [Claude Code](https://www.claude.com/product/claude-code)
 
-## Dependencies
-
-- `claude-agent-sdk` ≥ 0.1.0
-- `click` ≥ 8.1.0
-
-## Development
-
-```bash
-# Clone repository
-git clone https://github.com/yourusername/flow-claude.git
-cd flow-claude
-
-# Install in editable mode (from src/ layout)
-pip install -e .
-
-# After installation, run with:
-python -m flow_claude.commands.flow_cli
-
-# Or (if PATH configured):
-flow init
-
-# Run tests
-pytest
-
-# Lint
-ruff check .
-```
-
-## Troubleshooting
-
-### Windows: 'flow' command not found
-
-**Solution:** Use `python -m flow_claude.commands.flow_cli` or add Python Scripts to PATH:
-```powershell
-# Find Scripts location
-python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
-
-# Add to PATH (see "Setting up PATH on Windows" section)
-```
-
-### Import Error after installation
-
-**Solution:** Reinstall in editable mode:
-```bash
-pip install -e .
-```
-
-### Setup UI issues
-
-The setup UI uses Textual for interactive branch selection. If you encounter issues:
-```bash
-# Install with UI dependencies
-pip install flow-claude[setup-ui]
-```
+---
 
 ## License
 
-[Your License Here]
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Contributing
 
@@ -325,19 +136,14 @@ Contributions welcome! Please open an issue or submit a pull request.
 
 ## Support
 
-- Issues: https://github.com/yourusername/flow-claude/issues
-- Documentation: [Link to docs]
+- [GitHub Issues](https://github.com/a5507203/flow-claude/issues)
+- [Quick Start Guide](QUICKSTART.md)
+- [Design Pipeline](DESIGN_PIPELINE.md)
 
 ---
 
-**Ready to start?**
+**Ready to supercharge your development?**
 
 ```bash
-# Run initialization
-python -m flow_claude.commands.flow_cli
-
-# Or (with PATH configured)
-flow init
+pip install flow-claude && cd your-project && flow init
 ```
-
-Then open your project in Claude Code and describe what you want to build!

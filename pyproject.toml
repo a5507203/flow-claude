@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 authors = [
     {name = "Flow-Claude Contributors"}
 ]
+license = {text = "MIT"}
 dependencies = [
     "claude-agent-sdk>=0.1.0",
     "click>=8.1.0",
@@ -28,6 +29,11 @@ dev = [
 flow = "flow_claude.commands.flow_cli:main"
 flow-claude = "flow_claude.commands.flow_cli:main"
 flow-auto = "flow_claude.commands.toggle_auto:main"
+
+[project.urls]
+Homepage = "https://github.com/a5507203/flow-claude"
+Repository = "https://github.com/a5507203/flow-claude"
+Issues = "https://github.com/a5507203/flow-claude/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
