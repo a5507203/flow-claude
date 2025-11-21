@@ -28,5 +28,13 @@ src/flow_claude/setup_ui/app.py
 src/flow_claude/setup_ui/claude_generator.py
 src/flow_claude/setup_ui/git_utils.py
 src/flow_claude/setup_ui/screens.py
+src/flow_claude/templates/settings.local.json
+src/flow_claude/templates/agents/user.md
+src/flow_claude/templates/agents/worker-template.md
+src/flow_claude/templates/commands/auto.md
+src/flow_claude/templates/commands/parallel.md
+src/flow_claude/templates/skills/git-tools/SKILL.md
+src/flow_claude/templates/skills/launch-workers/SKILL.md
+src/flow_claude/templates/skills/your-workflow/SKILL.md
 src/flow_claude/utils/__init__.py
 src/flow_claude/utils/mcp_loader.py

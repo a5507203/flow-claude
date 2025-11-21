@@ -33,6 +33,9 @@ flow-auto = "flow_claude.commands.toggle_auto:main"
 where = ["src"]
 include = ["flow_claude*"]
 
+[tool.setuptools.package-data]
+flow_claude = ["templates/**/*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
