@@ -161,7 +161,7 @@ def main():
             # Check current branch
             result = subprocess.run(
                 ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                capture_output=True, text=True, check=True
+                capture_output=True, text=True, encoding='utf-8', check=True
             )
             current_branch = result.stdout.strip()
 
@@ -177,7 +177,7 @@ def main():
             # Commit the changes
             commit_result = subprocess.run(
                 ['git', 'commit', '-m', 'Initialize Flow-Claude configuration\n\nAdded .claude/ directory with skills, commands, agents, and settings.'],
-                capture_output=True, text=True
+                capture_output=True, text=True, encoding='utf-8'
             )
 
             if commit_result.returncode == 0:

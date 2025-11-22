@@ -125,6 +125,7 @@ def _validate_worker_params(worker_id: str, task_branch: str,
             ['git', 'rev-parse', '--verify', task_branch],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             timeout=5,
             cwd=Path.cwd()
         )
@@ -377,6 +378,7 @@ async def run_worker(worker_id: str, task_branch: str,
                     ['git', '--version'],
                     capture_output=True,
                     text=True,
+                    encoding='utf-8',
                     timeout=5
                 )
                 if git_result.returncode == 0:

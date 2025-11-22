@@ -22,6 +22,7 @@ async def read_plan_metadata(branch: str) -> dict:
             ['git', 'log', branch, '--format=%B', '-n', '1'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
             check=True,
             timeout=10
         )

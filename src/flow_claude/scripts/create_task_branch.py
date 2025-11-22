@@ -93,7 +93,7 @@ async def create_task_branch(
 
     except subprocess.CalledProcessError as e:
         return {
-            "error": f"Git command failed: {e.stderr.decode() if e.stderr else str(e)}",
+            "error": f"Git command failed: {e.stderr if e.stderr else str(e)}",
             "success": False
         }
     except Exception as e:
