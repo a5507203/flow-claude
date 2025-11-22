@@ -2,3 +2,6 @@
 /flow_claude/__pycache__
 *.pyc
 
+
+# Flow-Claude worktrees (for parallel task execution)
+.worktrees/
