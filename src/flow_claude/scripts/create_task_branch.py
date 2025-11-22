@@ -85,6 +85,14 @@ async def create_task_branch(
             timeout=10
         )
 
+        # Switch back to flow branch
+        subprocess.run(
+            ['git', 'checkout', 'flow'],
+            check=True,
+            capture_output=True,
+            timeout=10
+        )
+
         return {
             "success": True,
             "branch": branch_name,
