@@ -20,7 +20,7 @@ def update_claude_md(cwd: Path) -> tuple[bool, str, str]:
             status: "created", "updated", or "unchanged"
     """
     claude_md = cwd / "CLAUDE.md"
-    instruction = "#IMPORTANT (DO NOT CHANGE) /n **Understand your-workflow and read the SKILL.md before working\n\n**"
+    instruction = "# CLAUDE.md\n\n# IMPORTANT (DO NOT CHANGE)\n\n**Understand your-workflow and read the .claude/skills/your-workflow/SKILL.md before working**\n\n"
 
     try:
         if claude_md.exists():
@@ -28,7 +28,7 @@ def update_claude_md(cwd: Path) -> tuple[bool, str, str]:
             existing_content = claude_md.read_text(encoding='utf-8')
 
             # Check if instruction already exists at the top
-            if existing_content.startswith("Understand your-workflow and read the SKILL.md before working"):
+            if existing_content.startswith("# CLAUDE.md\n\n# IMPORTANT (DO NOT CHANGE)"):
                 return True, "unchanged", ""
 
             # Prepend instruction to existing content

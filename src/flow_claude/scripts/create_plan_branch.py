@@ -29,9 +29,17 @@ async def create_plan_branch(
     try:
         branch_name = f"plan/{session_name}"
 
-        # Create branch from flow
+        # Create branch from flow (without switching)
         subprocess.run(
-            ['git', 'checkout', '-b', branch_name, 'flow'],
+            ['git', 'branch', branch_name, 'flow'],
+            check=True,
+            capture_output=True,
+            timeout=10
+        )
+
+        # Switch to the new branch temporarily for commit
+        subprocess.run(
+            ['git', 'checkout', branch_name],
             check=True,
             capture_output=True,
             timeout=10
@@ -84,6 +92,14 @@ async def create_plan_branch(
         # Create empty commit
         subprocess.run(
             ['git', 'commit', '--allow-empty', '-m', commit_message],
+            check=True,
+            capture_output=True,
+            timeout=10
+        )
+
+        # Switch back to flow branch
+        subprocess.run(
+            ['git', 'checkout', 'flow'],
             check=True,
             capture_output=True,
             timeout=10
