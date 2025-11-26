@@ -8,9 +8,8 @@ import asyncio
 import json
 import os
 import sys
-import traceback
 from pathlib import Path
-from typing import Dict, Any, List, AsyncGenerator, Optional
+from typing import Dict, Any, List, Optional
 
 # Fix Windows console encoding for Unicode support
 if sys.platform == 'win32':
@@ -20,7 +19,7 @@ if sys.platform == 'win32':
     if isinstance(sys.stderr, io.TextIOWrapper):
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, query, tool, create_sdk_mcp_server
+from claude_agent_sdk import ClaudeAgentOptions, query
 from flow_claude.utils.mcp_loader import load_project_mcp_config
 
 
@@ -125,7 +124,6 @@ def _validate_worker_params(worker_id: str, task_branch: str,
             ['git', 'rev-parse', '--verify', task_branch],
             capture_output=True,
             text=True,
-            encoding='utf-8',
             timeout=5,
             cwd=Path.cwd()
         )
@@ -165,13 +163,7 @@ async def run_worker(worker_id: str, task_branch: str,
         cwd: Working directory - the worktree path where worker operates (REQUIRED - absolute path)
         allowed_tools: Optional list of additional MCP tools to allow beyond core tools
     """
-    # Extract session_id from plan_branch
-    plan_branch = session_info['plan_branch']
-    session_id = plan_branch.replace('plan/', '') if plan_branch.startswith('plan/') else plan_branch
-
-    print(f"[Worker-{worker_id}] Starting...", flush=True)
-    print(f"[Worker-{worker_id}]   Task branch: {task_branch}", flush=True)
-    print(f"[Worker-{worker_id}]   Session: {session_id}", flush=True)
+    print(f"[Worker-{worker_id}] Starting on {task_branch}", flush=True)
 
     # VALIDATION: Validate parameters before expensive SDK initialization
     validation_success, validation_error = _validate_worker_params(
@@ -179,22 +171,14 @@ async def run_worker(worker_id: str, task_branch: str,
     )
 
     if not validation_success:
-        # Validation failed - report error
-        error_msg = f"Worker-{worker_id} validation failed: {validation_error}"
-        print(f"[Worker-{worker_id}] ERROR: {error_msg}", flush=True)
+        print(f"[Worker-{worker_id}] ERROR: {validation_error}", flush=True)
         return
-    # Convert to absolute path (support both relative and absolute input)
-    # Orchestrator typically provides relative path like ".worktrees/worker-1"
+    # Convert to absolute path
     if not os.path.isabs(cwd):
-        # Relative path - join with project root
         working_dir = Path(os.getcwd()) / cwd
     else:
-        # Already absolute - use as-is
         working_dir = Path(cwd)
-
-    # Resolve to canonical absolute path
     working_dir = working_dir.resolve()
-    print(f"[Worker-{worker_id}]   Working directory: {working_dir}", flush=True)
 
     # Determine worker prompt file path
     from importlib.resources import files
@@ -229,7 +213,6 @@ async def run_worker(worker_id: str, task_branch: str,
         # Remove AskUserQuestion if accidentally added - workers must be autonomous
         if 'AskUserQuestion' in worker_allowed_tools:
             worker_allowed_tools.remove('AskUserQuestion')
-            print(f"[Worker-{worker_id}] Warning: Removed AskUserQuestion tool - workers must work autonomously", flush=True)
 
         # Build MCP servers configuration for this worker
         # Uses helper function to load .mcp.json and filter based on allowed_tools
@@ -240,8 +223,6 @@ async def run_worker(worker_id: str, task_branch: str,
         cli_path = shutil.which('claude')
         if not cli_path and os.name == 'nt':  # Windows fallback
             cli_path = shutil.which('claude.cmd')
-
-        print(f"[Worker-{worker_id}] Claude CLI path: {cli_path}", flush=True)
 
         # Create worker-specific options
         options = ClaudeAgentOptions(
@@ -261,46 +242,20 @@ async def run_worker(worker_id: str, task_branch: str,
 
 
 
-        # Track initialization state to distinguish init errors from runtime errors
+        # Track state for error reporting
         first_message_received = False
         message_count = 0
 
         # Execute worker using query() function
         try:
-            print(f"[Worker-{worker_id}] Initializing Claude SDK...", flush=True)
-
             async for message in query(prompt=prompt, options=options):
                 message_count += 1
-
-                # Mark initialization as successful after first message
-                if not first_message_received:
-                    first_message_received = True
-                    print(f"[Worker-{worker_id}] Initialized successfully (first message received)", flush=True)
-
-                # Handle message display (parse, format, log)
-                print(message, flush=True)
+                first_message_received = True
+                # Silently process messages - no verbose output
 
         except Exception as sdk_error:
-            # Distinguish between initialization and runtime errors
-            if not first_message_received:
-                # Initialization error - SDK failed before first message
-                error_phase = "initialization"
-                print(f"[Worker-{worker_id}] INITIALIZATION ERROR", flush=True)
-                print(f"[Worker-{worker_id}]   SDK failed before receiving first message", flush=True)
-                print(f"[Worker-{worker_id}]   This usually indicates:", flush=True)
-                print(f"[Worker-{worker_id}]     - Working directory issues (doesn't exist, not accessible)", flush=True)
-                print(f"[Worker-{worker_id}]     - Git repository issues (invalid worktree)", flush=True)
-                print(f"[Worker-{worker_id}]     - Claude CLI configuration issues", flush=True)
-                print(f"[Worker-{worker_id}]     - Permission or path problems", flush=True)
-                print(f"[Worker-{worker_id}]     - MCP server initialization failures", flush=True)
-            else:
-                # Runtime error - SDK failed after receiving messages
-                error_phase = "runtime"
-                print(f"[Worker-{worker_id}] RUNTIME ERROR", flush=True)
-                print(f"[Worker-{worker_id}]   Worker was running successfully ({message_count} messages processed)", flush=True)
-                print(f"[Worker-{worker_id}]   Error occurred during execution", flush=True)
-
-            # Re-raise to be handled by main exception handler
+            error_phase = "initialization" if not first_message_received else "runtime"
+            print(f"[Worker-{worker_id}] ERROR ({error_phase}): {sdk_error}", flush=True)
             raise sdk_error
 
         # Query completed naturally
@@ -308,101 +263,8 @@ async def run_worker(worker_id: str, task_branch: str,
         return
 
     except Exception as e:
-        # Handle errors - log full traceback AND diagnostic information
-        error_traceback = traceback.format_exc()
-
-        # Determine error phase if available from inner exception handler
-        try:
-            # Check if error_phase was set by SDK query wrapper
-            error_phase = locals().get('error_phase', 'unknown')
-            first_msg_received = locals().get('first_message_received', False)
-            msg_count = locals().get('message_count', 0)
-        except:
-            error_phase = 'unknown'
-            first_msg_received = False
-            msg_count = 0
-
-        # Collect comprehensive diagnostic information
-        diagnostic_info = []
-        diagnostic_info.append(f"Worker: {worker_id}")
-        diagnostic_info.append(f"Task Branch: {task_branch}")
-        diagnostic_info.append(f"Error Phase: {error_phase}")
-        if error_phase == 'initialization':
-            diagnostic_info.append(f"First Message Received: No (SDK initialization failed)")
-        elif error_phase == 'runtime':
-            diagnostic_info.append(f"Messages Processed: {msg_count}")
-        diagnostic_info.append(f"Error: {str(e)}")
-        diagnostic_info.append(f"Error Type: {type(e).__name__}")
-
-        # Check exception for additional attributes (some SDK exceptions have details)
-        if hasattr(e, 'args') and len(e.args) > 1:
-            diagnostic_info.append(f"Error Args: {e.args}")
-        if hasattr(e, '__dict__'):
-            extra_attrs = {k: v for k, v in e.__dict__.items() if not k.startswith('_')}
-            if extra_attrs:
-                diagnostic_info.append(f"Error Attributes: {extra_attrs}")
-
-        # Working directory diagnostics
-        try:
-            diagnostic_info.append(f"Working Directory: {working_dir}")
-            diagnostic_info.append(f"  - Exists: {working_dir.exists()}")
-            if working_dir.exists():
-                diagnostic_info.append(f"  - Accessible: {os.access(working_dir, os.R_OK | os.X_OK)}")
-                diagnostic_info.append(f"  - Is Directory: {working_dir.is_dir()}")
-
-                # Check git repository status
-                git_file = working_dir / ".git"
-                if git_file.exists():
-                    if git_file.is_file():
-                        diagnostic_info.append(f"  - Git: Worktree (has .git file)")
-                    elif git_file.is_dir():
-                        diagnostic_info.append(f"  - Git: Repository (has .git directory)")
-                else:
-                    diagnostic_info.append(f"  - Git: No .git found")
-        except Exception as diag_error:
-            diagnostic_info.append(f"  - Could not check directory: {diag_error}")
-
-        # Environment diagnostics
-        try:
-            import subprocess
-            import sys
-            import platform
-
-            diagnostic_info.append(f"Environment:")
-            diagnostic_info.append(f"  - Python: {sys.version.split()[0]}")
-            diagnostic_info.append(f"  - Platform: {platform.system()} {platform.release()}")
-
-            # Try to get git version
-            try:
-                git_result = subprocess.run(
-                    ['git', '--version'],
-                    capture_output=True,
-                    text=True,
-                    encoding='utf-8',
-                    timeout=5
-                )
-                if git_result.returncode == 0:
-                    diagnostic_info.append(f"  - Git: {git_result.stdout.strip()}")
-            except Exception:
-                diagnostic_info.append(f"  - Git: Not available or error")
-
-            # Try to get current directory status
-            try:
-                cwd = os.getcwd()
-                diagnostic_info.append(f"  - Process CWD: {cwd}")
-            except Exception:
-                pass
-
-        except Exception as env_error:
-            diagnostic_info.append(f"  - Could not collect environment info: {env_error}")
-
-        # Log comprehensive error information
-        print(f"[Worker-{worker_id}] ===== WORKER ERROR DIAGNOSTIC =====", flush=True)
-        for line in diagnostic_info:
-            print(f"[Worker-{worker_id}] {line}", flush=True)
-        print(f"[Worker-{worker_id}] ===== TRACEBACK =====", flush=True)
-        print(f"{error_traceback}", flush=True)
-        print(f"[Worker-{worker_id}] ===== END DIAGNOSTIC =====", flush=True)
+        # Simplified error logging
+        print(f"[Worker-{worker_id}] FAILED: {type(e).__name__}: {e}", flush=True)
 
 
 async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -420,8 +282,6 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         Dict with success status message
     """
     try:
-        import asyncio
-
         # VALIDATE PARAMETERS BEFORE CREATING BACKGROUND TASK
         worker_id = args["worker_id"]
         task_branch = args["task_branch"]
@@ -436,30 +296,22 @@ async def launch_worker(args: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         if not validation_success:
-            # Validation failed - return error immediately to orchestrator
-            error_msg = f"Worker-{worker_id} validation failed: {validation_error}"
-            print(f"[SDKWorkerManager] ERROR: {error_msg}", flush=True)
-
             return {
                 "content": [{
                     "type": "text",
-                    "text": error_msg
+                    "text": f"Worker-{worker_id} validation failed: {validation_error}"
                 }],
                 "isError": True
             }
 
-        # Validation passed - run worker synchronously
-        print(f"[launch_worker] Starting worker-{worker_id} synchronously...", flush=True)
-
+        # Run worker synchronously
         await run_worker(
             worker_id,
             task_branch,
             session_info,
             cwd,
-            args.get("allowed_tools")  # Optional additional tools to allow
+            args.get("allowed_tools")
         )
-
-        print(f"[launch_worker] Worker-{worker_id} completed", flush=True)
 
         # Return success message after worker completes
         return {

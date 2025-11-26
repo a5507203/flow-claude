@@ -22,7 +22,6 @@ async def parse_branch_latest_commit(branch: str) -> dict:
             ['git', 'log', branch, '--format=%B', '-n', '1'],
             capture_output=True,
             text=True,
-            encoding='utf-8',
             check=True,
             timeout=10
         )

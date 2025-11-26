@@ -2,4 +2,3 @@
 /flow_claude/__pycache__
 *.pyc
 
-.claude/settings.local.json

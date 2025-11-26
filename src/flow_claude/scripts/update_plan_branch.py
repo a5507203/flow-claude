@@ -94,14 +94,6 @@ async def update_plan_branch(
             timeout=10
         )
 
-        # Switch back to flow branch
-        subprocess.run(
-            ['git', 'checkout', 'flow'],
-            check=True,
-            capture_output=True,
-            timeout=10
-        )
-
         # Count task statuses
         completed = sum(1 for t in tasks if t.get('status') == 'completed')
         pending = sum(1 for t in tasks if t.get('status') == 'pending')
@@ -119,7 +111,7 @@ async def update_plan_branch(
 
     except subprocess.CalledProcessError as e:
         return {
-            "error": f"Git command failed: {e.stderr if e.stderr else str(e)}",
+            "error": f"Git command failed: {e.stderr.decode() if e.stderr else str(e)}",
             "success": False
         }
     except Exception as e:

@@ -85,14 +85,6 @@ async def create_task_branch(
             timeout=10
         )
 
-        # Switch back to flow branch
-        subprocess.run(
-            ['git', 'checkout', 'flow'],
-            check=True,
-            capture_output=True,
-            timeout=10
-        )
-
         return {
             "success": True,
             "branch": branch_name,
@@ -101,7 +93,7 @@ async def create_task_branch(
 
     except subprocess.CalledProcessError as e:
         return {
-            "error": f"Git command failed: {e.stderr if e.stderr else str(e)}",
+            "error": f"Git command failed: {e.stderr.decode() if e.stderr else str(e)}",
             "success": False
         }
     except Exception as e:
