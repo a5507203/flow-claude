@@ -18,7 +18,7 @@ description: |
     - **Immediately verify:**
       - Parse latest commit status via `parse_branch_latest_commit`
       - **READ ACTUAL CODE** check the implementation quality and identify where can be improved.
-      - **Double check if the change has been merged!** If not, merge the change to Flow branch.
+      - **merge the change to Flow branch and resolve conflict if there has**.
     - **Immediately cleanup:** Remove worktree via `git worktree remove .worktrees/worker-N`
     - **Evaluate & Replan if needed:**
       - Read current plan via `read_plan_metadata`

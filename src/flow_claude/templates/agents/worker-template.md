@@ -20,8 +20,7 @@ You execute ONE task autonomously through these steps:
 3. **Create design commit** - Follows **design-first principles**, plan your implementation in commit git commit --allow-empty -m ...
 4. **Implement incrementally** - after solve each task in todo list, make progressive commits
 5. **Test your changes** - Verify correctness
-6. **Merge to flow branch** - Integrate your work
-7. **Signal completion** - Create TASK_COMPLETE commit
+6. **Signal completion** - Create TASK_COMPLETE commit
 
 ---
 
@@ -188,7 +187,7 @@ Work through your TODO list item by item.
 git add src/models/user.py
 git commit -m "Progress: Created User model skeleton
 
-## Implementation Design
+## Implementation Design (must include all file chanaged with relative path)
 [Same as design commit]
 
 ## TODO List
@@ -199,11 +198,33 @@ git commit -m "Progress: Created User model skeleton
 - [ ] Add __repr__ method
 
 ## Progress
-Created User model with basic fields (id, email, password_hash).
+Created User model with basic fields (id, email, password_hash). 
 Email field has unique constraint.
 Next: Implement password setter with bcrypt.
 "
 ```
+
+
+### Example Complete Commit
+
+```bash
+# After creating User class skeleton
+git add src/models/user.py
+git commit -m "COMPLETE: Created User model skeleton
+
+## Implementation Design (must include all file chanaged with relative path)
+[Same as design commit]
+
+## TODO List
+- [x] Create User class inheriting from db.Model
+- [x] Add id (primary key), email (unique), password_hash fields
+- [x] Implement password setter with bcrypt hashing
+- [x] Implement password verification method
+- [x] Add __repr__ method
+
+"
+```
+
 
 ### Implementation Best Practices
 
@@ -239,78 +260,6 @@ Check that you completed all requirements from task metadata:
 - ✓ Are all key files created/modified as specified?
 - ✓ Does your implementation enable downstream tasks that depend on this one?
 
-### Final Verification Commit
-
-If tests pass and everything looks good:
-
-```bash
-git commit --allow-empty -m "Verification: All tests passing
-
-## Implementation Design
-[Same as before]
-
-## TODO List
-- [x] All items completed
-
-## Test Results
-✓ Unit tests passing (if applicable)
-✓ Manual verification successful
-✓ All requirements implemented
-✓ Code follows project patterns
-
-Ready to merge to flow branch.
-"
-```
-
----
-
-## Example 7: Merge to Flow Branch
-
-**YOU perform the merge** - don't wait for orchestrator.
-
-### Merge Process
-
-```bash
-# Ensure you're on your task branch
-git branch --show-current
-
-# Switch to flow branch
-git checkout flow
-
-# Merge your task branch (no fast-forward to preserve history)
-git merge --no-ff task/001-user-model -m "Merge task/001: Create User model
-
-## Task Summary
-ID: 001
-Description: Create User model with email and password fields
-
-## Changes
-- Created src/models/user.py with User model
-- Added email field (unique constraint)
-- Added password_hash field with bcrypt setter
-- Implemented password verification method
-
-## Deliverables
-✓ User model class
-✓ User.email field
-✓ User.password field (hashed)
-✓ User.verify_password() method
-
-## Tests
-✓ All tests passing (or manual verification)
-
-## Duration
-Completed in approximately {X} minutes.
-"
-```
-
-**Merge message guidelines**:
-- Summarize what was accomplished
-- List key changes
-- Confirm all deliverables completed
-- Note test status
-
-
 
 ---
 
@@ -340,23 +289,6 @@ Task incomplete. Awaiting guidance.
 **Then STOP**. The orchestrator will handle error recovery.
 
 
-**Merge conflicts**:
-- If `git merge` fails, report the conflict:
-```bash
-git merge --abort  # Cancel the merge
-
-git commit --allow-empty -m "ERROR: Merge conflict
-
-## Problem
-Merge conflict when merging to flow branch.
-
-## Conflicting Files
-{list files in conflict}
-
-## Status
-Awaiting manual resolution.
-"
-```
 
 **Test failures**:
 - Document which tests failed
@@ -379,7 +311,7 @@ Awaiting manual resolution.
 ## Notes
 
 - **Work independently**: Don't wait for orchestrator after receiving task
-- **Commit frequently**: Design → Implementation → Tests → Merge → Complete
+- **Commit frequently**: Design → Implementation → Tests  → Complete
 - **Document thoroughly**: Future workers may depend on your code
 - **Test before merging**: Broken code blocks other tasks
 - **Report errors clearly**: Include all relevant details
@@ -411,7 +343,6 @@ git checkout flow
 git merge --no-ff task/XXX-description -m "Merge task/XXX: ..."
 
 # 7. Complete
-git commit --allow-empty -m "TASK_COMPLETE: task/XXX-description"
+git commit --allow-empty -m "..."
 ```
 
-Good luck!
