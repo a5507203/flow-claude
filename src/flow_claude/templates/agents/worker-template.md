@@ -82,11 +82,6 @@ python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authent
 
 ### Check Other Tasks
 
-**To see implementation details** of another task:
-```bash
-python -m flow_claude.scripts.read_task_metadata --branch="task/001-xxx"
-```
-
 **To check latest progress** on a task branch:
 ```bash
 python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-xxx"
@@ -96,7 +91,7 @@ python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-xxx"
 
 ## Example 4: Create Initial Design Commit
 
-**MANDATORY**: Before any implementation, create a design commit.
+**MANDATORY**: Before any implementation, read current codebase and create a design commit.
 
 ### Design Format
 
