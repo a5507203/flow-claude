@@ -70,7 +70,6 @@ async def update_plan_branch(
         commit_lines.append("## Tasks")
         for task in tasks:
             depends_on = task.get('depends_on', [])
-            key_files = task.get('key_files', [])
             status = task.get('status', 'pending')
 
             commit_lines.extend([
@@ -78,9 +77,7 @@ async def update_plan_branch(
                 f"ID: {task['id']}",
                 f"Description: {task['description']}",
                 f"Status: {status}",
-                f"Priority: {task.get('priority', 'medium')}",
                 f"Depends on: {', '.join(depends_on) if depends_on else 'None'}",
-                f"Key files: {', '.join(key_files) if key_files else 'None'}",
                 ""
             ])
 
@@ -136,10 +133,10 @@ Examples:
     --design-doc="Complete design documentation..." \\
     --tech-stack="Python 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT" \\
     --tasks='[
-      {"id":"001","description":"Create User model","depends_on":[],"key_files":["src/models/user.py"],"priority":"high","status":"completed"},
-      {"id":"002","description":"Implement password hashing","depends_on":[],"key_files":["src/utils/auth.py"],"priority":"high","status":"in_progress"},
-      {"id":"003","description":"Create JWT tokens","depends_on":[],"key_files":["src/utils/jwt.py"],"priority":"high","status":"pending"},
-      {"id":"004","description":"User registration endpoint","depends_on":["001","002"],"key_files":["src/api/auth.py"],"priority":"medium","status":"pending"}
+      {"id":"001","description":"Create User model","depends_on":[],"status":"completed"},
+      {"id":"002","description":"Implement password hashing","depends_on":[],"status":"in_progress"},
+      {"id":"003","description":"Create JWT tokens","depends_on":[],"status":"pending"},
+      {"id":"004","description":"User registration endpoint","depends_on":["001","002"],"status":"pending"}
     ]' \\
     --version="v2"
 
@@ -166,7 +163,7 @@ Output:
         type=str,
         required=True,
         metavar='JSON',
-        help='Complete JSON array of ALL tasks with current status. Each task: {id, description, depends_on, key_files, priority, status}'
+        help='Complete JSON array of ALL tasks with current status. Each task: {id, description, depends_on, status}'
     )
     parser.add_argument(
         '--version',
