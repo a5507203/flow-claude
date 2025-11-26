@@ -98,9 +98,7 @@ python -m flow_claude.scripts.create_task_branch \
   --task-id="001" \
   --instruction="Create User model with email and password fields" \
   --plan-branch="plan/add-user-authentication" \
-  --depends-on='[]' \
-  --key-files='["src/models/user.py"]' \
-  --priority="high"
+  --depends-on='[]'
 ```
 
 **Output:**

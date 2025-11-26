@@ -75,15 +75,12 @@ async def create_plan_branch(
         commit_lines.append("## Tasks")
         for task in tasks:
             depends_on = task.get('depends_on', [])
-            key_files = task.get('key_files', [])
 
             commit_lines.extend([
                 f"### Task {task['id']}",
                 f"ID: {task['id']}",
                 f"Description: {task['description']}",
-                f"Priority: {task.get('priority', 'medium')}",
                 f"Depends on: {', '.join(depends_on) if depends_on else 'None'}",
-                f"Key files: {', '.join(key_files) if key_files else 'None'}",
                 ""
             ])
 
@@ -137,7 +134,7 @@ Examples:
     --architecture="Static HTML/CSS/JS website with responsive design" \\
     --design-doc="Project Structure: index.html (main page), css/ (styles), js/ (scripts). Design: Modern single-page layout with sticky navigation, hero section, schedule grid, speaker cards. Mobile-first responsive design with breakpoints at 768px and 1024px. Components organized by section (nav, hero, schedule, speakers, footer). Follow BEM naming convention for CSS classes." \\
     --tech-stack="HTML5, CSS3, JavaScript ES6" \\
-    --tasks='[{"id":"001","description":"Create HTML structure","depends_on":[],"key_files":["index.html"],"priority":"high"},{"id":"002","description":"Add CSS styling","depends_on":["001"],"key_files":["css/styles.css"],"priority":"medium"},{"id":"003","description":"Add JavaScript","depends_on":["001"],"key_files":["js/main.js"],"priority":"medium"},{"id":"004","description":"Test layout","depends_on":["002","003"],"key_files":[],"priority":"low"}]'
+    --tasks='[{"id":"001","description":"Create HTML structure","depends_on":[]},{"id":"002","description":"Add CSS styling","depends_on":["001"]},{"id":"003","description":"Add JavaScript","depends_on":["001"]},{"id":"004","description":"Test layout","depends_on":["002","003"]}]'
 
 Output:
   JSON with success status and plan branch information
@@ -162,7 +159,7 @@ Output:
         type=str,
         required=True,
         metavar='JSON',
-        help='JSON array of task objects. Each task must have: id, description, depends_on (upstream task IDs), key_files, priority'
+        help='JSON array of task objects. Each task must have: id, description, depends_on (upstream task IDs)'
     )
     parser.add_argument(
         '--design-doc',

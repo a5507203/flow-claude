@@ -27,7 +27,7 @@ description: |
       - Update dependencies if new task order is needed
       - Call `update_plan_branch` with complete updated tasks array (including new tasks and status changes)
     - **Check next available tasks:** Find newly-ready tasks (all depends_on completed)
-    - **Immediately launch:** If idle workers + ready tasks exist:
+    - **launch:** If idle workers + ready tasks exist:
       - Create task branch via `create_task_branch`
       - Create worktree via `git worktree add`
       - Spawn worker via `launch_worker` with run_in_background=true and timeout be at least 60 mins for safety
@@ -54,7 +54,7 @@ description: |
     --session-name="add-user-authentication" \
     --user-request="Add user authentication with JWT and bcrypt" \
     --design-doc="..." --tech-stack="Python 3.10, Flask, SQLAlchemy, bcrypt, PyJWT" \
-    --tasks='[{"id":"001","description":"Create User model","depends_on":[],"key_files":["src/models/user.py"],"priority":"high"},...]'
+    --tasks='[{"id":"001","description":"Create User model","depends_on":[]},...]'
 
   # 2. Execute ready 3 parallel tasks
   python -m flow_claude.scripts.create_task_branch --task-id="001" --instruction="..." --plan-branch="plan/add-user-authentication" ...
@@ -77,8 +77,8 @@ description: |
     --user-request="Add user authentication with JWT and bcrypt" \
     --design-doc="..." --tech-stack="Python 3.10, Flask, SQLAlchemy, bcrypt, PyJWT" \
     --tasks='[
-      {"id":"001","description":"Create User model","depends_on":[],"key_files":["src/models/user.py"],"priority":"high","status":"completed"},
-      {"id":"002","description":"Implement auth endpoints","depends_on":["001"],"key_files":["src/api/auth.py"],"priority":"high","status":"pending"}
+      {"id":"001","description":"Create User model","depends_on":[],"status":"completed"},
+      {"id":"002","description":"Implement auth endpoints","depends_on":["001"],"status":"pending"}
     ]' \
     --version="v2"
   ```
