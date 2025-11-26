@@ -1,7 +1,7 @@
 # Flow-Claude 
 ---
 
-A punch line (claude code, gi)
+##TODO A punch line (claude code, gi)
 
 Flow-Claude extends Claude Code with git-driven task orchestration. Break down large features into parallel subtasks, execute them simultaneously, and merge results automatically.
 
@@ -174,10 +174,10 @@ cd my-project
 flow
 
 # Open Claude Code
-claude
+claude --dangerously-skip-permissions
 
 # Ask:
-"Build a REST API for blog posts with CRUD operations"
+"Read the SILLs, then Build a REST API for blog posts with CRUD operations"
 
 # Flow-Claude creates:
 # - plan/session-20250121-143000 (execution plan)
