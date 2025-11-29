@@ -1,0 +1,52 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#e8f5e9', 'primaryBorderColor': '#0288d1', 'lineColor': '#333'}}}%%
+flowchart TB
+    subgraph User[" "]
+        Request["👤 User Request"]
+    end
+
+    subgraph Orchestrator["ORCHESTRATOR"]
+        direction LR
+        A["Analyze<br/>Request"] --> B["Plan<br/>DAG"] --> C["Create<br/>Branches"] --> D["Launch<br/>Workers"] --> E["Monitor<br/>& Merge"]
+    end
+
+    subgraph Scripts["GIT SCRIPTS"]
+        S1["create_plan_branch"]
+        S2["create_task_branch"]
+        S3["launch_worker"]
+        S4["parse_commit"]
+        S5["update_plan"]
+    end
+
+    subgraph Workers["PARALLEL WORKERS"]
+        direction LR
+        subgraph W1[" "]
+            W1T["Worker 1<br/>.worktree<br/>task/001"]
+        end
+        subgraph W2[" "]
+            W2T["Worker 2<br/>.worktree<br/>task/002"]
+        end
+        subgraph W3[" "]
+            W3T["Worker 3<br/>.worktree<br/>task/003"]
+        end
+    end
+
+    subgraph Git["GIT BRANCHES"]
+        Main["main"]
+        Flow["flow"]
+        Tasks["task/* branches"]
+        Plan["plan/session-*"]
+
+        Tasks -->|merge| Flow
+        Flow -->|PR| Main
+        Plan -.-> Flow
+    end
+
+    Request --> Orchestrator
+    Orchestrator -.->|uses| Scripts
+    Orchestrator --> Workers
+    Workers -->|merge| Git
+
+    style Orchestrator fill:#e1f5fe,stroke:#0288d1
+    style Workers fill:#fff3e0,stroke:#ff9800
+    style Git fill:#e8f5e9,stroke:#4caf50
+    style Scripts fill:#fce4ec,stroke:#e91e63
