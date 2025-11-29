@@ -3,3 +3,5 @@
 *.pyc
 
 .claude/settings.local.json
+
+flow_claude.egg-info

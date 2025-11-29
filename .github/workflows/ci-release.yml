@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write  # Required for trusted publishing to PyPI
     steps:
       - uses: actions/checkout@v4
 
@@ -81,9 +82,6 @@ jobs:
             --generate-notes \
             dist/*
 
-      - name: Publish to TestPyPI
+      - name: Publish to PyPI
         if: steps.check_release.outputs.exists == 'false'
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
-          repository-url: https://test.pypi.org/legacy/
