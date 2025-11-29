@@ -1,7 +1,7 @@
 # Flow-Claude 
 ---
 
-##TODO A punch line (claude code, gi)
+Flow-Claude: Git-native parallel task orchestration for Claude Code.
 
 Flow-Claude extends Claude Code with git-driven task orchestration. Break down large features into parallel subtasks, execute them simultaneously, and merge results automatically.
 
