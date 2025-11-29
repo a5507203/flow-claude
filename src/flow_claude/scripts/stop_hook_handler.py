@@ -3,7 +3,6 @@ import json
 import sys
 import psutil
 import time
-from pathlib import Path
 
 def log_debug(step, data):
     """Log debug information to stderr and file."""
