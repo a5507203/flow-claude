@@ -4,4 +4,7 @@
 
 .claude/settings.local.json
 
-flow_claude.egg-info
+flow_claude.egg-info/
+
+.ruff_cache/
+

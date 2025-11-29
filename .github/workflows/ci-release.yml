@@ -3,6 +3,28 @@ name: CI and Release
 on:
   push:
     branches: [12-claude-code-agent-sometimes-does-not-follow-the-instructions-and-do-not-use-tools-in-their-skill]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - '**.png'
+      - '**.jpg'
+      - '**.jpeg'
+      - '**.gif'
+      - '**.webp'
+      - '**.svg'
+      - '**.bmp'
+      - '**.tiff'
+      - '**.ico'
+      - '**.mp4'
+      - '**.mov'
+      - '**.avi'
+      - '**.mkv'
+      - '**.flv'
+      - '**.wmv'
+      - '**.webm'
+      - '**.m4v'
+
 
 jobs:
   ci:
