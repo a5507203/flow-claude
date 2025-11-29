@@ -81,8 +81,9 @@ jobs:
             --generate-notes \
             dist/*
 
-      - name: Publish to PyPI
+      - name: Publish to TestPyPI
         if: steps.check_release.outputs.exists == 'false'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          repository-url: https://test.pypi.org/legacy/
