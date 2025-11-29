@@ -30,10 +30,10 @@ Use command
 ```bash
 claude 
 ```
-to activate the terminal cli, if you want to acvoid frequrent permission approval, use `claude --dangerously-skip-permissions`
+to activate the terminal CLI. If you want to avoid frequent permission approval, use `claude --dangerously-skip-permissions`
 
 ### Prompt model to use `Flow-Claude`
-In order to use flow-Claude, you must explicitly instruct the model to use them.  
+In order to use Flow-Claude, you must explicitly instruct the model to use it.  
 Because the current Claude model does **not reliably invoke Skills automatically**, you need to **append a reminder at the end of your prompt**.
 For example:
 ```
