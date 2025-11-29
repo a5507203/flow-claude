@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flow-claude"
-version = "0.1.1"
+version = "1.0.0"
 description = "Claude Code UI-native autonomous development system with git-first architecture"
 readme = "README.md"
 requires-python = ">=3.10"

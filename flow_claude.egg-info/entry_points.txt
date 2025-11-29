@@ -1,3 +1,0 @@
-[console_scripts]
-flow = flow_claude.commands.flow_cli:main
-flow-claude = flow_claude.commands.flow_cli:main

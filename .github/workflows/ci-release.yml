@@ -2,7 +2,7 @@ name: CI and Release
 
 on:
   push:
-    branches: [12-claude-code-agent-sometimes-does-not-follow-the-instructions-and-do-not-use-tools-in-their-skill]
+    branches: [main]
     paths-ignore:
       - '**.md'
       - 'LICENSE'
