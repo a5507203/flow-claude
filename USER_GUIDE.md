@@ -39,7 +39,7 @@ For example:
 ```
 Build a REST API for blog posts with CRUD operations. Remember to use your SKILLs.
 ```
-![Launch](assets/WORKFLOR_DETAILS/workflow-1.png)
+![Launch](./assets/workflow1.png)
 
 ### Resume and continue your work
 When you return to a project after a break or session interruption, Claude needs to understand the current state before continuing.
@@ -54,7 +54,7 @@ Select the past conversation from the list.
 ```
 Check current plan and task branch status, then add a user authentication system to manage user accounts and secure access to the blog API. Remember to use Skills.
 ```
-![ResumeWork](assets/resume_work.png)
+![ResumeWork](./assets/resume_work.png)
 This tells Claude to:
 1. Scan for existing `plan/*` and `task/*` branches
 2. Read the metadata files to understand progress
@@ -67,7 +67,7 @@ After a plan is finished and all tasks passed, you may want to clean up the crea
 Delete the plan/<plan-name> branch and all its related task branches.
 ```
 For example: `Delete the plan/blog-api-crud branch and all its related task branches.`
-![Delete](assets/delete.png)
+![Delete](./assets/delete.png)
 ### Commit manual changes
 If you make local changes on the `flow` branch and want workers to use them, commit your changes first:
 ```bash
