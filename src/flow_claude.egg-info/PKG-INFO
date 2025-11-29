@@ -3,8 +3,13 @@ Name: flow-claude
 Version: 0.1.0
 Summary: Claude Code UI-native autonomous development system with git-first architecture
 Author: Flow-Claude Contributors
+License: MIT
+Project-URL: Homepage, https://github.com/a5507203/flow-claude
+Project-URL: Repository, https://github.com/a5507203/flow-claude
+Project-URL: Issues, https://github.com/a5507203/flow-claude/issues
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: claude-agent-sdk>=0.1.0
 Requires-Dist: click>=8.1.0
 Requires-Dist: textual>=0.40.0
@@ -12,39 +17,135 @@ Provides-Extra: dev
 Requires-Dist: pytest>=7.0.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
 Requires-Dist: ruff>=0.1.0; extra == "dev"
+Dynamic: license-file
 
-# Flow-Claude
+# Flow-Claude 
+---
 
-Git-driven autonomous development system for Claude Code. Execute complex development tasks through parallel worker agents coordinated by an intelligent orchestrator.
+##TODO A punch line (claude code, gi)
 
-## Features
+Flow-Claude extends Claude Code with git-driven task orchestration. Break down large features into parallel subtasks, execute them simultaneously, and merge results automatically.
 
-- **Autonomous Task Execution**: Break down complex requests into parallel tasks
-- **Git-First Architecture**: All state managed through structured git commits and branches
-- **Parallel Workers**: Execute independent tasks simultaneously in isolated git worktrees
-- **Dynamic Replanning**: Adapt execution plan based on implementation discoveries
-- **Claude Code Native**: Seamless integration with Claude Code UI
+---
+
+### Key feature and Benfits
+
+Flow+Claude subagent with GitHub as the version control and information hub (sinlge source of truth).
+
+Claude automatically generates plans and creates both plan branches and task branches:
+
+The plan branch defines the overall workflow and updates automatically whenever a task is completed.
+
+Each task branch is used to execute an individual task. Tasks can run in parallel using Git worktrees.
+
+This setup ensures smooth automation, parallel task execution, and continuous synchronization between planning and execution stages.
+
+Works seamlessly within Claude Code UI
+
+## Related paper
+
+
+## To be a conributor
+
+submit an github issue (link) and contact team via yu.yao@sydney.edu.au and discord xxx
+
+## Desgin Principle 
+
+We design Flow-Claude as a lightweight tool that lives within the Claude CLI. As the Claude code model evolves, the benefits of the framework will also continue to grow. 
+
+The framework itself should not become a blocker for future updates of the Claude model. Therefore our primary focus is communication efficiency and parallelism with minimum constraints.
+
+Every new design should smoothly support the Claude CLI.
+
+---
+### Workflow
+
+```mermaid
+graph TD
+  A["Your Request"] --> B["Orchestrator"]
+  B --> C["Worker 1 (task/001)"]
+  B --> D["Worker 2 (task/002)"]
+  B --> E["Worker 3 (task/003)"]
+  C --> F["flow branch (merged results)"]
+  D --> F
+  E --> F
+```
+---
 
 ## Installation
 
+### Prerequisites
+
+- Python 3.10+
+- Git
+- Node.js 18+ (LTS recommended)
+- npm 9+ or equivalent package manager
+- Windows users: See [Windows Installation Guide](https://code.claude.com/docs/en/setup#windows-setup) for special instructions
+
+> **IMPORTANT**: Claude Code must be installed first:
+> ```bash
+> npm install -g @anthropic-ai/claude-code
+> ```
+>
+> See [Claude Code Setup](https://code.claude.com/docs/en/setup) for more details.
+
+---
+
+
+**Install From PyPI**
 ```bash
 pip install flow-claude
 ```
 
-## Quick Start
+**Install From Source**
+```bash
+git clone https://github.com/a5507203/flow-claude.git
+cd flow-claude
+pip install -e .
+```
 
-### 1. Initialize Your Project
+**Verify Installation:**
+```bash
+flow --help
+```
+
+Expected output:
+```
+Usage: flow [OPTIONS]
+
+  Initialize Flow-Claude for Claude Code UI.
+
+  Creates .claude/ directory structure with skills, commands, and agents.
+  Run once per project, then use Claude Code UI for development.
+
+Options:
+  --help  Show this message and exit.
+```
+
+---
+
+## Initialize Your Project
+
+> **Warning**: For existing projects, backup your `.claude/` directory and `CLAUDE.md` first, `flow` will overwrite them.
 
 Navigate to your git repository and initialize Flow-Claude:
 
-**Method 1: Using Python Module (Works Immediately)**
+### Linux / macOS
+
 ```bash
+cd /path/to/your/project
+flow
+```
+
+### Windows
+
+**Option 1: Using Python Module (Works Immediately)**
+```bash
+cd /path/to/your/project
 python -m flow_claude.commands.flow_cli
 ```
 
-**Method 2: Using `flow` Command (Requires PATH Setup)**
-
-On **Windows**, add Python Scripts to PATH first:
+**Option 2: Using `flow` Command (Requires PATH Setup)**
 ```powershell
 # Find your Python Scripts directory
 python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
@@ -52,188 +153,115 @@ python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
 # Add to PATH (PowerShell - current session)
 $env:PATH += ";C:\Users\YourUsername\AppData\Roaming\Python\Python3XX\Scripts"
 
-# Or add permanently via System Environment Variables
-# Then run:
-flow init
+# Or add permanently via System Environment Variables 
+# Step1: Press `Win + R`
+# Step2: Type `sysdm.cpl`
+# Step3: Switch to `Advanced`
+# Step4: Clip `Environment Variables` to add
 ```
 
-On **Linux/Mac**, `flow` command works immediately after pip install:
+Then run:
 ```bash
-flow init
+flow
 ```
 
+---
 **What happens during initialization:**
-- Interactive UI to select base branch for `flow` branch (if needed)
-- Automatic CLAUDE.md creation/update with Flow-Claude instruction
-- `.claude/` directory created with skills, commands, agents, and settings
-- All changes committed to `flow` branch
+- Creates `flow` branch from your main branch
+- Creates `.claude/` directory with skills, commands, agents
+- Creates/updates `CLAUDE.md` with Flow-Claude instructions
+- Commits all changes to `flow` branch
 
-### 2. Open in Claude Code
-
-Open your project in Claude Code UI.
-
-### 3. Start Developing
-
-Simply describe what you want to build:
-
-```
-"Add user authentication with JWT and bcrypt"
-"Implement product search with Elasticsearch"
-"Create REST API for order management"
-```
-
-The orchestrator will:
-1. Analyze your request
-2. Design an execution plan with ~10-minute tasks
-3. Create independent, parallel-friendly tasks
-4. Launch workers to execute tasks simultaneously
-5. Merge results to the `flow` branch
-
-## Architecture
-
-### Branches
-
-- `main`/`master`: Production code
-- `flow`: Development base (auto-created)
-- `plan/session-*`: Execution plans
-- `task/*`: Individual task branches
-
-### Workflow
-
-```
-User Request
-    ↓
-Orchestrator analyzes & plans
-    ↓
-Creates task branches (task/001-*, task/002-*, ...)
-    ↓
-Launches workers in parallel (git worktrees)
-    ↓
-Workers execute & commit progress
-    ↓
-Merge to flow branch
-```
-
-### Task Design
-
-Each task is:
-- **~10 minutes**: Right-sized for focused work
-- **Self-contained**: Minimal dependencies on other tasks
-- **Independent**: Can run in parallel without conflicts
-- **Specific**: Clear instruction with MCP tool guidance
-
-## Configuration
-
-### Autonomous Mode
-
-Toggle autonomous execution (default: OFF):
-
-```
-\auto
-```
-
-- **OFF**: Presents plan and waits for approval
-- **ON**: Executes automatically
-
-### Parallel Workers
-
-Set maximum parallel workers (1-10, default: 3):
-
-```
-\parallel 5
-```
-
-## Usage
-
-### Initialization
-
-**Option 1: Python Module (Recommended for Windows)**
-```bash
-python -m flow_claude.commands.flow_cli
-```
-
-**Option 2: Direct Command (After PATH Setup)**
-```bash
-flow init
-```
-
-### Setting up PATH on Windows
-
-If you want to use the `flow` command directly:
-
-1. **Find your Python Scripts directory:**
-```bash
-python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
-```
-
-2. **Add to PATH:**
-   - **Temporary (current PowerShell session):**
-     ```powershell
-     $env:PATH += ";C:\Users\YourUsername\AppData\Roaming\Python\Python3XX\Scripts"
-     ```
-   - **Permanent:**
-     1. Open System Properties → Environment Variables
-     2. Edit `Path` variable
-     3. Add your Python Scripts directory
-     4. Restart terminal
-
-### Configuration Commands
-
-Once initialized, use these slash commands in Claude Code:
-
-```
-\auto       - Toggle autonomous mode (ON/OFF)
-\parallel 5 - Set max parallel workers (1-10)
-```
-
-## Project Structure
-
+### Directory Structure
 ```
 your-project/
-├── .claude/
-│   ├── skills/
-│   │   ├── git-tools/          # Git state management (6 commands)
-│   │   ├── launch-workers/     # Worker spawning & management
-│   │   └── your-workflow/      # Main orchestration workflow
-│   ├── commands/
-│   │   ├── auto.md             # Toggle autonomous mode
-│   │   └── parallel.md         # Set max workers
-│   ├── agents/
-│   │   └── user.md             # User confirmation agent
-│   └── settings.local.json     # Claude Code settings
-├── .worktrees/                 # Worker git worktrees (auto-created)
-│   ├── worker-1/
-│   ├── worker-2/
-│   └── worker-3/
-└── CLAUDE.md                   # Project instructions
+├── .claude/        # Flow-Claude skills, commands, agents, settings
+├── .worktrees/     # Git worktrees for worker branches (auto-created, ignored by git)
+├── CLAUDE.md       # Flow-Claude instructions prepended to the repo
+|-- Original Projects Content...
 ```
+---
 
-## Example Session
 
-**Request:**
-```
-"Build a REST API for blog posts with CRUD operations"
+### Example Usage
+
+Flow-Claude can orchestrate large features with parallel workers or keep things simple when the request is tiny.
+
+#### Usage Workflow
+
+```bash
+# Initialize
+cd my-project
+flow
+
+# Open Claude Code
+claude --dangerously-skip-permissions
+
+# Ask:
+"Read the SILLs, then Build a REST API for blog posts with CRUD operations"
+
+# Flow-Claude creates:
+# - plan/session-20250121-143000 (execution plan)
+# - task/001-create-post-model
+# - task/002-implement-crud-service
+# - task/003-create-api-endpoints
+# Workers execute in parallel, merge to flow branch
 ```
 
 **Flow-Claude will:**
 
-1. **Plan** (3 independent tasks):
-   - Task 001: Create Post model with SQLAlchemy (blog/models/post.py)
-   - Task 002: Implement post CRUD service (blog/services/post_service.py)
-   - Task 003: Create REST API endpoints (blog/api/posts.py)
+1. **Plan** - Break the request into parallel tasks (model, CRUD service, API endpoints).
+2. **Execute** - Launch workers for the ready tasks, each in its own worktree.
+3. **Merge** - Merge completed task branches back into `flow` and update the plan.
 
-2. **Execute** in parallel:
-   - Worker 1 → Task 001
-   - Worker 2 → Task 002
-   - Worker 3 → Task 003
+#### Small Task Case
 
-3. **Merge** all changes to `flow` branch
+When the request is clearly a quick fix (e.g., “Update README typos” or “Bump a config flag”), the main orchestrator handles it directly instead of launching workers:
 
-## Advanced Usage
+- Evaluate the request scope; if it only needs one short change, skip plan/task branch creation.
+- Work directly on the `flow` branch (or a lightweight scratch branch) and apply the change.
+- Report back to the user with the diff/summary just like a worker would.
 
-### External MCP Tools
 
-Workers can access MCP servers defined in `.mcp.json`:
+### Git Branch Structure
+
+```
+main/master (production)
+    ↑
+flow (development base)
+    ├── plan/session-* (execution plans)
+    ├── task/001-*
+    ├── task/002-*
+    └── task/003-*
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `\auto` | Toggle autonomous mode (ON = no approval needed) |
+| `\parallel N` | Set max parallel workers (1-10, default: 3) |
+
+---
+
+## MCP Servers and AgentSkills
+The main agent can automatically determine which MCP tools and agent skills the worker agents require. 
+
+
+### MCP Servers Install 
+
+Flow-Claude uses MCP in the same way as Claude Code, except that **MCP servers must be installed inside your project directory**.
+
+For detailed MCP setup instructions, see:
+- [Claude Code MCP](https://code.claude.com/docs/en/mcp)
+
+**Example: Adding the Playwright MCP server**
+
+```bash
+claude mcp add playwright -- npx --scope project @playwright/mcp@latest # # Run this command inside your project directory
+```
+
+Or manually add to `.mcp.json` in your project root folder:
 
 ```json
 {
@@ -246,113 +274,53 @@ Workers can access MCP servers defined in `.mcp.json`:
   }
 }
 ```
+---
+### Skill Install
+Flow-Claude uses Skill in the same way as Claude Code, except that **Skill must be added inside your project directory**.
 
-Workers automatically get access to required MCP tools based on task instructions.
+For detailed Skill adding instructions, see:
+- [Claude Code Skill](https://platform.claude.com/docs/en/agent-sdk/skills#how-skills-work-with-the-sdk)
 
-### Monitoring Workers
+**Example: Creating Skills**
+- Created as `SKILL.md` files in specific directories (.claude/skills/)
+```
+.claude/skills/processing-pdfs/
+└── SKILL.md
+```
+---
 
-Workers commit progress to their task branches. Monitor via:
+### Hooks Setup
 
+Get notified when Claude needs attention or completes tasks - useful when running AI in background.
+
+**1. Install notification script:**
 ```bash
-git log task/001-create-post-model
+npx claude-code-templates@latest --hook=automation/simple-notifications --yes
 ```
+Then delete the `postToolUse` hook added by this command (we only need the notification script it installs).
 
-### Manual Task Creation
+**2. Add hooks via `/hooks` command:**
 
-```bash
-python -m flow_claude.scripts.create_task_branch \
-  --task-id="001" \
-  --instruction="Create Post model. Use Write tool to create blog/models/post.py with SQLAlchemy Post model (title, content, author, created_at fields). Include tests in tests/test_post_model.py." \
-  --plan-branch="plan/build-blog-api" \
-  --depends-on='[]' \
-  --key-files='["blog/models/post.py","tests/test_post_model.py"]' \
-  --priority="high"
-```
+| Hook Type | Command |
+|-----------|---------|
+| **Stop** (task done) | `if command -v osascript >/dev/null 2>&1; then osascript -e 'display notification "Task completed successfully" with title "✅ Claude Code Done"'; elif command -v notify-send >/dev/null 2>&1; then notify-send '✅ Claude Code' 'Task completed successfully'; fi` |
+| **Notification** (action needed) | `if command -v osascript >/dev/null 2>&1; then osascript -e 'display notification "Claude Code needs your input or approval!" with title "🛑 Action Required"'; elif command -v notify-send >/dev/null 2>&1; then notify-send '🛑 Claude Code' 'Action or permission required!'; fi` |
 
-## Requirements
-
-- Python ≥ 3.10
-- Git repository
-- Claude Code UI (for interactive use)
-
-## Dependencies
-
-- `claude-agent-sdk` ≥ 0.1.0
-- `click` ≥ 8.1.0
-
-## Development
-
-```bash
-# Clone repository
-git clone https://github.com/yourusername/flow-claude.git
-cd flow-claude
-
-# Install in editable mode (from src/ layout)
-pip install -e .
-
-# After installation, run with:
-python -m flow_claude.commands.flow_cli
-
-# Or (if PATH configured):
-flow init
-
-# Run tests
-pytest
-
-# Lint
-ruff check .
-```
-
-## Troubleshooting
-
-### Windows: 'flow' command not found
-
-**Solution:** Use `python -m flow_claude.commands.flow_cli` or add Python Scripts to PATH:
-```powershell
-# Find Scripts location
-python -c "import os, sys; print(os.path.join(sys.prefix, 'Scripts'))"
-
-# Add to PATH (see "Setting up PATH on Windows" section)
-```
-
-### Import Error after installation
-
-**Solution:** Reinstall in editable mode:
-```bash
-pip install -e .
-```
-
-### Setup UI issues
-
-The setup UI uses Textual for interactive branch selection. If you encounter issues:
-```bash
-# Install with UI dependencies
-pip install flow-claude[setup-ui]
-```
-
-## License
-
-[Your License Here]
-
-## Contributing
-
-Contributions welcome! Please open an issue or submit a pull request.
-
-## Support
-
-- Issues: https://github.com/yourusername/flow-claude/issues
-- Documentation: [Link to docs]
+> Works on macOS (`osascript`) and Linux (`notify-send`).
 
 ---
 
-**Ready to start?**
+### License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+### Support
+- [GitHub Issues](https://github.com/a5507203/flow-claude/issues)
+
+---
+
+**Ready to supercharge your development?**
 
 ```bash
-# Run initialization
-python -m flow_claude.commands.flow_cli
-
-# Or (with PATH configured)
-flow init
+pip install flow-claude && cd your-project && flow
 ```
-
-Then open your project in Claude Code and describe what you want to build!

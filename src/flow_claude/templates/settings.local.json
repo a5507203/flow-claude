@@ -1,19 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir:*)",
-      "Bash(mkdir:*)",
-      "Bash(git worktree:*)",
-      "Bash(while read dir)",
-      "Bash(for dir in .worktrees/*)",
-      "Bash(do git worktree remove *)",
-      "Skill(launch-workers)",
-      "Skill(git-tools)",
-      "Bash(mkdir:*)",
-      "Bash(git *)",
       "Skill(your-workflow)",
-      "Bash(timeout /t *)"
-    ]
+      "Bash(python -m flow_claude.commands.set_parallel:*)",
+      "Bash(python -m flow_claude.commands.toggle_auto:*)",
+      "Bash(python -m flow_claude.scripts.create_plan_branch:*)",
+      "Bash(python -m flow_claude.scripts.create_task_branch:*)",
+      "Bash(python -m flow_claude.scripts.launch_worker:*)",
+      "Bash(python -m flow_claude.scripts.parse_branch_latest_commit:*)",
+      "Bash(python -m flow_claude.scripts.read_plan_metadata:*)",
+      "Bash(python -m flow_claude.scripts.read_task_metadata:*)",
+      "Bash(python -m flow_claude.scripts.update_plan_branch:*)"
+    ],
+    "deny": [],
+    "ask": []
   },
   "hooks": {
     "Stop": [
@@ -21,8 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python -m flow_claude.scripts.stop_hook_handler.py",
-            "timeout": 100000
+            "command": "python -m flow_claude.scripts.stop_hook_handler.py"
           }
         ]
       }

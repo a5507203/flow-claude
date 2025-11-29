@@ -6,9 +6,82 @@ Run once per project to create necessary file structure.
 """
 
 import sys
+import json
 import shutil
 import click
 from pathlib import Path
+
+
+def merge_settings(existing: dict, template: dict) -> dict:
+    """Merge template settings into existing settings.
+
+    Args:
+        existing: Existing settings dictionary
+        template: Template settings dictionary
+
+    Returns:
+        Merged settings dictionary
+    """
+    result = existing.copy()
+
+    # Merge permissions
+    if "permissions" in template:
+        if "permissions" not in result:
+            result["permissions"] = {}
+
+        template_perms = template["permissions"]
+        result_perms = result["permissions"]
+
+        # Merge allow list
+        if "allow" in template_perms:
+            if "allow" not in result_perms:
+                result_perms["allow"] = []
+            # Add items that don't already exist
+            for item in template_perms["allow"]:
+                if item not in result_perms["allow"]:
+                    result_perms["allow"].append(item)
+
+        # Merge deny list
+        if "deny" in template_perms:
+            if "deny" not in result_perms:
+                result_perms["deny"] = []
+            for item in template_perms["deny"]:
+                if item not in result_perms["deny"]:
+                    result_perms["deny"].append(item)
+
+        # Merge ask list
+        if "ask" in template_perms:
+            if "ask" not in result_perms:
+                result_perms["ask"] = []
+            for item in template_perms["ask"]:
+                if item not in result_perms["ask"]:
+                    result_perms["ask"].append(item)
+
+    # Merge hooks
+    if "hooks" in template:
+        if "hooks" not in result:
+            result["hooks"] = {}
+
+        template_hooks = template["hooks"]
+        result_hooks = result["hooks"]
+
+        for hook_name, hook_configs in template_hooks.items():
+            if hook_name not in result_hooks:
+                result_hooks[hook_name] = hook_configs
+            else:
+                # Merge hook configurations - add new ones that don't exist
+                existing_hooks = result_hooks[hook_name]
+                for new_config in hook_configs:
+                    # Check if this config already exists (compare by structure)
+                    config_exists = False
+                    for existing_config in existing_hooks:
+                        if json.dumps(new_config, sort_keys=True) == json.dumps(existing_config, sort_keys=True):
+                            config_exists = True
+                            break
+                    if not config_exists:
+                        existing_hooks.append(new_config)
+
+    return result
 
 
 def copy_template_files(project_root: Path) -> dict:
@@ -82,15 +155,31 @@ def copy_template_files(project_root: Path) -> dict:
             shutil.copy(user_proxy, claude_dir / 'agents' / 'user.md')
             results["agents"] += 1
 
-    # Copy settings.local.json to .claude/ directory
+    # Copy or merge settings.local.json to .claude/ directory
     settings_file = template_dir / 'settings.local.json'
     if settings_file.exists():
         dest_settings = claude_dir / 'settings.local.json'
-        if not dest_settings.exists():  # Don't overwrite existing settings
+        if not dest_settings.exists():
+            # No existing file, just copy
             shutil.copy(settings_file, dest_settings)
             results["settings"] = 1
         else:
-            results["settings"] = 0
+            # Existing file - merge template settings into it
+            try:
+                with open(settings_file, 'r') as f:
+                    template_settings = json.load(f)
+                with open(dest_settings, 'r') as f:
+                    existing_settings = json.load(f)
+
+                merged_settings = merge_settings(existing_settings, template_settings)
+
+                with open(dest_settings, 'w') as f:
+                    json.dump(merged_settings, f, indent=2)
+
+                results["settings"] = 2  # 2 indicates merged
+            except (json.JSONDecodeError, IOError) as e:
+                # If we can't parse/read the existing file, don't overwrite
+                results["settings"] = 0
     else:
         results["settings"] = 0
 
@@ -150,8 +239,11 @@ def main():
         print(f"  [OK] Created {results['skills']} skills")
         print(f"  [OK] Created {results['commands']} commands")
         print(f"  [OK] Created {results['agents']} agent(s)")
-        if results.get('settings', 0) > 0:
+        settings_result = results.get('settings', 0)
+        if settings_result == 1:
             print(f"  [OK] Copied settings.local.json")
+        elif settings_result == 2:
+            print(f"  [OK] Merged settings into existing settings.local.json")
 
         # Step 3: Commit the changes to flow branch
         print("\n[3/4] Committing Flow-Claude configuration to flow branch...\n")

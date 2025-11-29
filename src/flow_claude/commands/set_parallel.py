@@ -37,8 +37,9 @@ def set_parallel_workers(num_workers: int, project_root: Path = None) -> dict:
     # Read file
     content = skill_file.read_text(encoding='utf-8')
 
-    # Update the description line
-    pattern = r'(description:.*Max parallel workers: )\d+'
+    # Update the max parallel workers value
+    # Handle both single-line and multi-line YAML description formats
+    pattern = r'(Max parallel workers: )\d+'
     replacement = rf'\g<1>{num_workers}'
 
     new_content, count = re.subn(pattern, replacement, content)
@@ -46,7 +47,7 @@ def set_parallel_workers(num_workers: int, project_root: Path = None) -> dict:
     if count == 0:
         return {
             'success': False,
-            'message': 'Error: Could not find "Max parallel workers: X" in description'
+            'message': 'Error: Could not find "Max parallel workers: X" in SKILL.md'
         }
 
     # Write back
@@ -54,7 +55,7 @@ def set_parallel_workers(num_workers: int, project_root: Path = None) -> dict:
 
     return {
         'success': True,
-        'message': f'Max parallel workers set to {num_workers}, plrease restart the claude.'
+        'message': f'Max parallel workers set to {num_workers}, use this updated settings.'
     }
 
 
