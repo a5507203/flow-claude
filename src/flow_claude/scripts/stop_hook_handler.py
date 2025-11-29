@@ -14,8 +14,8 @@ def log_debug(step, data):
     }
     print(json.dumps(debug_msg), file=sys.stderr)
 
-    # Also write to debug file
-    debug_file = Path("debug_stop_hook.jsonl")
+    # Also write to debug file (disabled)
+    # debug_file = Path("debug_stop_hook.jsonl")
     # with open(debug_file, 'a') as f:
     #     f.write(json.dumps(debug_msg) + '\n')
 

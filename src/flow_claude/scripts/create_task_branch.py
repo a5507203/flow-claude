@@ -44,7 +44,7 @@ async def create_task_branch(
             "## Task Metadata",
             f"ID: {task_id}",
             f"Instruction: {instruction}",
-            f"Status: pending",
+            "Status: pending",
             ""
         ]
 

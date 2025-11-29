@@ -198,7 +198,7 @@ class ClaudeMdPromptScreen(Screen):
             else:
                 self.app.call_from_thread(
                     self.query_one("#line3", Label).update,
-                    f"[yellow]Warning: Could not commit to flow branch[/yellow]"
+                    "[yellow]Warning: Could not commit to flow branch[/yellow]"
                 )
                 self.app.call_from_thread(
                     self.query_one("#line4", Label).update,

@@ -101,7 +101,7 @@ def copy_template_files(project_root: Path) -> dict:
     try:
         # Try to get from installed package
         template_dir = Path(files('flow_claude') / 'templates')
-    except:
+    except Exception:
         # Fallback to relative path (development mode)
         template_dir = Path(__file__).parent.parent / 'templates'
 
@@ -177,7 +177,7 @@ def copy_template_files(project_root: Path) -> dict:
                     json.dump(merged_settings, f, indent=2)
 
                 results["settings"] = 2  # 2 indicates merged
-            except (json.JSONDecodeError, IOError) as e:
+            except (json.JSONDecodeError, IOError):
                 # If we can't parse/read the existing file, don't overwrite
                 results["settings"] = 0
     else:
@@ -241,9 +241,9 @@ def main():
         print(f"  [OK] Created {results['agents']} agent(s)")
         settings_result = results.get('settings', 0)
         if settings_result == 1:
-            print(f"  [OK] Copied settings.local.json")
+            print("  [OK] Copied settings.local.json")
         elif settings_result == 2:
-            print(f"  [OK] Merged settings into existing settings.local.json")
+            print("  [OK] Merged settings into existing settings.local.json")
 
         # Step 3: Commit the changes to flow branch
         print("\n[3/4] Committing Flow-Claude configuration to flow branch...\n")
@@ -261,7 +261,7 @@ def main():
             if current_branch != 'flow':
                 print(f"  [INFO] Switching from '{current_branch}' to 'flow' branch...")
                 subprocess.run(['git', 'checkout', 'flow'], check=True, capture_output=True)
-                print(f"  [OK] Switched to 'flow' branch")
+                print("  [OK] Switched to 'flow' branch")
 
             # Add all .claude files
             subprocess.run(['git', 'add', '.claude/'], check=True)
@@ -273,11 +273,11 @@ def main():
             )
 
             if commit_result.returncode == 0:
-                print(f"  [OK] Committed Flow-Claude configuration to 'flow' branch")
+                print("  [OK] Committed Flow-Claude configuration to 'flow' branch")
             else:
                 # Check if nothing to commit
                 if 'nothing to commit' in commit_result.stdout or 'nothing to commit' in commit_result.stderr:
-                    print(f"  [OK] Flow-Claude configuration already committed")
+                    print("  [OK] Flow-Claude configuration already committed")
                 else:
                     print(f"  [WARN] Could not commit: {commit_result.stderr.strip()}")
 

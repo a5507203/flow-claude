@@ -10,7 +10,7 @@ try:
     # Debug: write input_data to file
     with open('post_input_data.json', 'w') as f:
         json.dump(input_data, f, indent=2)
-except:
+except Exception:
     sys.exit(0)
 
 # Extract cwd and command from input_data

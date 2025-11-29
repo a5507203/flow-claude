@@ -8,7 +8,7 @@ from pathlib import Path
 from textual.app import App
 
 from . import git_utils
-from .screens import BranchSelectionScreen, ClaudeMdPromptScreen
+from .screens import BranchSelectionScreen
 
 
 class SetupUI(App):

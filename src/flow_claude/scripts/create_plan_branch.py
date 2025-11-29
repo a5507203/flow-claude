@@ -47,7 +47,7 @@ async def create_plan_branch(
 
         # Build commit message
         commit_lines = [
-            f"Initialize execution plan v1",
+            "Initialize execution plan v1",
             "",
             "## Session Information",
             f"Session name: {session_name}",
