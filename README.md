@@ -1,5 +1,6 @@
 # Flow-Claude (Flow for Claude Code)
 
+
 Flow-Claude is for Claude Code users working on long development tasks. 
 - Break down requirements into parallel tasks, 
 - execute them simultaneously without stopping, 
@@ -8,15 +9,13 @@ Flow-Claude is for Claude Code users working on long development tasks.
 
 
 
-
-
-## Related Paper
+### Related Paper
 
 Niu, B., Song, Y., Lian, K., Shen, Y., Yao, Y., Zhang, K., & Liu, T. Flow: Modularized Agentic Workflow Automation. ICLR 2025
 
 [Paper PDF](https://openreview.net/pdf?id=sLKDbuyq99)
 
-## Design Principle
+### Design Principle
 
 We design Flow-Claude as a lightweight tool that lives within the Claude CLI. As the Claude code model evolves, the benefits of the framework will also continue to grow.
 
@@ -24,7 +23,10 @@ The framework itself should not become a blocker for future updates of the Claud
 
 Every new design should smoothly support the Claude CLI.
 
----
+
+### Contributing
+
+Submit a [GitHub issue](https://github.com/a5507203/flow-claude/issues) or contact yu.yao@sydney.edu.au
 
 
 ## Installation
@@ -232,11 +234,7 @@ Then delete the `postToolUse` hook added by this command (we only need the notif
 
 > Works on macOS (`osascript`) and Linux (`notify-send`).
 
----
 
-## Contributing
-
-Submit a [GitHub issue](https://github.com/a5507203/flow-claude/issues) or contact yu.yao@sydney.edu.au
 
 ---
 
