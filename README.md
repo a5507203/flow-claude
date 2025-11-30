@@ -215,38 +215,12 @@ For detailed Skill adding instructions, see:
 
 ---
 
-## Hooks Setup
-
-Get notified when Claude needs attention or completes tasks - useful when running AI in background.
-
-**1. Install notification script:**
-```bash
-npx claude-code-templates@latest --hook=automation/simple-notifications --yes
-```
-Then delete the `postToolUse` hook added by this command (we only need the notification script it installs).
-
-**2. Add hooks via `/hooks` command:**
-
-| Hook Type | Command |
-|-----------|---------|
-| **Stop** (task done) | `if command -v osascript >/dev/null 2>&1; then osascript -e 'display notification "Task completed successfully" with title "✅ Claude Code Done"'; elif command -v notify-send >/dev/null 2>&1; then notify-send '✅ Claude Code' 'Task completed successfully'; fi` |
-| **Notification** (action needed) | `if command -v osascript >/dev/null 2>&1; then osascript -e 'display notification "Claude Code needs your input or approval!" with title "🛑 Action Required"'; elif command -v notify-send >/dev/null 2>&1; then notify-send '🛑 Claude Code' 'Action or permission required!'; fi` |
-
-> Works on macOS (`osascript`) and Linux (`notify-send`).
-
-
-
----
 
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## Support
 
-- [GitHub Issues](https://github.com/a5507203/flow-claude/issues)
-
----
 
 **Ready to supercharge your development?**
 
