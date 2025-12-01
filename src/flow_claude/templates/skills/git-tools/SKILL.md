@@ -127,6 +127,8 @@ python -m flow_claude.scripts.read_task_metadata --branch="task/001-create-user-
 python -m flow_claude.scripts.update_plan_branch \
   --plan-branch="plan/add-user-authentication" \
   --user-request="Add user authentication with JWT and bcrypt" \
+  --design-doc="User model in src/models/user.py, auth endpoints in src/api/auth.py, password hashing in src/utils/auth.py" \
+  --tech-stack="Python 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT" \
   --tasks='[
     {"id":"001","description":"Create User model","depends_on":[],"status":"completed"},
     {"id":"002","description":"Implement password hashing","depends_on":[],"status":"in_progress"},
