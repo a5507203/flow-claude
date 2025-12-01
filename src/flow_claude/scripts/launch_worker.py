@@ -150,6 +150,33 @@ def _validate_worker_params(worker_id: str, task_branch: str,
     return True, None
 
 
+def _cleanup_worktree(worktree_path: Path) -> bool:
+    """Remove the worktree after task completion.
+
+    Must be run from outside the worktree directory.
+    Uses --force to handle uncommitted changes.
+
+    Args:
+        worktree_path: Path to the worktree to remove
+
+    Returns:
+        True if cleanup succeeded, False otherwise
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ['git', 'worktree', 'remove', str(worktree_path), '--force'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=Path.cwd()  # Run from project root, not worktree
+        )
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 async def run_worker(worker_id: str, task_branch: str,
                     session_info: Dict[str, Any],
                     cwd: str,
@@ -260,6 +287,13 @@ async def run_worker(worker_id: str, task_branch: str,
 
         # Query completed naturally
         print(f"[Worker-{worker_id}] Completed task {task_branch}", flush=True)
+
+        # Cleanup worktree after successful completion
+        if _cleanup_worktree(working_dir):
+            print(f"[Worker-{worker_id}] Cleaned up worktree {working_dir}", flush=True)
+        else:
+            print(f"[Worker-{worker_id}] Warning: Failed to cleanup worktree {working_dir}", flush=True)
+
         return
 
     except Exception as e:
