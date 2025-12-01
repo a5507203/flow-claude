@@ -57,7 +57,7 @@ description: |
     --tasks='[{"id":"001","description":"Create User model","depends_on":[]},...]'
 
   # 2. Execute ready 3 parallel tasks
-  python -m flow_claude.scripts.create_task_branch --task-id="001" --instruction="..." --plan-branch="plan/add-user-authentication" --context-paths='["src/models/"]' ...
+  python -m flow_claude.scripts.create_task_branch --task-id="001" --instruction="..." --plan-branch="plan/add-user-authentication" --depends-on='[]' --context-paths='[]'
   git worktree add .worktrees/worker-1 task/001-create-user-model
   Bash(command="python -m flow_claude.scripts.launch_worker --worker-id=1 --task-branch='task/001-create-user-model' --cwd='.worktrees/worker-1' --plan-branch='plan/add-user-authentication' --model='sonnet'", run_in_background=true)
   # (repeat for workers 2 and 3 with run_in_background=true)

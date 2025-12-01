@@ -61,7 +61,7 @@ python -m flow_claude.scripts.read_task_metadata --branch="task/001-user-model"
 {
   "success": true,
   "branch": "task/001-user-model",
-  "message": "Initialize task/001-user-model\n\n## Task Metadata\nID: 001\nInstruction: Create User model with email and password fields\nStatus: pending\n\n## Dependencies\nDepends on: None\n\n## Key Files\nsrc/models/user.py\n\n## Context\nSession ID: add-user-authentication\nPlan Branch: plan/add-user-authentication\nPriority: high"
+  "message": "Initialize task/001-user-model\n\n## Task Metadata\nID: 001\nInstruction: Create User model with email and password fields\nStatus: pending\n\n## Context\nSession ID: add-user-authentication\nPlan Branch: plan/add-user-authentication"
 }
 ```
 
@@ -76,10 +76,9 @@ python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authent
 ```
 
 **Returns commit message with**:
-- `Architecture`: System architecture overview
 - `Design Doc`: Complete design documentation and how features integrate
 - `Technology Stack`: Technologies and libraries
-- `Tasks`: All tasks with their dependencies, key files, and status
+- `Tasks`: All tasks with their dependencies and status
 
 ### Check Other Tasks
 

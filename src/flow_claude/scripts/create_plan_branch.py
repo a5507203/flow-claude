@@ -164,6 +164,7 @@ Output:
     parser.add_argument(
         '--design-doc',
         type=str,
+        required=True,
         default='',
         metavar='TEXT',
         help='Complete design documentation (can be long, like CLAUDE.md). Should include: architecture overview, how features integrate with existing codebase, project structure, design patterns, architectural decisions, interface contracts. This is worker\'s primary reference document.'
@@ -171,6 +172,7 @@ Output:
     parser.add_argument(
         '--tech-stack',
         type=str,
+        required=True,
         default='',
         metavar='TEXT',
         help='Technology stack: languages, frameworks, libraries, tools (e.g., "Python 3.10, Flask 2.3, SQLAlchemy")'

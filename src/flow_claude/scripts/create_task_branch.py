@@ -152,6 +152,7 @@ Output:
     parser.add_argument(
         '--depends-on',
         type=str,
+        required=True,
         default='[]',
         metavar='JSON',
         help='JSON array of upstream task IDs that must complete before this task (e.g., ["001", "002"]). Empty array [] means no dependencies.'
@@ -159,6 +160,7 @@ Output:
     parser.add_argument(
         '--context-paths',
         type=str,
+        required=True,
         default='[]',
         metavar='JSON',
         help='JSON array of file or folder paths the worker should read for context (e.g., ["src/api/", "src/models/user.py"])'

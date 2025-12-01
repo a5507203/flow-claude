@@ -175,14 +175,14 @@ Output:
     parser.add_argument(
         '--design-doc',
         type=str,
-        default='',
+        required=True,
         metavar='TEXT',
         help='Complete design documentation (include all updates and architecture)'
     )
     parser.add_argument(
         '--tech-stack',
         type=str,
-        default='',
+        required=True,
         metavar='TEXT',
         help='Technology stack: languages, frameworks, libraries, tools'
     )
