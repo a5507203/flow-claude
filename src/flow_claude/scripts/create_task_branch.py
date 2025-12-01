@@ -19,7 +19,7 @@ async def create_task_branch(
         task_id: Task ID (e.g., '001')
         instruction: Task instruction (what needs to be done)
         plan_branch: Parent plan branch name (session-id is extracted from this)
-        **kwargs: depends_on
+        **kwargs: depends_on, context_paths
 
     Returns:
         Dict with success status
@@ -54,6 +54,15 @@ async def create_task_branch(
             commit_lines.extend([
                 "## Dependencies",
                 f"Depends on: {', '.join(depends_on)}",
+                ""
+            ])
+
+        # Context paths
+        context_paths = kwargs.get('context_paths', [])
+        if context_paths:
+            commit_lines.extend([
+                "## Context Paths",
+                *context_paths,
                 ""
             ])
 
@@ -107,12 +116,13 @@ Examples:
     --plan-branch="plan/build-conference-website" \\
     --depends-on='[]'
 
-  # Create a task with tool usage guidance
+  # Create a task with context paths (frontend needs to understand backend API)
   python -m flow_claude.scripts.create_task_branch \\
     --task-id="002" \\
-    --instruction="Add CSS styling for responsive layout. Use Write tool to create css/styles.css. Implement mobile-first design with breakpoints at 768px and 1024px. Use Flexbox for navigation layout." \\
-    --plan-branch="plan/build-conference-website" \\
-    --depends-on='["001"]'
+    --instruction="Build React components for user dashboard." \\
+    --plan-branch="plan/build-dashboard" \\
+    --depends-on='["001"]' \\
+    --context-paths='["src/api/routes.py", "src/models/"]'
 
 Output:
   JSON with success status and task branch name (e.g., task/001-create-html-structure)
@@ -146,12 +156,20 @@ Output:
         metavar='JSON',
         help='JSON array of upstream task IDs that must complete before this task (e.g., ["001", "002"]). Empty array [] means no dependencies.'
     )
+    parser.add_argument(
+        '--context-paths',
+        type=str,
+        default='[]',
+        metavar='JSON',
+        help='JSON array of file or folder paths the worker should read for context (e.g., ["src/api/", "src/models/user.py"])'
+    )
 
     args = parser.parse_args()
 
     # Parse JSON
     try:
         depends_on = json.loads(args.depends_on)
+        context_paths = json.loads(args.context_paths)
     except json.JSONDecodeError as e:
         print(json.dumps({"error": f"Invalid JSON: {e}"}), file=sys.stderr)
         return 1
@@ -160,7 +178,8 @@ Output:
         task_id=args.task_id,
         instruction=args.instruction,
         plan_branch=args.plan_branch,
-        depends_on=depends_on
+        depends_on=depends_on,
+        context_paths=context_paths
     ))
 
     print(json.dumps(result, indent=2))

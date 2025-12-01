@@ -59,23 +59,17 @@ python -m flow_claude.scripts.create_plan_branch \
     {
       "id": "001",
       "description": "Create User model with email and password fields",
-      "depends_on": [],
-      "key_files": ["src/models/user.py"],
-      "priority": "high"
+      "depends_on": []
     },
     {
       "id": "002",
       "description": "Implement password hashing utilities",
-      "depends_on": [],
-      "key_files": ["src/utils/auth.py"],
-      "priority": "high"
+      "depends_on": []
     },
     {
       "id": "003",
       "description": "Implement user login endpoint",
-      "depends_on": ["001", "002"],
-      "key_files": ["src/api/auth.py"],
-      "priority": "medium"
+      "depends_on": ["001", "002"]
     }
   ]' \
   --design-doc="Current project uses src/models, src/api, src/utils module structure. User authentication will be added as: User model in src/models/user.py with SQLAlchemy ORM, auth endpoints in src/api/auth.py (register, login, logout), password hashing utilities in src/utils/auth.py using bcrypt with 12 salt rounds, JWT token generation in src/utils/jwt.py. Using Repository pattern for data access to isolate database operations, Service layer for authentication business rules including password validation and token generation, Controller layer for RESTful API endpoints." \
@@ -98,7 +92,8 @@ python -m flow_claude.scripts.create_task_branch \
   --task-id="001" \
   --instruction="Create User model with email and password fields" \
   --plan-branch="plan/add-user-authentication" \
-  --depends-on='[]'
+  --depends-on='[]' \
+  --context-paths='["src/models/"]'
 ```
 
 **Output:**
@@ -121,18 +116,22 @@ python -m flow_claude.scripts.read_task_metadata --branch="task/001-create-user-
 {
   "success": true,
   "branch": "task/001-create-user-model",
-  "message": "Initialize task/001-create-user-model\n\n## Task Metadata\nID: 001\nDescription: Create User model with email and password fields\nStatus: pending\n\n## Dependencies\nDepends on: None\n\n## Key Files\nsrc/models/user.py\n\n## Context\nSession ID: add-user-authentication\nPlan Branch: plan/add-user-authentication\nPriority: high"
+  "message": "Initialize task/001-create-user-model\n\n## Task Metadata\nID: 001\nInstruction: Create User model with email and password fields\nStatus: pending\n\n## Context Paths\nsrc/models/\n\n## Context\nSession ID: add-user-authentication\nPlan Branch: plan/add-user-authentication"
 }
 ```
 
 ### Example 4: Updating Plan After Task Completion
 
 ```bash
-# After task 001 completes, update the plan
+# After task 001 completes, update the plan with all tasks and their current status
 python -m flow_claude.scripts.update_plan_branch \
-  --plan-branch="plan/session-20250119-143000" \
-  --completed='["001"]' \
-  --new-tasks='[]' \
+  --plan-branch="plan/add-user-authentication" \
+  --user-request="Add user authentication with JWT and bcrypt" \
+  --tasks='[
+    {"id":"001","description":"Create User model","depends_on":[],"status":"completed"},
+    {"id":"002","description":"Implement password hashing","depends_on":[],"status":"in_progress"},
+    {"id":"003","description":"Implement login endpoint","depends_on":["001","002"],"status":"pending"}
+  ]' \
   --version="v2"
 ```
 
@@ -140,10 +139,12 @@ python -m flow_claude.scripts.update_plan_branch \
 ```json
 {
   "success": true,
-  "plan_version": "v2",
-  "completed_count": 1,
-  "new_tasks_count": 0,
-  "branch": "plan/session-20250119-143000"
+  "plan_branch": "plan/add-user-authentication",
+  "version": "v2",
+  "total_tasks": 3,
+  "completed": 1,
+  "in_progress": 1,
+  "pending": 1
 }
 ```
 
@@ -158,9 +159,7 @@ python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authent
 {
   "success": true,
   "branch": "plan/add-user-authentication",
-  "message": "Initialize execution plan v1\n\n## Session Information\nSession name: add-user-authentication\nUser Request: Add user authentication with JWT and bcrypt\nPlan Version: v1\n\n## Design Doc\nCurrent project uses src/models, src/api, src/utils module structure...\n\n## Technology Stack\nPython 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT\n\n## Tasks\n### Task 001\nID: 001\nDescription: Create User model with email and password fields\nPriority: high\nDepends on: None\nKey files: src/models/user.py\n\n### Task 002\nID: 002\nDescription: Implement password hashing utilities\nPriority: high\nDepends on: None\nKey files: src/utils/auth.py\n\n### Task 003\nID: 003\nDescription: Implement user login endpoint\nPriority: medium\nDepends on: 001, 002\nKey files: src/api/auth.py"
-  "estimated_total": "25 minutes",
-  "completed_tasks": ["001"]
+  "message": "Initialize execution plan v1\n\n## Session Information\nSession name: add-user-authentication\nUser Request: Add user authentication with JWT and bcrypt\nPlan Version: v1\n\n## Design Doc\nCurrent project uses src/models, src/api, src/utils module structure...\n\n## Technology Stack\nPython 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT\n\n## Tasks\n### Task 001\nID: 001\nDescription: Create User model with email and password fields\nDepends on: None\n\n### Task 002\nID: 002\nDescription: Implement password hashing utilities\nDepends on: None\n\n### Task 003\nID: 003\nDescription: Implement user login endpoint\nDepends on: 001, 002"
 }
 ```
 
@@ -183,14 +182,14 @@ python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-crea
 
 ```bash
 # 1. Create plan
-python -m flow_claude.scripts.create_plan_branch --session-id="session-20250119-143000" --tasks='[...]'
+python -m flow_claude.scripts.create_plan_branch --session-name="session-20250119-143000" --user-request="..." --tasks='[...]'
 
 # 2. Create task branches for wave 1
 python -m flow_claude.scripts.create_task_branch --task-id="001" ...
 python -m flow_claude.scripts.create_task_branch --task-id="002" ...
 
-# 3. After task 001 completes, update plan
-python -m flow_claude.scripts.update_plan_branch --completed='["001"]' --version="v2"
+# 3. After task 001 completes, update plan with all tasks
+python -m flow_claude.scripts.update_plan_branch --plan-branch="plan/add-user-authentication" --user-request="..." --tasks='[{"id":"001",...,"status":"completed"},...]' --version="v2"
 
 # 4. Read plan to see current state
 python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authentication"
