@@ -8,3 +8,4 @@ flow_claude.egg-info/
 
 .ruff_cache/
 
+*.egg-info/
