@@ -7,6 +7,27 @@ import subprocess
 import sys
 
 
+def validate_task_detail_length(tasks: list) -> None:
+    """Validate that each task_detail has at least 100 words.
+
+    Args:
+        tasks: List of task definitions
+
+    Raises:
+        ValueError: If any task_detail has fewer than 100 words
+    """
+    for task in tasks:
+        task_detail = task.get('task_detail', '')
+        word_count = len(task_detail.split())
+        if word_count < 100:
+            raise ValueError(
+                f"Task {task.get('id', 'unknown')}: task_detail must be at least 100 words, "
+                f"but got {word_count} words. Please provide more detailed task description "
+                f"including: specific implementation steps, expected behavior, edge cases to handle, "
+                f"integration points with other components, and acceptance criteria."
+            )
+
+
 async def create_plan_branch(
     session_name: str,
     user_request: str,
@@ -79,7 +100,7 @@ async def create_plan_branch(
             commit_lines.extend([
                 f"### Task {task['id']}",
                 f"ID: {task['id']}",
-                f"Description: {task['description']}",
+                f"Task Detail: {task['task_detail']}",
                 f"Depends on: {', '.join(depends_on) if depends_on else 'None'}",
                 ""
             ])
@@ -128,13 +149,13 @@ def main():
         epilog='''
 Examples:
   # Create a plan with task dependencies (DAG)
+  # Note: Each task_detail must be at least 100 words
   python -m flow_claude.scripts.create_plan_branch \\
     --session-name="build-conference-website" \\
     --user-request="Build a conference website" \\
-    --architecture="Static HTML/CSS/JS website with responsive design" \\
     --design-doc="Project Structure: index.html (main page), css/ (styles), js/ (scripts). Design: Modern single-page layout with sticky navigation, hero section, schedule grid, speaker cards. Mobile-first responsive design with breakpoints at 768px and 1024px. Components organized by section (nav, hero, schedule, speakers, footer). Follow BEM naming convention for CSS classes." \\
     --tech-stack="HTML5, CSS3, JavaScript ES6" \\
-    --tasks='[{"id":"001","description":"Create HTML structure","depends_on":[]},{"id":"002","description":"Add CSS styling","depends_on":["001"]},{"id":"003","description":"Add JavaScript","depends_on":["001"]},{"id":"004","description":"Test layout","depends_on":["002","003"]}]'
+    --tasks='[{"id":"001","task_detail":"Create semantic HTML structure in index.html with proper document outline and accessibility features. Include DOCTYPE declaration, meta tags for viewport and charset, and link tags for stylesheets. Structure the page with header containing navigation with logo and menu items for Home, Schedule, Speakers, and Register sections. Create main content area with hero section containing conference title, date, location, and call-to-action button. Add schedule section with grid layout placeholder for session cards. Include speakers section with flex container for speaker profile cards. Add footer with copyright, social links, and contact information. Use semantic HTML5 elements including nav, main, section, article, aside, and footer. Ensure all images have alt attributes and form inputs have associated labels for screen reader compatibility.","depends_on":[]},{"id":"002","task_detail":"Implement responsive CSS styling in css/styles.css using mobile-first approach with CSS custom properties for theming. Define color palette variables for primary, secondary, accent, background, and text colors. Set up typography with system font stack and modular scale for headings. Create base styles resetting margins, padding, and box-sizing. Style navigation with flexbox layout, sticky positioning, and hamburger menu for mobile viewports under 768px. Design hero section with background gradient, centered content, and animated call-to-action button with hover effects. Build schedule grid using CSS Grid with auto-fit columns and gap spacing. Style speaker cards with box shadow, border radius, and image object-fit cover. Add responsive breakpoints at 768px for tablet and 1024px for desktop layouts. Include smooth scroll behavior and focus visible states for accessibility.","depends_on":["001"]},{"id":"003","task_detail":"Implement JavaScript functionality in js/main.js for interactive features and dynamic behavior. Create mobile navigation toggle function that adds and removes active class on menu button click, with aria-expanded attribute updates for accessibility. Implement smooth scroll behavior for anchor links with offset calculation to account for sticky header height. Add intersection observer for scroll-triggered animations on section elements with fade-in and slide-up effects. Create countdown timer function displaying days, hours, minutes, and seconds until conference date with automatic updates every second. Implement form validation for registration form with real-time feedback on email format, required fields, and password strength. Add lazy loading for speaker images using intersection observer pattern. Include error handling with try-catch blocks and console logging for debugging. Ensure all event listeners are properly cleaned up on page unload.","depends_on":["001"]},{"id":"004","task_detail":"Perform comprehensive cross-browser and responsive testing of the conference website across multiple devices and browsers. Test on Chrome, Firefox, Safari, and Edge browsers on both Windows and macOS platforms. Verify responsive breakpoints at 320px mobile, 768px tablet, and 1024px desktop viewports using browser developer tools device simulation. Check navigation menu functionality including hamburger toggle on mobile and hover states on desktop. Validate form submission behavior with valid and invalid input combinations. Test smooth scroll anchor links and verify offset calculations for sticky header. Verify countdown timer accuracy and display formatting. Check image lazy loading triggers correctly on scroll. Run Lighthouse audit for performance, accessibility, best practices, and SEO scores targeting minimum 90 in each category. Document any bugs found with screenshots and reproduction steps.","depends_on":["002","003"]}]'
 
 Output:
   JSON with success status and plan branch information
@@ -159,7 +180,7 @@ Output:
         type=str,
         required=True,
         metavar='JSON',
-        help='JSON array of task objects. Each task must have: id, description, depends_on (upstream task IDs)'
+        help='JSON array of task objects. Each task must have: id, task_detail, depends_on (upstream task IDs)'
     )
     parser.add_argument(
         '--design-doc',
@@ -184,6 +205,13 @@ Output:
         tasks = json.loads(args.tasks)
     except json.JSONDecodeError as e:
         print(json.dumps({"error": f"Invalid JSON: {e}"}), file=sys.stderr)
+        return 1
+
+    # Validate task_detail length (minimum 100 words)
+    try:
+        validate_task_detail_length(tasks)
+    except ValueError as e:
+        print(json.dumps({"success": False, "error": str(e)}))
         return 1
 
     # Run async function

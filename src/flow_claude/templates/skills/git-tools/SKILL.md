@@ -58,17 +58,17 @@ python -m flow_claude.scripts.create_plan_branch \
   --tasks='[
     {
       "id": "001",
-      "description": "Create User model with email and password fields",
+      "task_detail": "Create User model class in src/models/user.py using SQLAlchemy ORM. The model must include the following fields: id as primary key with auto-increment, email as unique string field with maximum 255 characters and index for fast lookups, password_hash as string field with maximum 128 characters for storing bcrypt hashed passwords, created_at as datetime field with default to current UTC timestamp, updated_at as datetime field that auto-updates on record modification. Implement a password property setter that automatically hashes plaintext passwords using bcrypt with 12 salt rounds. Add a verify_password method that compares plaintext input against stored hash. Include __repr__ method for debugging. Add appropriate table constraints and ensure model integrates with existing database session configuration in src/database.py.",
       "depends_on": []
     },
     {
       "id": "002",
-      "description": "Implement password hashing utilities",
+      "task_detail": "Implement password hashing utilities module in src/utils/auth.py providing secure password operations. Create hash_password function accepting plaintext string and returning bcrypt hash with configurable salt rounds defaulting to 12. Create verify_password function accepting plaintext and hash, returning boolean for match status. Implement password strength validator function checking minimum 8 characters, at least one uppercase letter, one lowercase letter, one digit, and one special character. Add generate_secure_token function for creating cryptographically secure random tokens using secrets module for password reset functionality. Include rate limiting helper function to track failed authentication attempts per IP address. All functions must have comprehensive docstrings, type hints, and handle edge cases like empty strings or None values gracefully with appropriate exceptions.",
       "depends_on": []
     },
     {
       "id": "003",
-      "description": "Implement user login endpoint",
+      "task_detail": "Implement user login endpoint POST /api/auth/login in src/api/auth.py accepting JSON body with email and password fields. Validate request payload ensuring both fields are present and email format is valid using regex pattern. Query User model by email address and return 401 Unauthorized with generic message if user not found to prevent email enumeration attacks. Verify password using User model verify_password method and return 401 if mismatch. On successful authentication, generate JWT access token with 15-minute expiration containing user_id and email claims. Generate refresh token with 7-day expiration stored in HTTP-only secure cookie. Return JSON response with access_token, token_type, and expires_in fields. Implement rate limiting of 5 attempts per minute per IP address. Log authentication attempts for security auditing.",
       "depends_on": ["001", "002"]
     }
   ]' \
@@ -130,9 +130,9 @@ python -m flow_claude.scripts.update_plan_branch \
   --design-doc="User model in src/models/user.py, auth endpoints in src/api/auth.py, password hashing in src/utils/auth.py" \
   --tech-stack="Python 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT" \
   --tasks='[
-    {"id":"001","description":"Create User model","depends_on":[],"status":"completed"},
-    {"id":"002","description":"Implement password hashing","depends_on":[],"status":"in_progress"},
-    {"id":"003","description":"Implement login endpoint","depends_on":["001","002"],"status":"pending"}
+    {"id":"001","task_detail":"Create User model class in src/models/user.py using SQLAlchemy ORM. The model must include the following fields: id as primary key with auto-increment, email as unique string field with maximum 255 characters and index for fast lookups, password_hash as string field with maximum 128 characters for storing bcrypt hashed passwords, created_at as datetime field with default to current UTC timestamp, updated_at as datetime field that auto-updates on record modification. Implement a password property setter that automatically hashes plaintext passwords using bcrypt with 12 salt rounds. Add a verify_password method that compares plaintext input against stored hash. Include __repr__ method for debugging. Add appropriate table constraints and ensure model integrates with existing database session configuration in src/database.py.","depends_on":[],"status":"completed"},
+    {"id":"002","task_detail":"Implement password hashing utilities module in src/utils/auth.py providing secure password operations. Create hash_password function accepting plaintext string and returning bcrypt hash with configurable salt rounds defaulting to 12. Create verify_password function accepting plaintext and hash, returning boolean for match status. Implement password strength validator function checking minimum 8 characters, at least one uppercase letter, one lowercase letter, one digit, and one special character. Add generate_secure_token function for creating cryptographically secure random tokens using secrets module for password reset functionality. Include rate limiting helper function to track failed authentication attempts per IP address. All functions must have comprehensive docstrings, type hints, and handle edge cases like empty strings or None values gracefully with appropriate exceptions.","depends_on":[],"status":"in_progress"},
+    {"id":"003","task_detail":"Implement user login endpoint POST /api/auth/login in src/api/auth.py accepting JSON body with email and password fields. Validate request payload ensuring both fields are present and email format is valid using regex pattern. Query User model by email address and return 401 Unauthorized with generic message if user not found to prevent email enumeration attacks. Verify password using User model verify_password method and return 401 if mismatch. On successful authentication, generate JWT access token with 15-minute expiration containing user_id and email claims. Generate refresh token with 7-day expiration stored in HTTP-only secure cookie. Return JSON response with access_token, token_type, and expires_in fields. Implement rate limiting of 5 attempts per minute per IP address. Log authentication attempts for security auditing.","depends_on":["001","002"],"status":"pending"}
   ]' \
   --version="v2"
 ```
@@ -161,7 +161,7 @@ python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authent
 {
   "success": true,
   "branch": "plan/add-user-authentication",
-  "message": "Initialize execution plan v1\n\n## Session Information\nSession name: add-user-authentication\nUser Request: Add user authentication with JWT and bcrypt\nPlan Version: v1\n\n## Design Doc\nCurrent project uses src/models, src/api, src/utils module structure...\n\n## Technology Stack\nPython 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT\n\n## Tasks\n### Task 001\nID: 001\nDescription: Create User model with email and password fields\nDepends on: None\n\n### Task 002\nID: 002\nDescription: Implement password hashing utilities\nDepends on: None\n\n### Task 003\nID: 003\nDescription: Implement user login endpoint\nDepends on: 001, 002"
+  "message": "Initialize execution plan v1\n\n## Session Information\nSession name: add-user-authentication\nUser Request: Add user authentication with JWT and bcrypt\nPlan Version: v1\n\n## Design Doc\nCurrent project uses src/models, src/api, src/utils module structure...\n\n## Technology Stack\nPython 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT\n\n## Tasks\n### Task 001\nID: 001\nTask Detail: Create User model with email and password fields\nDepends on: None\n\n### Task 002\nID: 002\nTask Detail: Implement password hashing utilities\nDepends on: None\n\n### Task 003\nID: 003\nTask Detail: Implement user login endpoint\nDepends on: 001, 002"
 }
 ```
 

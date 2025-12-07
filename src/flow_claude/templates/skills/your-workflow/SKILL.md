@@ -18,7 +18,6 @@ description: |
     - **Immediately verify:**
       - Parse latest commit status via `parse_branch_latest_commit`
       - **READ ACTUAL CODE** check the implementation quality and identify where can be improved.
-      - **merge the change to Flow branch and resolve conflict if there has**.
     - **Immediately cleanup:** Remove worktree via `git worktree remove .worktrees/worker-N`
     - **Evaluate & Replan if needed:**
       - Read current plan via `read_plan_metadata`
@@ -54,7 +53,7 @@ description: |
     --session-name="add-user-authentication" \
     --user-request="Add user authentication with JWT and bcrypt" \
     --design-doc="..." --tech-stack="Python 3.10, Flask, SQLAlchemy, bcrypt, PyJWT" \
-    --tasks='[{"id":"001","description":"Create User model","depends_on":[]},...]'
+    --tasks='[{"id":"001","task_detail":"Create User model class in src/models/user.py using SQLAlchemy ORM. The model must include the following fields: id as primary key with auto-increment, email as unique string field with maximum 255 characters and index for fast lookups, password_hash as string field with maximum 128 characters for storing bcrypt hashed passwords, created_at as datetime field with default to current UTC timestamp, updated_at as datetime field that auto-updates on record modification. Implement a password property setter that automatically hashes plaintext passwords using bcrypt with 12 salt rounds. Add a verify_password method that compares plaintext input against stored hash. Include __repr__ method for debugging. Add appropriate table constraints and ensure model integrates with existing database session configuration in src/database.py.","depends_on":[]},...]'
 
   # 2. Execute ready 3 parallel tasks
   python -m flow_claude.scripts.create_task_branch --task-id="001" --instruction="..." --plan-branch="plan/add-user-authentication" --depends-on='[]' --context-paths='[]'
@@ -77,8 +76,8 @@ description: |
     --user-request="Add user authentication with JWT and bcrypt" \
     --design-doc="..." --tech-stack="Python 3.10, Flask, SQLAlchemy, bcrypt, PyJWT" \
     --tasks='[
-      {"id":"001","description":"Create User model","depends_on":[],"status":"completed"},
-      {"id":"002","description":"Implement auth endpoints","depends_on":["001"],"status":"pending"}
+      {"id":"001","task_detail":"Create User model class in src/models/user.py using SQLAlchemy ORM. The model must include the following fields: id as primary key with auto-increment, email as unique string field with maximum 255 characters and index for fast lookups, password_hash as string field with maximum 128 characters for storing bcrypt hashed passwords, created_at as datetime field with default to current UTC timestamp, updated_at as datetime field that auto-updates on record modification. Implement a password property setter that automatically hashes plaintext passwords using bcrypt with 12 salt rounds. Add a verify_password method that compares plaintext input against stored hash. Include __repr__ method for debugging. Add appropriate table constraints and ensure model integrates with existing database session configuration in src/database.py.","depends_on":[],"status":"completed"},
+      {"id":"002","task_detail":"Implement user authentication REST API endpoints in src/api/auth.py including POST /api/auth/register for new user registration accepting email and password in JSON body with validation, POST /api/auth/login for user authentication returning JWT access token with 15-minute expiration and refresh token in HTTP-only cookie with 7-day expiration, POST /api/auth/logout for session termination invalidating refresh tokens, and POST /api/auth/refresh for obtaining new access tokens using valid refresh tokens. Each endpoint must validate input data, handle errors gracefully with appropriate HTTP status codes, implement rate limiting to prevent brute force attacks, and log authentication events for security auditing. Include comprehensive error messages and follow RESTful conventions.","depends_on":["001"],"status":"pending"}
     ]' \
     --version="v2"
   ```

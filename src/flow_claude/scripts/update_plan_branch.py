@@ -7,6 +7,27 @@ import subprocess
 import sys
 
 
+def validate_task_detail_length(tasks: list) -> None:
+    """Validate that each task_detail has at least 100 words.
+
+    Args:
+        tasks: List of task definitions
+
+    Raises:
+        ValueError: If any task_detail has fewer than 100 words
+    """
+    for task in tasks:
+        task_detail = task.get('task_detail', '')
+        word_count = len(task_detail.split())
+        if word_count < 100:
+            raise ValueError(
+                f"Task {task.get('id', 'unknown')}: task_detail must be at least 100 words, "
+                f"but got {word_count} words. Please provide more detailed task description "
+                f"including: specific implementation steps, expected behavior, edge cases to handle, "
+                f"integration points with other components, and acceptance criteria."
+            )
+
+
 async def update_plan_branch(
     plan_branch: str,
     user_request: str,
@@ -75,7 +96,7 @@ async def update_plan_branch(
             commit_lines.extend([
                 f"### Task {task['id']}",
                 f"ID: {task['id']}",
-                f"Description: {task['description']}",
+                f"Task Detail: {task['task_detail']}",
                 f"Status: {status}",
                 f"Depends on: {', '.join(depends_on) if depends_on else 'None'}",
                 ""
@@ -126,17 +147,17 @@ def main():
         epilog='''
 Examples:
   # Update plan with task status changes
+  # Note: Each task_detail must be at least 100 words
   python -m flow_claude.scripts.update_plan_branch \\
     --plan-branch="plan/add-user-authentication" \\
     --user-request="Add user authentication with JWT and bcrypt" \\
-    --architecture="Use MVC pattern with Flask backend..." \\
     --design-doc="Complete design documentation..." \\
     --tech-stack="Python 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT" \\
     --tasks='[
-      {"id":"001","description":"Create User model","depends_on":[],"status":"completed"},
-      {"id":"002","description":"Implement password hashing","depends_on":[],"status":"in_progress"},
-      {"id":"003","description":"Create JWT tokens","depends_on":[],"status":"pending"},
-      {"id":"004","description":"User registration endpoint","depends_on":["001","002"],"status":"pending"}
+      {"id":"001","task_detail":"Create User model class in src/models/user.py using SQLAlchemy ORM. The model must include the following fields: id as primary key with auto-increment, email as unique string field with maximum 255 characters and index for fast lookups, password_hash as string field with maximum 128 characters for storing bcrypt hashed passwords, created_at as datetime field with default to current UTC timestamp, updated_at as datetime field that auto-updates on record modification. Implement a password property setter that automatically hashes plaintext passwords using bcrypt with 12 salt rounds. Add a verify_password method that compares plaintext input against stored hash. Include __repr__ method for debugging. Add appropriate table constraints and ensure model integrates with existing database session configuration in src/database.py.","depends_on":[],"status":"completed"},
+      {"id":"002","task_detail":"Implement password hashing utilities module in src/utils/auth.py providing secure password operations. Create hash_password function accepting plaintext string and returning bcrypt hash with configurable salt rounds defaulting to 12. Create verify_password function accepting plaintext and hash, returning boolean for match status. Implement password strength validator function checking minimum 8 characters, at least one uppercase letter, one lowercase letter, one digit, and one special character. Add generate_secure_token function for creating cryptographically secure random tokens using secrets module for password reset functionality. Include rate limiting helper function to track failed authentication attempts per IP address. All functions must have comprehensive docstrings, type hints, and handle edge cases like empty strings or None values gracefully with appropriate exceptions.","depends_on":[],"status":"in_progress"},
+      {"id":"003","task_detail":"Implement JWT token generation and validation utilities in src/utils/jwt.py for secure session management. Create generate_access_token function accepting user_id and optional claims dictionary, returning signed JWT string with 15-minute expiration using HS256 algorithm and application secret key from environment variables. Create generate_refresh_token function with 7-day expiration for long-lived sessions. Implement verify_token function that decodes and validates JWT signature, expiration, and required claims, returning decoded payload or raising appropriate exceptions for expired or invalid tokens. Add token_required decorator for protecting Flask routes that extracts and validates Authorization Bearer token header. Include token blacklist mechanism using Redis for logout functionality. Handle clock skew with configurable leeway parameter.","depends_on":[],"status":"pending"},
+      {"id":"004","task_detail":"Implement user registration endpoint POST /api/auth/register in src/api/auth.py accepting JSON body with email, password, and optional profile fields. Validate email format using regex pattern and check for existing user to prevent duplicates returning 409 Conflict. Validate password strength using utils/auth.py validator ensuring minimum security requirements. Create new User model instance with hashed password and save to database within transaction. Generate email verification token and queue verification email using background task worker. Return 201 Created with user profile data excluding sensitive fields. Implement rate limiting of 10 registrations per hour per IP address to prevent abuse. Log registration events including IP address and user agent for security auditing. Handle database errors gracefully with appropriate error responses.","depends_on":["001","002"],"status":"pending"}
     ]' \\
     --version="v2"
 
@@ -163,7 +184,7 @@ Output:
         type=str,
         required=True,
         metavar='JSON',
-        help='Complete JSON array of ALL tasks with current status. Each task: {id, description, depends_on, status}'
+        help='Complete JSON array of ALL tasks with current status. Each task: {id, task_detail, depends_on, status}'
     )
     parser.add_argument(
         '--version',
@@ -193,6 +214,13 @@ Output:
         tasks = json.loads(args.tasks)
     except json.JSONDecodeError as e:
         print(json.dumps({"error": f"Invalid JSON: {e}"}), file=sys.stderr)
+        return 1
+
+    # Validate task_detail length (minimum 100 words)
+    try:
+        validate_task_detail_length(tasks)
+    except ValueError as e:
+        print(json.dumps({"success": False, "error": str(e)}))
         return 1
 
     result = asyncio.run(update_plan_branch(

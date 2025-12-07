@@ -21,7 +21,7 @@ You execute ONE task autonomously through these steps:
 4. **Create design commit** - Follows **design-first principles**, plan your implementation in commit git commit --allow-empty -m ...
 5. **Implement incrementally** - after solve each task in todo list, make progressive commits
 6. **Test your changes** - Verify correctness
-7. **Signal completion** - Create TASK_COMPLETE commit
+7. **Signal completion** - Merge to flow branch
 
 ---
 
@@ -182,8 +182,23 @@ Work through your TODO list item by item.
 git add src/models/user.py
 git commit -m "Progress: Created User model skeleton
 
-## Implementation Design (must include all file chanaged with relative path)
-[Same as design commit]
+## Implementation Design
+
+### Approach
+Create SQLAlchemy model with email and password_hash fields.
+Use bcrypt for password hashing in setter method.
+
+### Architecture
+User model will be the core authentication entity.
+Located in src/models/user.py following project structure.
+
+### Files
+- src/models/user.py: User model class
+- tests/test_user_model.py: Unit tests (if needed)
+
+### Dependencies
+- SQLAlchemy: ORM for database
+- bcrypt: Password hashing
 
 ## TODO List
 - [x] Create User class inheriting from db.Model
@@ -193,31 +208,11 @@ git commit -m "Progress: Created User model skeleton
 - [ ] Add __repr__ method
 
 ## Progress
-Created User model with basic fields (id, email, password_hash). 
+Created User model with basic fields (id, email, password_hash).
 Email field has unique constraint.
 Next: Implement password setter with bcrypt.
 "
-```
 
-
-### Example Complete Commit
-
-```bash
-# After creating User class skeleton
-git add src/models/user.py
-git commit -m "COMPLETE: Created User model skeleton
-
-## Implementation Design (must include all file chanaged with relative path)
-[Same as design commit]
-
-## TODO List
-- [x] Create User class inheriting from db.Model
-- [x] Add id (primary key), email (unique), password_hash fields
-- [x] Implement password setter with bcrypt hashing
-- [x] Implement password verification method
-- [x] Add __repr__ method
-
-"
 ```
 
 
@@ -247,6 +242,55 @@ npm test
 # Example: Quick manual test
 python -c "from src.models.user import User; print(User)"
 ```
+
+## Example 7: Merge to Flow Branch
+
+**YOU perform the merge** - don't wait for orchestrator.
+
+### Merge Process
+
+```bash
+# Ensure you're on your task branch
+git branch --show-current
+
+# Switch to flow branch
+git checkout flow
+
+# Merge your task branch (no fast-forward to preserve history)
+git merge --no-ff task/001-user-model -m "Merge: Created User model skeleton
+
+## Implementation Design
+
+### Approach
+Create SQLAlchemy model with email and password_hash fields.
+Use bcrypt for password hashing in setter method.
+
+### Architecture
+User model will be the core authentication entity.
+Located in src/models/user.py following project structure.
+
+### Files
+- src/models/user.py: User model class
+- tests/test_user_model.py: Unit tests (if needed)
+
+### Dependencies
+- SQLAlchemy: ORM for database
+- bcrypt: Password hashing
+
+## TODO List
+- [x] Create User class inheriting from db.Model
+- [x] Add id (primary key), email (unique), password_hash fields
+- [x] Implement password setter with bcrypt hashing
+- [x] Implement password verification method
+- [x] Add __repr__ method
+"
+```
+
+**Merge message guidelines**:
+- Summarize what was accomplished
+- List key changes
+- Confirm all deliverables completed
+- Note test status
 
 ### Verify Requirements
 
@@ -306,7 +350,7 @@ Task incomplete. Awaiting guidance.
 ## Notes
 
 - **Work independently**: Don't wait for orchestrator after receiving task
-- **Commit frequently**: Design → Implementation → Tests  → Complete
+- **Commit frequently**: Design → Implementation → Tests → Merge
 - **Document thoroughly**: Future workers may depend on your code
 - **Test before merging**: Broken code blocks other tasks
 - **Report errors clearly**: Include all relevant details
@@ -333,11 +377,8 @@ git commit -m "Progress: ..."
 # 5. Test
 pytest / npm test / python -m ...
 
-# 6. Merge
+# 6. Merge (signals completion)
 git checkout flow
-git merge --no-ff task/XXX-description -m "Merge task/XXX: ..."
-
-# 7. Complete
-git commit --allow-empty -m "..."
+git merge --no-ff task/XXX-description -m "Merge: ..."
 ```
 
