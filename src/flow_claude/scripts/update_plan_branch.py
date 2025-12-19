@@ -19,9 +19,9 @@ def validate_task_detail_length(tasks: list) -> None:
     for task in tasks:
         task_detail = task.get('task_detail', '')
         word_count = len(task_detail.split())
-        if word_count < 100:
+        if word_count < 25:
             raise ValueError(
-                f"Task {task.get('id', 'unknown')}: task_detail must be at least 100 words, "
+                f"Task {task.get('id', 'unknown')}: task_detail must be at least 25 words, "
                 f"but got {word_count} words. Please provide more detailed task description "
                 f"including: specific implementation steps, expected behavior, edge cases to handle, "
                 f"integration points with other components, and acceptance criteria."

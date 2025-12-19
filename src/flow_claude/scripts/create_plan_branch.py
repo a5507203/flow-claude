@@ -8,20 +8,20 @@ import sys
 
 
 def validate_task_detail_length(tasks: list) -> None:
-    """Validate that each task_detail has at least 100 words.
+    """Validate that each task_detail has at least 25 words.
 
     Args:
         tasks: List of task definitions
 
     Raises:
-        ValueError: If any task_detail has fewer than 100 words
+        ValueError: If any task_detail has fewer than 25 words
     """
     for task in tasks:
         task_detail = task.get('task_detail', '')
         word_count = len(task_detail.split())
-        if word_count < 100:
+        if word_count < 25:
             raise ValueError(
-                f"Task {task.get('id', 'unknown')}: task_detail must be at least 100 words, "
+                f"Task {task.get('id', 'unknown')}: task_detail must be at least 25 words, "
                 f"but got {word_count} words. Please provide more detailed task description "
                 f"including: specific implementation steps, expected behavior, edge cases to handle, "
                 f"integration points with other components, and acceptance criteria."
@@ -149,7 +149,7 @@ def main():
         epilog='''
 Examples:
   # Create a plan with task dependencies (DAG)
-  # Note: Each task_detail must be at least 100 words
+  # Note: Each task_detail must be at least 25 words
   python -m flow_claude.scripts.create_plan_branch \\
     --session-name="build-conference-website" \\
     --user-request="Build a conference website" \\
@@ -207,7 +207,7 @@ Output:
         print(json.dumps({"error": f"Invalid JSON: {e}"}), file=sys.stderr)
         return 1
 
-    # Validate task_detail length (minimum 100 words)
+    # Validate task_detail length (minimum 25 words)
     try:
         validate_task_detail_length(tasks)
     except ValueError as e:

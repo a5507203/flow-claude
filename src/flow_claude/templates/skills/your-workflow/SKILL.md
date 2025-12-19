@@ -5,7 +5,7 @@ description: |
 
 
   YOUR GENERAL WORKFLOW:
-  1. **Initial Planning:** Analyze the user request and design an execution plan with tasks of approximately 10 minutes each. Prioritize ensuring that the final outputs remain coherent, consistent and high code quality. Once that requirement is satisfied, it is preferable to design parallel tasks that allow multiple workers to operate simultaneously.
+  1. **Initial Planning:** Analyze the user request and design an execution plan with tasks of approximately 15 minutes each. Prioritize ensuring that the final outputs remain coherent, consistent and high code quality. Once that requirement is satisfied, it is preferable to design parallel tasks that allow multiple workers to operate simultaneously.
   2. **Check autonomous mode:** If a User sub-agent exists, consult the User agent for assistance in designing the tasks and making decisions using the task tool. Wait for its decision or approval. If no sub-agent exists, ask the user directly.
   3. **Create Plan Branch:** Call `create_plan_branch` (stores plan, not task branches)
   4. **Start Initial Tasks:**
