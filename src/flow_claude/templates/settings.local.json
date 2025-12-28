@@ -7,6 +7,7 @@
       "Bash(python -m flow_claude.scripts.create_plan_branch:*)",
       "Bash(python -m flow_claude.scripts.create_task_branch:*)",
       "Bash(python -m flow_claude.scripts.launch_worker:*)",
+      "Bash(python -m flow_claude.scripts.extract_worker_skill:*)",
       "Bash(python -m flow_claude.scripts.parse_branch_latest_commit:*)",
       "Bash(python -m flow_claude.scripts.read_plan_metadata:*)",
       "Bash(python -m flow_claude.scripts.read_task_metadata:*)",

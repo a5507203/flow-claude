@@ -189,7 +189,7 @@ async def run_worker(worker_id: str, task_branch: str,
         worker_prompt = {
             "type": "preset",
             "preset": "claude_code",
-            "append": "**Instructions:** See "+worker_prompt_file+" for your full workflow."
+            "append": "**Instructions:** See "+worker_prompt_file+" for your full workflow, and "+str(working_dir)+"/worker_skills.md for skills relevant to your current task"
         }
 
         # Build worker allowed tools list
