@@ -13,6 +13,7 @@ description: |
     - For each ready task (up to max_parallel):
       - Create task branch via `create_task_branch`
       - Create worktree via `git worktree add .worktrees/worker-N task/NNN-description`
+      - Gather relevant worker skills via `extract_worker_skill`
       - Spawn worker in parallel via `launch_worker` with run_in_background=true
   5. **Monitor & Schedule Loop:** When ANY worker completes:
     - **Immediately verify:**
@@ -43,6 +44,7 @@ description: |
   - `python -m flow_claude.scripts.parse_branch_latest_commit` - Read latest commit on any branch
 
   COMMANDS (launch-workers):
+  - `python -m flow_claude.scripts.extract_worker_skill` - Creates worker skill file in task branch
   - `python -m flow_claude.scripts.launch_worker` - Launch task worker
 
 
@@ -58,6 +60,9 @@ description: |
   # 2. Execute ready 3 parallel tasks
   python -m flow_claude.scripts.create_task_branch --task-id="001" --instruction="..." --plan-branch="plan/add-user-authentication" --depends-on='[]' --context-paths='[]'
   git worktree add .worktrees/worker-1 task/001-create-user-model
+
+  python -m flow_claude.scripts.extract_worker_skill --skill_dict='{"src/flow_claude/templates/skills/git-tools": "worker"}' --output_path='.worktrees/worker-1'
+
   Bash(command="python -m flow_claude.scripts.launch_worker --worker-id=1 --task-branch='task/001-create-user-model' --cwd='.worktrees/worker-1' --plan-branch='plan/add-user-authentication' --model='sonnet'", run_in_background=true)
   # (repeat for workers 2 and 3 with run_in_background=true)
 

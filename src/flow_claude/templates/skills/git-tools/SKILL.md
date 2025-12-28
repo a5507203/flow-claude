@@ -1,5 +1,5 @@
 ---
-name: test git workflow
+name: git-tools
 description: Git-based state management. Provides command-line tools for managing execution plans and tasks using structured git commits.
 bundles:
   worker: ["Shared Definitions", "Read Tools"]

@@ -1,5 +1,5 @@
 ---
-name: git-tools
+name: git-tools (old)
 description: Git-based state management. Provides 6 command-line tools for managing execution plans and tasks using structured git commits.
 ---
 
