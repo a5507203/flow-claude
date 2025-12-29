@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import json
 import sys
+import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from dataclasses import dataclass, field
@@ -66,6 +67,13 @@ def build_skill_manager_options() -> ClaudeAgentOptions:
         "append": f"{workflow}\n\n---\n\n{skill_catalog}"
     }
 
+    # Find Claude CLI path
+    import shutil
+    cli_path = shutil.which('claude')
+    if not cli_path and os.name == 'nt':  # Windows fallback
+        cli_path = shutil.which('claude.cmd')
+
+
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
         allowed_tools=[
@@ -73,7 +81,8 @@ def build_skill_manager_options() -> ClaudeAgentOptions:
             'TodoWrite'  # Progress tracking
         ],
         permission_mode='acceptEdits',
-        setting_sources=["user", "project", "local"]
+        setting_sources=["user", "project", "local"],
+        cli_path= cli_path
     )
     return options
 
