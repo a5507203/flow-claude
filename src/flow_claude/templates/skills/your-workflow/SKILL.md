@@ -13,8 +13,10 @@ description: |
     - For each ready task (up to max_parallel):
       - Create task branch via `create_task_branch`
       - Create worktree via `git worktree add .worktrees/worker-N task/NNN-description`
-      - Gather relevant worker skills via `extract_worker_skill`
-      - Spawn worker in parallel via `launch_worker` with run_in_background=true
+  - Run `launch_skills_manager stream` with all ready tasks
+  - For each NDJSON line output (as it appears):
+    - If success: Spawn worker immediately via `launch_worker` with run_in_background=true
+    - If failure: Log error, continue reading next line
   5. **Monitor & Schedule Loop:** When ANY worker completes:
     - **Immediately verify:**
       - Parse latest commit status via `parse_branch_latest_commit`
@@ -30,6 +32,8 @@ description: |
     - **launch:** If idle workers + ready tasks exist:
       - Create task branch via `create_task_branch`
       - Create worktree via `git worktree add`
+      - Spawn skills_manager via `launch_skills_manager`
+      - Wait for success NDJSON line output
       - Spawn worker via `launch_worker` with run_in_background=true and timeout be at least 60 mins for safety
   6. **Repeat:** Continue step 5 until all tasks complete
   7. **Final Report:** Generate session summary
@@ -44,7 +48,7 @@ description: |
   - `python -m flow_claude.scripts.parse_branch_latest_commit` - Read latest commit on any branch
 
   COMMANDS (launch-workers):
-  - `python -m flow_claude.scripts.extract_worker_skill` - Creates worker skill file in task branch
+  - `python -m flow_claude.scripts.launch_skills_manager` - Creates skills_manager to write worker skills in task branch
   - `python -m flow_claude.scripts.launch_worker` - Launch task worker
 
 
@@ -60,11 +64,28 @@ description: |
   # 2. Execute ready 3 parallel tasks
   python -m flow_claude.scripts.create_task_branch --task-id="001" --instruction="..." --plan-branch="plan/add-user-authentication" --depends-on='[]' --context-paths='[]'
   git worktree add .worktrees/worker-1 task/001-create-user-model
+  # (repeat for tasks 2 and 3)
 
-  python -m flow_claude.scripts.extract_worker_skill --skill_dict='{"src/flow_claude/templates/skills/git-tools": "worker"}' --output_path='.worktrees/worker-1'
+
+  python -m flow_claude.scripts.launch_skills_manager\
+    --plan-branch="plan/add-user-authentication" \
+    --tasks='[
+      {"task_branch": "task/001-create-user-model", "worker_path": ".worktrees/worker-1", "worker_id": "1"},
+      {"task_branch": "task/002-auth-endpoints", "worker_path": ".worktrees/worker-2", "worker_id": "2"},
+      {"task_branch": "task/003-jwt-middleware", "worker_path": ".worktrees/worker-3", "worker_id": "3"}
+    ]'
+
+  Output format (NDJSON - one JSON per line):
+  {"success": true, "task_branch": "task/001-create-user-model", "worker_path": ".worktrees/worker-1", "worker_id": "1", ...}
+  {"success": true, "task_branch": "task/002-auth-endpoints", "worker_path": ".worktrees/worker-2", "worker_id": "2", ...}
+  {"success": false, "task_branch": "task/003-jwt-middleware", "error": "...", "worker_id": "3"}
+
+  # After seeing line: {"success": true, "task_branch": "task/001-create-user-model", ...} 
 
   Bash(command="python -m flow_claude.scripts.launch_worker --worker-id=1 --task-branch='task/001-create-user-model' --cwd='.worktrees/worker-1' --plan-branch='plan/add-user-authentication' --model='sonnet'", run_in_background=true)
-  # (repeat for workers 2 and 3 with run_in_background=true)
+  
+  # (repeat for workers 2 and 3 upon receving corresponding NDJSON output)
+
 
   # 3. Handle completion (when worker completes)
   # Verify and check if merged

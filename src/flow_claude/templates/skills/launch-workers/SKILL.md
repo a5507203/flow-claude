@@ -23,6 +23,17 @@ description: |
   # Create worktree
   git worktree add .worktrees/worker-1 task/001-build-registration-endpoint
 
+
+  #Launch skill_manager
+
+  python -m flow_claude.scripts.launch_skills_manager\
+  --plan-branch="plan/add-user-features" \
+  --tasks='[
+    {"task_branch": "task/001-build-registration-endpoint", "worker_path": ".worktrees/worker-1", "worker_id": "1"}
+  ]'
+
+  # After seeing line: {"success": true, "task_branch": "task/001-build-registration-endpoint", ...}
+
   # Launch worker in background (use Bash tool with run_in_background=true)
   Bash(
     command="python -m flow_claude.scripts.launch_worker --worker-id=1 --task-branch='task/001-build-registration-endpoint' --cwd='.worktrees/worker-1' --plan-branch='plan/add-user-features' --model='sonnet'",
@@ -46,9 +57,30 @@ description: |
   git worktree add .worktrees/worker-2 task/002-create-profile-endpoints
   git worktree add .worktrees/worker-3 task/003-create-password-reset-flow
 
-  # Launch all workers in parallel - each task is self-contained and independent
+
+  #Launch skill_manager
+  python -m flow_claude.scripts.launch_skills_manager\
+    --plan-branch="plan/add-user-authentication" \
+    --tasks='[
+      {"task_branch": "task/001-create-login-endpoint", "worker_path": ".worktrees/worker-1", "worker_id": "1"},
+      {"task_branch": "task/002-create-profile-endpoints", "worker_path": ".worktrees/worker-2", "worker_id": "2"},
+      {"task_branch": "task/003-create-password-reset-flow", "worker_path": ".worktrees/worker-3", "worker_id": "3"}
+    ]'
+
+
+  Output format example (NDJSON - one JSON per line):
+  {"success": true, "task_branch": "task/001-create-login-endpoint", "worker_path": ".worktrees/worker-1", "worker_id": "1", ...}
+  {"success": true, "task_branch": "task/002-create-profile-endpoints", "worker_path": ".worktrees/worker-2", "worker_id": "2", ...}
+  {"success": false, "task_branch": "task/003-create-password-reset-flow", "error": "...", "worker_id": "3"}
+
+  # Launch workers in parallel once skill_files are created - each task is self-contained and independent
+  After seeing line: {"success": true, "task_branch": "task/001-create-login-endpoint", ...} 
   Bash(command="python -m flow_claude.scripts.launch_worker --worker-id=1 --task-branch='task/001-create-login-endpoint' --cwd='.worktrees/worker-1' --plan-branch='plan/add-user-features' --model='sonnet'", run_in_background=true)
+
+  After seeing line: {"success": true, "task_branch": "task/create-profile-endpoints", ...} 
   Bash(command="python -m flow_claude.scripts.launch_worker --worker-id=2 --task-branch='task/002-create-profile-endpoints' --cwd='.worktrees/worker-2' --plan-branch='plan/add-user-features' --model='sonnet'", run_in_background=true)
+
+  After seeing line: {"success": true, "task_branch": "task/create-password-reset-flow", ...} 
   Bash(command="python -m flow_claude.scripts.launch_worker --worker-id=3 --task-branch='task/003-create-password-reset-flow' --cwd='.worktrees/worker-3' --plan-branch='plan/add-user-features' --model='sonnet'", run_in_background=true)
   ```
 --- 
