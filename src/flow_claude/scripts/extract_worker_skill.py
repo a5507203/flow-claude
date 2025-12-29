@@ -10,13 +10,12 @@ from typing import Dict, Any, List, Optional
 
 
 
-
 class SkillLoader:
     def __init__(self):
         # Regex to match H2 headers like "## Header Name"
         self.header_pattern = re.compile(r'(?m)^##\s+(.+?)\s*$')
 
-    def load_bundle(self, skills_dir: str, bundle_name: str,skill_filename = "SKILL.md") -> str:
+    def load_bundle(self, skills_dir: str, required_headers: List[str],skill_filename = "SKILL.md") -> str:
         """
         Loads a specific skill file, parses the requested bundle configuration,
         and returns the sliced context string.
@@ -33,25 +32,18 @@ class SkillLoader:
         # 1. Parse Frontmatter and Body
         frontmatter, body = self._parse_frontmatter(content)
         
-        # 2. Get Bundle Definition
-        bundles_config = frontmatter.get('bundles', {})
-        if bundle_name not in bundles_config:
-            raise ValueError(f"Bundle '{bundle_name}' not defined in {skill_filename}")
-            
-        required_headers = bundles_config[bundle_name]
-        
-        # 3. Slice the Markdown Body
+        # 2. Slice the Markdown Body
         sections = self._parse_markdown_sections(body)
         
-        # 4. Construct Final Output
-        final_context = [f"# {frontmatter.get('name', 'Skill')} (Bundle: {bundle_name})"]
+        # 3. Construct Final Output
+        final_context = [f"# {frontmatter.get('name', 'Skill')} (Sections: {required_headers})"]
         
         for header in required_headers:
             if header in sections:
                 final_context.append(sections[header])
             else:
                 # Log warning in production, simplified here
-                print(f"Warning: Section '## {header}' defined in bundle but not found in text.")
+                print(f"Warning: Section '## {header}' not found in text.")
 
         return "\n\n".join(final_context)
 
@@ -145,8 +137,8 @@ def extract_skills(skills_dict, output_path):
     Extract skill bundles (chunkIDs using ## header) and write to a markdown file on worker branch.
 
     Args:
-        skills_dict: Mapping of skill directory paths to bundle names
-                     e.g., {"path/to/git-tools": "worker"}
+        skills_dict: Mapping of skill directory paths to list of wanted segment headers
+                     e.g., {"path/to/git-tools": ["Read Tools","Write Tools"]}
         output_path: Path to write the combined skills markdown file
 
     Returns:
@@ -157,7 +149,7 @@ def extract_skills(skills_dict, output_path):
         context_parts = [] 
 
         #args_dict format = skill folder path: chunk loaded
-        for skill_dir, bundle_name in skills_dict.items():  
+        for skill_dir, segment_list in skills_dict.items():  
             
             #Load & store skill portion if path valid
             if not os.path.isdir(skill_dir):
@@ -166,8 +158,7 @@ def extract_skills(skills_dict, output_path):
                     "error": f"Skill directory not found: {skill_dir}"
                 }
 
-            context = loader.load_bundle(skill_dir,bundle_name)
-    
+            context = loader.load_bundle(skill_dir,segment_list)
             context_parts.append(context)
     
         #concat portions with formatting
@@ -197,7 +188,7 @@ def extract_skills(skills_dict, output_path):
 def main():
     #CLI entry point.
     parser = argparse.ArgumentParser(description='Create relevant worker skills file')
-    parser.add_argument('--skill_dict', type=str, required=True, help='JSON dict of skill_dir:bundle (e.g., \'{"path/to/git-tools": "worker"}\')')
+    parser.add_argument('--skill_dict', type=str, required=True, help='JSON dict of skill_dir:header list (e.g., \'{"path/to/git-tools": ["Shared Definitions","Read Tools"]}\')')
     parser.add_argument('--output_path', type=str, required=True, help='Path to write worker md file (e.g., .worktrees/worker-1/worker_skills.md)')
     
     args = parser.parse_args()
@@ -209,7 +200,7 @@ def main():
         print(json.dumps({"success": False, "error": f"Invalid JSON in --skill-dict: {e}"}, indent=2), file=sys.stderr)
         return 1
     
-    # Run async function
+    #Extract and write to destination
     result = extract_skills(skills_dict,args.output_path)
 
     # Print result
@@ -227,13 +218,13 @@ if __name__ == '__main__':
 
 """
 --- Usage Example ---
-Creates sample worker skills md file for git-tools in utils/skills_test folder based on an adapted git_tools SKILL.md file
+#Creates sample worker skills md file for git-tools in utils/skills_test folder based on adapted git_tools SKILL.md file
 
 if __name__ == "__main__":
     # Setup
     script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     skills_path = os.path.join(script_dir, "utils","skills_test")
-    skills_dict = {skills_path: "worker"}
+    skills_dict = {skills_path: ["Write Tools","Read Tools"]}
 
     try:
         # Simulate Orchestrator Request
