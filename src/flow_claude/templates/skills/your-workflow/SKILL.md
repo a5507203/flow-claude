@@ -13,7 +13,7 @@ description: |
     - For each ready task (up to max_parallel):
       - Create task branch via `create_task_branch`
       - Create worktree via `git worktree add .worktrees/worker-N task/NNN-description`
-  - Run `launch_skills_manager stream` with all ready tasks
+  - Run `launch_skills_manager` with all ready tasks
   - For each NDJSON line output (as it appears):
     - If success: Spawn worker immediately via `launch_worker` with run_in_background=true
     - If failure: Log error, continue reading next line

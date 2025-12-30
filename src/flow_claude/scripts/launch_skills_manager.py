@@ -10,6 +10,7 @@ import asyncio
 import json
 import sys
 import os
+import shutil
 from pathlib import Path
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from dataclasses import dataclass, field
@@ -17,10 +18,6 @@ from functools import lru_cache
 
 from claude_agent_sdk import ClaudeAgentOptions, query
 from importlib.resources import files
-
-
-
-
 
 
 @lru_cache(maxsize=1) #lru_cache to ensure same str passes into system prompt
@@ -49,30 +46,31 @@ def load_workflow() -> str:
         'templates/agents/skill-manager.md'
     ).read_text(encoding='utf-8')
 
-
-
 def build_skill_manager_options() -> ClaudeAgentOptions:
     """Build ClaudeAgentOptions with cached configurations.
     Returns:
         Configured ClaudeAgentOptions
     """
-    # Load skill manager agent prompt
-    workflow = load_workflow()
-    skill_catalog = load_skills()
-
-    # Build system prompt, appending workflow & concated skills
-    system_prompt = {
-        "type": "preset",
-        "preset": "claude_code",
-        "append": f"{workflow}\n\n---\n\n{skill_catalog}"
-    }
-
+    if os.name == 'nt':  # Windows: must read files manually due to CLI length limitations
+        workflow_path = files('flow_claude').joinpath('templates/agents/skill-manager-windows.md')
+        system_prompt = {
+            "type": "preset",
+            "preset": "claude_code",
+            "append": f"**Instructions:** Read your workflow document at: {workflow_path}"
+        }
+    else:  # Non-Windows: append workflow & skill catalog directly
+        workflow = load_workflow()
+        skill_catalog = load_skills()
+        system_prompt = {
+            "type": "preset",
+            "preset": "claude_code",
+            "append": f"{workflow}\n\n---\n\n{skill_catalog}"
+        }
+    
     # Find Claude CLI path
-    import shutil
     cli_path = shutil.which('claude')
     if not cli_path and os.name == 'nt':  # Windows fallback
         cli_path = shutil.which('claude.cmd')
-
 
     options = ClaudeAgentOptions(
         system_prompt=system_prompt,
@@ -107,22 +105,8 @@ async def extract_skills_for_task(
     options = build_skill_manager_options()  
     
     #user prompt
-    prompt = f"""Extract skills for a worker.
-
-**Plan Branch:** {plan_branch}
-**Task Branch:** {task_branch}
-**Worker Path:** {worker_path}
-
-Follow your workflow:
-1. Read .claude/task_summaries.json for previous extractions
-2. Read plan metadata for context
-3. Read task metadata for requirements
-4. Map requirements to skill sections (reference catalog in your context)
-5. Run extract_worker_skill with appropriate sections
-6. Update task_summaries.json with this extraction
-
-Report completion as JSON when done.
-"""
+    prompt = f"Extract skills for worker. Plan: {plan_branch}, Task: {task_branch}, Worker: {worker_path}. Follow workflow: read task_summaries.json, read plan/task metadata, map to skills, run extract_worker_skill, update task_summaries.json. Report as JSON."
+    
     try:
         result_data = None
         cache_info = {"read": 0, "write": 0}
