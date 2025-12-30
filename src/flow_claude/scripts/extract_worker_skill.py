@@ -216,21 +216,3 @@ if __name__ == '__main__':
     import sys
     sys.exit(main())
 
-"""
---- Usage Example ---
-#Creates sample worker skills md file for git-tools in utils/skills_test folder based on adapted git_tools SKILL.md file
-
-if __name__ == "__main__":
-    # Setup
-    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    skills_path = os.path.join(script_dir, "utils","skills_test")
-    skills_dict = {skills_path: ["Write Tools","Read Tools"]}
-
-    try:
-        # Simulate Orchestrator Request
-        result = extract_skills(skills_dict,skills_path)
-        print(result)
-                
-    except Exception as e:
-        print(f"Error: {e}")
-"""
