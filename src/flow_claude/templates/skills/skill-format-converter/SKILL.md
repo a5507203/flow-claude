@@ -1,11 +1,11 @@
 ---
 name: skill-format-converter
-description: Converts existing SKILL.md files to the extractable format required by the SkillLoader extraction system. Use when skill files need to be reformatted for selective section extraction, when creating SKILL_new.md variants, or when auditing skill modularization. Triggers on requests to convert skills, reformat skills for extraction, or analyze skill header structure.
+description: Converts existing SKILL.md files to the extractable format required by the SkillLoader extraction system. Use when skill files need to be reformatted for selective section extraction, when creating SKILL_new.md variants, or when auditing skill modularization. Triggers on requests to convert skills, reformat skills for extraction, or analyze skill header structure. Sequential workflow
 ---
 
 # Skill Format Converter
 
-## Shared Definitions
+## All Contents
 
 This skill converts SKILL.md files to a format compatible with the SkillLoader extraction system. The extraction system allows selective loading of skill sections by `## ` header name, reducing context window usage by loading only relevant sections.
 
@@ -13,7 +13,25 @@ This skill converts SKILL.md files to a format compatible with the SkillLoader e
 
 **Key Principle**: Modularization only helps when sections serve different user intents. Sequential workflows where all sections are always needed together should use a single `## All Contents` header.
 
-## Extraction Logic
+### Description Format Convention
+
+The skill description MUST end with a section indicator so the skill-manager can determine extraction strategy without reading the full file:
+
+**Modular skills** (independent sections): End description with available sections
+```
+description: What the skill does. Sections: Section1, Section2, Section3
+```
+
+**Sequential skills** (single workflow): End description with workflow indicator
+```
+description: What the skill does. Sequential workflow
+```
+
+This allows the skill-manager to:
+- For sequential skills: Use `["All Contents"]` immediately without reading further
+- For modular skills: Read the full SKILL.md to select relevant sections
+
+### Extraction Logic
 
 The SkillLoader (`extract_worker_skill.py`) works as follows:
 
@@ -24,7 +42,7 @@ The SkillLoader (`extract_worker_skill.py`) works as follows:
 
 **Critical implication**: Any content before the first `## ` header is LOST during extraction.
 
-### Extraction Code Pattern
+#### Extraction Code Pattern
 ```python
 # How sections are parsed
 parts = header_pattern.split(body)  # splits by ## headers
@@ -39,9 +57,9 @@ for header in required_headers:
         final_context.append(sections[header])
 ```
 
-## Conversion Workflow
+### Conversion Workflow
 
-### Step 1: Analyze Skill Structure
+#### Step 1: Analyze Skill Structure
 
 Read the existing SKILL.md and classify it:
 
@@ -54,7 +72,7 @@ Read the existing SKILL.md and classify it:
 | Sequential workflow | Step 1 → Step 2 → Step 3 | NO - all steps always needed |
 | Linear creative process | Philosophy → Implementation → Refinement | NO - can't skip steps |
 
-### Step 2: Attempt Independent Content Identification
+#### Step 2: Attempt Independent Content Identification
 
 For skills that appear sequential, look for hidden independence:
 
@@ -69,7 +87,7 @@ For skills that appear sequential, look for hidden independence:
 
 **If independence found**: Create separate `## ` headers for each independent concern.
 
-### Step 3: Choose Structure
+#### Step 3: Choose Structure
 
 **If independent sections exist** → Multiple `## ` headers:
 ```markdown
@@ -95,7 +113,7 @@ Content for user intent B.
 ...
 ```
 
-### Step 4: Create SKILL_new.md
+#### Step 4: Create SKILL_new.md
 
 Transform the content following the chosen structure:
 
@@ -104,13 +122,13 @@ Transform the content following the chosen structure:
 3. Use `### ` for subsections within `## ` sections
 4. Validate no content exists before first `## `
 
-## Format Templates
+### Format Templates
 
-### Template A: Modularizable Skill (operation-type separation)
+#### Template A: Modularizable Skill (operation-type separation)
 ```markdown
 ---
 name: skill-name
-description: What it does and when to use it.
+description: What it does and when to use it. Sections: Shared Definitions, Read Operations, Write Operations, Reference
 ---
 
 # Skill Title
@@ -128,11 +146,11 @@ How to create/modify. Examples for write tasks.
 Dependencies, code style, additional resources.
 ```
 
-### Template B: Sequential Workflow (not modularizable)
+#### Template B: Sequential Workflow (not modularizable)
 ```markdown
 ---
 name: skill-name
-description: What it does and when to use it.
+description: What it does and when to use it. Sequential workflow
 ---
 
 # Skill Title
@@ -155,9 +173,9 @@ Instructions for step 3.
 Dependencies, references.
 ```
 
-## Decision Examples
+### Decision Examples
 
-### Example 1: docx skill → MODULARIZE
+#### Example 1: docx skill → MODULARIZE
 **Analysis**: User intents vary significantly
 - "Read a docx" → needs Reading section only
 - "Create new docx" → needs Creation section only
@@ -165,7 +183,7 @@ Dependencies, references.
 
 **Result**: Multiple `## ` headers (Read, Create, Edit, Redline)
 
-### Example 2: algorithmic-art skill → SINGLE HEADER
+#### Example 2: algorithmic-art skill → SINGLE HEADER
 **Analysis**: Linear creative workflow
 - Philosophy → Conceptual Seed → Implementation → Artifact
 - Cannot skip philosophy to jump to implementation
@@ -173,18 +191,19 @@ Dependencies, references.
 
 **Result**: Single `## All Contents` header
 
-### Example 3: brand-guidelines skill → MODULARIZE (small)
+#### Example 3: brand-guidelines skill → MODULARIZE (small)
 **Analysis**: Reference material with distinct concerns
 - Colors/Typography → quick lookup
 - Technical Details → implementation specifics
 
 **Result**: Keep separate headers, but skill is small enough that overhead is minimal
 
-## Validation Checklist
+### Validation Checklist
 
 After conversion:
 - [ ] No content before first `## ` header
 - [ ] If modularized: each section serves a distinct user intent
 - [ ] If single header: uses `### ` for internal structure
 - [ ] Frontmatter preserved with name and description
+- [ ] Description ends with section indicator (`Sections: ...` or `Sequential workflow`)
 - [ ] All original content retained (just restructured)

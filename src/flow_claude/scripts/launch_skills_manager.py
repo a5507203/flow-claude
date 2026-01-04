@@ -4,6 +4,7 @@ Manages skill extraction for workers using:
 1. Session resume pattern for multi-task efficiency
 2. Prompt caching for skill catalog and plan metadata
 3. Structured extraction workflow
+4. Native Claude Code skill discovery via .claude/skills/
 """
 import argparse
 import asyncio
@@ -12,61 +13,61 @@ import sys
 import os
 import shutil
 from pathlib import Path
-from typing import Dict, Any, List, Optional, AsyncGenerator
-from dataclasses import dataclass, field
+from typing import Dict, Any, List
 from functools import lru_cache
 
 from claude_agent_sdk import ClaudeAgentOptions, query
 from importlib.resources import files
 
 
-@lru_cache(maxsize=1) #lru_cache to ensure same str passes into system prompt
-def load_skills() -> str:
-    """Load all SKILL.md files into a single catalog string.
+def get_project_root() -> Path:
+    """Find project root by looking for .claude directory or .git.
 
     Returns:
-        Concatenated skill content for appended to claude preset
+        Path to project root, or current directory if not found
     """
-    skills_dir = files('flow_claude').joinpath('templates/skills')
-    catalog_parts = ["# Available Skills Catalog\n"]
+    current = Path.cwd()
+    for parent in [current] + list(current.parents):
+        if (parent / '.claude').exists() or (parent / '.git').exists():
+            return parent
+    return current
 
-    for skill_dir in sorted(skills_dir.iterdir()):
-        skill_file = skill_dir / "SKILL.md"
-        if skill_file.exists():
-            content = skill_file.read_text(encoding='utf-8')
-            catalog_parts.append(f"\n---\n\n## Skill: {skill_dir.name}\n\n{content}")
-
-    return "\n".join(catalog_parts)
 
 @lru_cache(maxsize=1)
 def load_workflow() -> str:
-    """Load skill-manager.md workflow document.
-    """
+    """Load skill-manager.md workflow document."""
     return files('flow_claude').joinpath(
         'templates/agents/skill-manager.md'
     ).read_text(encoding='utf-8')
 
-def build_skill_manager_options() -> ClaudeAgentOptions:
+
+def build_skill_manager_options(project_root: Path) -> ClaudeAgentOptions:
     """Build ClaudeAgentOptions with cached configurations.
+
+    Skills are discovered via native Claude Code mechanism from .claude/skills/
+    relative to project_root. Skill descriptions are loaded into context
+    automatically by Claude Code.
+
+    Args:
+        project_root: Project root directory (contains .claude/skills/)
+
     Returns:
         Configured ClaudeAgentOptions
+
+    Note:
+        Workflow file (~10KB) is embedded in system prompt. This exceeds
+        Windows cmd.exe limit (8KB) but is under CreateProcess limit (32KB).
+        If issues occur on Windows, consider file-based workflow loading.
     """
-    if os.name == 'nt':  # Windows: must read files manually due to CLI length limitations
-        workflow_path = files('flow_claude').joinpath('templates/agents/skill-manager-windows.md')
-        system_prompt = {
-            "type": "preset",
-            "preset": "claude_code",
-            "append": f"**Instructions:** Read your workflow document at: {workflow_path}"
-        }
-    else:  # Non-Windows: append workflow & skill catalog directly
-        workflow = load_workflow()
-        skill_catalog = load_skills()
-        system_prompt = {
-            "type": "preset",
-            "preset": "claude_code",
-            "append": f"{workflow}\n\n---\n\n{skill_catalog}"
-        }
-    
+    # Load workflow into system prompt
+    # Skills are discovered automatically from .claude/skills/ via setting_sources
+    workflow = load_workflow()
+    system_prompt = {
+        "type": "preset",
+        "preset": "claude_code",
+        "append": workflow
+    }
+
     # Find Claude CLI path
     cli_path = shutil.which('claude')
     if not cli_path and os.name == 'nt':  # Windows fallback
@@ -79,8 +80,11 @@ def build_skill_manager_options() -> ClaudeAgentOptions:
             'TodoWrite'  # Progress tracking
         ],
         permission_mode='acceptEdits',
+        # "project" enables skill discovery from .claude/skills/
         setting_sources=["user", "project", "local"],
-        cli_path= cli_path
+        # Set cwd to project root so Claude Code finds .claude/skills/
+        cwd=str(project_root),
+        cli_path=cli_path
     )
     return options
 
@@ -88,7 +92,8 @@ def build_skill_manager_options() -> ClaudeAgentOptions:
 async def extract_skills_for_task(
     plan_branch: str,
     task_branch: str,
-    worker_path: str
+    worker_path: str,
+    project_root: Path
 ) -> Dict[str, Any]:
     """Extract skills for a single task.
     Each call gets prompt cache hit if within 5 minutes of previous call
@@ -97,15 +102,16 @@ async def extract_skills_for_task(
         plan_branch: Plan branch for context
         task_branch: Task branch to extract skills for
         worker_path: Worker worktree path for output
+        project_root: Project root directory for skill discovery
 
     Returns:
         Dict with extraction result
     """
-    #tools, system prompt
-    options = build_skill_manager_options()  
+    # Build options with project root for skill discovery
+    options = build_skill_manager_options(project_root)  
     
     #user prompt
-    prompt = f"Extract skills for worker. Plan: {plan_branch}, Task: {task_branch}, Worker: {worker_path}. Follow workflow: read task_summaries.json, read plan/task metadata, map to skills, run extract_worker_skill, update task_summaries.json. Report as JSON."
+    prompt = f"Prepare skills for worker. Plan: {plan_branch}, Task: {task_branch}, Worker: {worker_path}. Follow workflow: read task_summaries.json, read plan/task metadata, map to skills, run prepare_worker_skills, update task_summaries.json. Report as JSON."
     
     try:
         result_data = None
@@ -156,10 +162,10 @@ async def extract_skills_batch(
     plan_branch: str,
     tasks: List[Dict[str, str]],
 ) -> bool:
-    """Sequential skill extraction using caches on system propmpt + skill files.
+    """Sequential skill extraction using caches on system prompt + skill files.
 
-    First task: Cache WRITE 
-    Subsequent tasks: Cache READ 
+    First task: Cache WRITE
+    Subsequent tasks: Cache READ
 
     Args:
         plan_branch: Plan branch name
@@ -169,6 +175,8 @@ async def extract_skills_batch(
         0 for success, 1 if one or more task extractions failed
     """
     has_failure = False
+    project_root = get_project_root()
+    print(f"[SkillManager] Project root: {project_root}", flush=True)
 
     for i, task in enumerate(tasks):
         print(f"[SkillManager] Processing {task['task_branch']} ({i+1}/{len(tasks)})",
@@ -177,7 +185,8 @@ async def extract_skills_batch(
         result = await extract_skills_for_task(
             plan_branch,
             task['task_branch'],
-            task['worker_path']
+            task['worker_path'],
+            project_root
         )
         
         #Print NDJSON for orchestrator to launch worker

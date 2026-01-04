@@ -8,6 +8,8 @@ description: |
   WORKER LIFECYCLE:
   1. Progressive commit - worker commits all progress to the task branch
   2. Completion - worker merges changes to Flow branch
+
+  Sequential workflow
 ---
 
 # Launch Workers Skill

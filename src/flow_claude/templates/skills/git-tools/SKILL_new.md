@@ -1,6 +1,6 @@
 ---
 name: git-tools
-description: Git-based state management. Provides command-line tools for managing execution plans and tasks using structured git commits.
+description: Git-based state management. Provides command-line tools for managing execution plans and tasks using structured git commits. Sections: Shared Definitions, Read Tools, Write Tools, Workflow Tools
 ---
 
 # Git Tools Skill
