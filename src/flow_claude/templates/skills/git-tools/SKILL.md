@@ -1,36 +1,13 @@
 ---
 name: git-tools
-description: Git-based state management. Provides 6 command-line tools for managing execution plans and tasks using structured git commits.
+description: Git-based state management. Provides command-line tools for managing execution plans and tasks using structured git commits.
 ---
 
 # Git Tools Skill
 
-## Instructions
+## Shared Definitions
 
-This skill provides 6 command-line tools for managing Flow-Claude execution plans and tasks through structured git commits. All commands output JSON with a `success` field indicating whether the operation succeeded.
-
-### Available Commands
-
-**Planning Commands:**
-- `create_plan_branch` - Create a new execution plan with all tasks and dependencies (DAG)
-- `read_plan_metadata` - Read execution plan from latest commit
-- `update_plan_branch` - Update plan with completed tasks and status changes
-
-**Task Commands:**
-- `create_task_branch` - Create a task branch with metadata
-- `read_task_metadata` - Read task metadata from first commit on task branch
-- `parse_branch_latest_commit` - Read latest commit message from any branch
-
-### Command Usage Patterns
-
-**When to use each command:**
-
-- Use `create_plan_branch` at the start of a new development session after analyzing the user request
-- Use `create_task_branch` before launching a worker for each task in the current wave
-- Use `read_task_metadata` to read task requirements before or after worker execution
-- Use `read_plan_metadata` to understand the overall plan structure and track progress
-- Use `parse_branch_latest_commit` to monitor worker progress during execution
-- Use `update_plan_branch` after each task completes to mark it done and update the plan version
+This skill provides command-line tools for managing Flow-Claude execution plans and tasks through structured git commits. 
 
 ### General Command Format
 
@@ -38,7 +15,6 @@ All commands follow this pattern:
 ```bash
 python -m flow_claude.scripts.COMMAND_NAME --arg1=value1 --arg2=value2 ...
 ```
-
 Arguments with JSON values must be properly quoted and escaped.
 
 ### Output Format
@@ -47,9 +23,63 @@ All commands return JSON with at minimum a `success` field:
 - Success: `{"success": true, ...other data...}`
 - Failure: `{"success": false, "error": "error message"}`
 
-## Examples
 
-### Example 1: Creating a Plan
+## Read Tools
+
+### Example: Reading Task Metadata
+- `read_task_metadata` - Read task metadata from first commit on task branch
+- Use `read_task_metadata` to read task requirements before or after worker execution
+
+
+```bash
+python -m flow_claude.scripts.read_task_metadata --branch="task/001-create-user-model"
+```
+**Output:**
+```json
+{
+  "success": true,
+  "branch": "task/001-create-user-model",
+  "message": "Initialize task/001-create-user-model\n\n## Task Metadata\nID: 001\nInstruction: Create User model with email and password fields\nStatus: pending\n\n## Context\nSession ID: add-user-authentication\nPlan Branch: plan/add-user-authentication"
+}
+```
+
+### Example: Reading Plan Metadata
+- `read_plan_metadata` - Read execution plan from latest commit
+- Use `read_plan_metadata` to understand the overall plan structure and track progress
+
+```bash
+python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authentication"
+```
+**Output:**
+```json
+{
+  "success": true,
+  "branch": "plan/add-user-authentication",
+  "message": "Initialize execution plan v1\n\n## Session Information\nSession name: add-user-authentication\nUser Request: Add user authentication with JWT and bcrypt\nPlan Version: v1\n\n## Design Doc\nCurrent project uses src/models, src/api, src/utils module structure...\n\n## Technology Stack\nPython 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT\n\n## Tasks\n### Task 001\nID: 001\nTask Detail: Create User model with email and password fields\nDepends on: None\n\n### Task 002\nID: 002\nTask Detail: Implement password hashing utilities\nDepends on: None\n\n### Task 003\nID: 003\nTask Detail: Implement user login endpoint\nDepends on: 001, 002"
+}
+```
+
+### Example: Checking worker progress
+- `parse_branch_latest_commit` - Read latest commit message from any branch
+- Use `parse_branch_latest_commit` to monitor worker progress during execution
+
+```bash
+python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-create-user-model"
+```
+**Output:**
+```json
+{
+  "success": true,
+  "branch": "task/001-create-user-model",
+  "message": "Update task progress\n\nTask ID: 001\nStatus: in_progress\n\nCompleted:\n- Created SQLAlchemy model with User table\n- Added email validation\n\nIn Progress:\n- Writing unit tests"
+}
+```
+
+## Write Tools
+
+### Example: Creating a Plan
+- `create_plan_branch` - Create a new execution plan with all tasks and dependencies (DAG)
+- Use `create_plan_branch` at the start of a new development session after analyzing the user request
 
 ```bash
 python -m flow_claude.scripts.create_plan_branch \
@@ -85,42 +115,9 @@ python -m flow_claude.scripts.create_plan_branch \
 }
 ```
 
-### Example 2: Creating a Task Branch
-
-```bash
-python -m flow_claude.scripts.create_task_branch \
-  --task-id="001" \
-  --instruction="Create User model with email and password fields" \
-  --plan-branch="plan/add-user-authentication" \
-  --depends-on='[]' \
-  --context-paths='[]'
-```
-
-**Output:**
-```json
-{
-  "success": true,
-  "branch": "task/001-create-user-model",
-  "task_id": "001"
-}
-```
-
-### Example 3: Reading Task Metadata
-
-```bash
-python -m flow_claude.scripts.read_task_metadata --branch="task/001-create-user-model"
-```
-
-**Output:**
-```json
-{
-  "success": true,
-  "branch": "task/001-create-user-model",
-  "message": "Initialize task/001-create-user-model\n\n## Task Metadata\nID: 001\nInstruction: Create User model with email and password fields\nStatus: pending\n\n## Context\nSession ID: add-user-authentication\nPlan Branch: plan/add-user-authentication"
-}
-```
-
-### Example 4: Updating Plan After Task Completion
+### Example: Updating Plan After Task Completion
+- `update_plan_branch` - Update plan with completed tasks and status changes
+- Use `update_plan_branch` after each task completes to mark it done and update the plan version
 
 ```bash
 # After task 001 completes, update the plan with all tasks and their current status
@@ -150,25 +147,18 @@ python -m flow_claude.scripts.update_plan_branch \
 }
 ```
 
-### Example 5: Reading Plan Metadata
+### Example: Creating a Task Branch
+- `create_task_branch` - Create a task branch with metadata
+- Use `create_task_branch` before launching a worker for each task in the current wave
+
 
 ```bash
-python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authentication"
-```
-
-**Output:**
-```json
-{
-  "success": true,
-  "branch": "plan/add-user-authentication",
-  "message": "Initialize execution plan v1\n\n## Session Information\nSession name: add-user-authentication\nUser Request: Add user authentication with JWT and bcrypt\nPlan Version: v1\n\n## Design Doc\nCurrent project uses src/models, src/api, src/utils module structure...\n\n## Technology Stack\nPython 3.10, Flask 2.3, SQLAlchemy, bcrypt, PyJWT\n\n## Tasks\n### Task 001\nID: 001\nTask Detail: Create User model with email and password fields\nDepends on: None\n\n### Task 002\nID: 002\nTask Detail: Implement password hashing utilities\nDepends on: None\n\n### Task 003\nID: 003\nTask Detail: Implement user login endpoint\nDepends on: 001, 002"
-}
-```
-
-### Example 7: Checking Worker Progress
-
-```bash
-python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-create-user-model"
+python -m flow_claude.scripts.create_task_branch \
+  --task-id="001" \
+  --instruction="Create User model with email and password fields" \
+  --plan-branch="plan/add-user-authentication" \
+  --depends-on='[]' \
+  --context-paths='[]'
 ```
 
 **Output:**
@@ -176,11 +166,13 @@ python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-crea
 {
   "success": true,
   "branch": "task/001-create-user-model",
-  "message": "Update task progress\n\nTask ID: 001\nStatus: in_progress\n\nCompleted:\n- Created SQLAlchemy model with User table\n- Added email validation\n\nIn Progress:\n- Writing unit tests"
+  "task_id": "001"
 }
 ```
 
-### Example 8: Common Workflow Sequence
+## Workflow Tools
+
+### Common Workflow Sequence
 
 ```bash
 # 1. Create plan
@@ -200,7 +192,7 @@ python -m flow_claude.scripts.read_plan_metadata --branch="plan/add-user-authent
 python -m flow_claude.scripts.parse_branch_latest_commit --branch="task/001-create-user-model"
 ```
 
-### Example 9: Handling Errors
+### Handling Errors
 
 ```bash
 # Try to create a plan branch that already exists
@@ -214,5 +206,5 @@ python -m flow_claude.scripts.create_plan_branch --session-name="add-user-authen
   "error": "Branch plan/session-20250119-143000 already exists"
 }
 ```
-
 Always check the `success` field before processing the output.
+
