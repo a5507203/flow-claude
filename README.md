@@ -89,33 +89,47 @@ python3 .claude/skills/flow/run_scheduler.py \
 --compact                        # single-line JSON output
 ```
 
-## Benchmark
+## Benchmark results
 
-### Test task (ArcadeBox)
+Evaluated on 9 benchmarks spanning code generation, document authoring, and structured planning. Throughput measured as deliverable words per second (excluding intermediate artifacts).
 
-```
-/flow Build a browser-based game arcade with 8 playable games. The arcade should have a main menu screen where the player selects a game, and each game runs in an HTML5 Canvas element with keyboard/mouse controls. All games share a persistent high score system stored in localStorage, and the arcade tracks global statistics (total games played, total time played, best scores).
+### Opus 4.6
 
-Games to implement:
-1. Tetris — 10x20 grid, 7 tetrominoes with SRS rotation and wall kicks, gravity with increasing speed, scoring 100/300/500/800 for 1/2/3/4 lines, ghost piece, next piece preview
-2. Minesweeper — 3 difficulties (9x9/10, 16x16/40, 30x16/99), flood-fill reveal, safe first click, timer and mine counter
-3. 2048 — 4x4 sliding tiles, merge animations, 90/10 spawn ratio, win at 2048 with continue option
-4. Snake — grid-based movement, speed increases with length, food spawning, wall/self collision
-5. Breakout — mouse+keyboard paddle, angle-based ball deflection, 5 rows of colored bricks, 3 lives, level progression
-6. Sudoku — backtracking puzzle generator, 3 difficulties (35/28/22 givens), pencil marks, conflict highlighting, timer
-7. Memory Match — 3 grid sizes (4x4/4x6/6x6), emoji pairs, flip animation, move counter
-8. Gomoku — 15x15 board, human vs AI (minimax alpha-beta depth 3-4), pattern evaluation heuristic
+| Benchmark | Type | Wall time | Words | Words/s | CC baseline | Speedup |
+|-----------|------|-----------|-------|---------|-------------|---------|
+| ArcadeBox | Code/JS | 4m 46s | 17,261 | 60.4 | 17.5 | 3.5x |
+| LinAlgBook | MD | 2m 37s | 6,697 | 42.7 | 22.6 | 1.9x |
+| CloudDocs | MD | 7m 8s | 18,970 | 44.3 | 29.6 | 1.5x |
+| MathRef | MD | 8m 17s | 23,927 | 48.1 | 26.7 | 1.8x |
+| CompressKit | Code/Python | 7m 16s | 6,419 | 14.7 | 3.7 | 4.0x |
+| ShopFlow | Code/Flask | 10m 44s | 12,630 | 19.6 | 11.0 | 1.8x |
+| PixelCraft | Code/Pygame | 9m 57s | 10,795 | 18.1 | 5.0 | 3.6x |
+| SlideKit | HTML | 14m 54s | 32,678 | 36.6 | 19.9 | 1.8x |
+| ClimateAnalysis | Code+MD | 13m 0s | 14,629 | 18.8 | 13.5 | 1.4x |
+| **Mean** | | | | **33.7** | **16.6** | **2.4x** |
 
-Requirements: Pure HTML/CSS/JS, no frameworks. Canvas rendering at 60 FPS. Pause, restart, back-to-menu for each game. Each game file 300+ lines. Works by opening index.html directly.
-```
+### Sonnet 4.6
 
-### Results
+| Benchmark | Type | Wall time | Words | Words/s | CC baseline | Speedup |
+|-----------|------|-----------|-------|---------|-------------|---------|
+| ArcadeBox | Code/JS | 5m 35s | 19,712 | 58.8 | 17.5 | 3.4x |
+| LinAlgBook | MD | 2m 37s | 7,877 | 50.2 | 22.6 | 2.2x |
+| CloudDocs | MD | 7m 53s | 21,021 | 44.4 | 29.6 | 1.5x |
+| MathRef | MD | 9m 2s | 26,266 | 48.5 | 26.7 | 1.8x |
+| CompressKit | Code/Python | 9m 18s | 8,541 | 15.3 | 3.7 | 4.1x |
+| ShopFlow | Code/Flask | 11m 34s | 13,925 | 20.1 | 11.0 | 1.8x |
+| PixelCraft | Code/Pygame | 13m 46s | 16,075 | 19.5 | 5.0 | 3.9x |
+| SlideKit | HTML | 22m 45s | 34,843 | 25.5 | 19.9 | 1.3x |
+| ClimateAnalysis | Code+MD | 8m 17s | 12,848 | 25.9 | 13.5 | 1.9x |
+| **Mean** | | | | **34.2** | **16.6** | **2.4x** |
 
-| Method | Model | Wall time | Deliverable words | Words/s |
-|--------|-------|-----------|-------------------|---------|
-| **`/flow` skill** | **Opus 4.6** | **4m 46s** | **17,261** | **60.4** |
-| **`/flow` skill** | **Sonnet 4.6** | **5m 35s** | **19,712** | **58.8** |
-| CostPar (SDK fork) | Sonnet 4.6 | 7m 19s | 23,091 | 52.6 |
-| Claude Code (no orchestration) | Sonnet 4.6 | 18m 25s | 19,338 | 17.5 |
+### Comparison with baselines
 
-The `/flow` skill achieves **3.4x throughput** over unorchestrated Claude Code and matches or exceeds the SDK-based implementation — while running entirely on subscription credits.
+| Method | Mean throughput (w/s) | Mean speedup |
+|--------|----------------------|-------------|
+| `/flow` skill (Opus 4.6) | 33.7 | 2.4x |
+| `/flow` skill (Sonnet 4.6) | 34.2 | 2.4x |
+| CostPar SDK fork (Sonnet 4.6) | 38.1 | 2.3x |
+| Claude Code (no orchestration) | 16.6 | 1.0x |
+
+The `/flow` skill achieves **2.4x mean throughput** over unorchestrated Claude Code across 9 benchmarks, matching the SDK-based implementation — while running entirely on subscription credits.

@@ -52,7 +52,7 @@ For each dependency layer, estimate `layer_convention_tokens`:
 ### Step 1.3: Run the scheduler
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/run_scheduler.py \
+python ${CLAUDE_SKILL_DIR}/run_scheduler.py \
   --tasks-json '<json_task_list>' \
   --layer-convention-tokens '{"L0": 2000, "L1": 5000}'
 ```
@@ -70,14 +70,14 @@ Process layers in topological order (L0, then L1, etc.). For each layer:
    git add CONVENTIONS.md && git commit -m "conventions"
    ```
 
-2. **Launch Agent tool workers in parallel** — send ALL workers for this layer in a SINGLE message (multiple Agent tool calls). Do NOT set `run_in_background`. Each worker prompt must be SHORT — just the task and file, no lengthy requirements (conventions are in the file):
+2. **Launch ALL Agent calls in a SINGLE response** — emit every Agent tool call in one message so they run concurrently. Do NOT wait for one to finish before sending the next. Do NOT set `run_in_background`. Keep each prompt SHORT:
      ```
      Read CONVENTIONS.md and follow all conventions.
      Your task: [one-line task description]
      Output: [file path]
      ```
 
-3. **Wait for all workers to complete**, then do a quick consistency check (grep for key patterns). Only fix actual errors — do not rewrite working code.
+3. **Wait for all agents to complete**, then do a quick consistency check (grep for key patterns). Only fix actual errors — do not rewrite working code.
 
 ### If SERIAL:
 
