@@ -1,0 +1,35 @@
+t
+
+Build a browser-based game arcade with 8 playable games. The arcade should have a main menu screen where the player selects a game, and each game runs in an HTML5 Canvas element with keyboard/mouse controls. All games share a persistent high score system stored in localStorage, and the arcade tracks global statistics (total games played, total time played, best scores).
+
+### Games to Implement
+
+1. **Tetris**: Classic falling-block puzzle. 10x20 grid, 7 standard tetromino shapes (I, O, T, S, Z, J, L) with correct rotation (SRS or simple rotation). Gravity drops pieces at increasing speed per level (level up every 10 lines cleared). Scoring: 100/300/500/800 for 1/2/3/4 lines. Show next piece preview, current score, level, and lines cleared. Ghost piece showing where the current piece will land. Wall kicks on rotation.
+
+2. **Minesweeper**: Classic grid-based puzzle. Three difficulty levels: Beginner (9x9, 10 mines), Intermediate (16x16, 40 mines), Expert (30x16, 99 mines). Left click to reveal, right click to flag. First click is always safe (generate mines after first click). Flood-fill reveal for empty cells. Timer and mine counter display. Cell rendering with proper number colors (1=blue, 2=green, 3=red, 4=dark blue, 5=maroon, 6=teal, 7=black, 8=gray).
+
+3. **2048**: Sliding tile puzzle on a 4x4 grid. Arrow keys to slide all tiles in a direction; equal tiles merge and double their value. New tile (90% chance of 2, 10% chance of 4) appears after each move in a random empty cell. Smooth tile sliding and merging animations using requestAnimationFrame. Win condition: create a 2048 tile (but allow continuing). Game over when no moves possible. Score is the sum of all merged tile values.
+
+4. **Snake**: Classic snake game on a grid. Arrow keys to change direction. Snake grows by 1 segment when eating food. Food spawns at random empty positions. Game over on self-collision or wall collision. Increasing speed as snake gets longer. Display score (number of food eaten) and high score.
+
+5. **Breakout**: Brick-breaking game with paddle, ball, and brick layout. Paddle moves horizontally with mouse or arrow keys. Ball bounces off walls, paddle, and bricks. 5 rows of bricks with different colors and point values per row. Ball speed increases slightly each time it hits the paddle. 3 lives, display score. Brick collision detection using AABB. Ball angle varies based on where it hits the paddle.
+
+6. **Sudoku**: 9x9 puzzle generator and solver. Generate valid puzzles by filling a complete board (backtracking) then removing cells based on difficulty (Easy: 35 given, Medium: 28, Hard: 22). Click a cell to select, type 1-9 to fill, Delete/Backspace to clear. Highlight row, column, and 3x3 box of selected cell. Highlight conflicts (duplicate numbers) in red. Pencil marks mode (toggle) for noting candidates. Validate button to check solution. Timer display.
+
+7. **Memory Match**: Card-flipping memory game. Grid of face-down cards (4x4 = 8 pairs for Easy, 4x6 = 12 pairs for Medium, 6x6 = 18 pairs for Hard). Click to flip a card, flip a second card: if they match, both stay face-up; if not, both flip back after 1 second delay. Cards display emoji symbols. Track number of moves (each pair of flips = 1 move) and time. Smooth flip animation using CSS transforms on canvas-drawn cards or DOM overlays.
+
+8. **Gomoku (Five in a Row)**: Two-player or player-vs-AI on a 15x15 Go board. Players alternate placing black and white stones. Win by getting exactly 5 in a row (horizontal, vertical, or diagonal). AI opponent using minimax with alpha-beta pruning (search depth 3-4) and a heuristic evaluation function that scores patterns (open-four, half-open-four, open-three, etc.). Show last move indicator. Display whose turn it is and game result.
+
+### Technical Requirements
+
+- Pure HTML, CSS, and JavaScript only (no frameworks, no libraries, no build tools, no external assets)
+- Each game must use HTML5 Canvas for rendering (not DOM elements for game graphics)
+- All game logic, physics, collision detection, and AI must be implemented from scratch
+- The arcade shell (main menu, game selection, score display) can use DOM elements
+- Responsive design: canvas scales to fit the viewport while maintaining aspect ratio
+- Every game must have a pause feature (press Escape or P), a restart button, and a back-to-menu button
+- High scores stored in localStorage, displayed on main menu and in-game
+- All rendering at 60 FPS using requestAnimationFrame
+- Keyboard controls must not scroll the page (preventDefault on arrow keys, space)
+- Each game file should be at least 300 lines of JavaScript with complete, working logic
+- The application must work by opening index.html directly in a browser (no server required)

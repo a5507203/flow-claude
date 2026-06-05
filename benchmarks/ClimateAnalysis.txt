@@ -1,0 +1,23 @@
+Create a complete data analysis project investigating global climate trends. The project consists of analysis scripts and summary reports.
+
+**Analysis scripts** (each is a standalone Python script that generates results, tables, and ASCII visualizations. Pure Python, no pandas/numpy — implement all statistics from scratch):
+
+1. **temperature_analysis.py** — Analyze global temperature anomalies: load CSV data (generate synthetic realistic data inline), compute annual means, 10-year moving averages, trend line (linear regression from scratch), seasonal decomposition, identify hottest/coldest years. Output formatted tables and ASCII line chart. 400-600 lines.
+
+2. **precipitation_analysis.py** — Analyze precipitation patterns: regional precipitation data (generate synthetic data for 6 regions), compute monthly/annual statistics, detect drought periods (consecutive below-average months), correlation between regions, Mann-Kendall trend test implemented from scratch. Output tables and ASCII bar charts. 400-600 lines.
+
+3. **co2_analysis.py** — Analyze CO2 concentration trends: Mauna Loa-style monthly data (generate synthetic), compute annual growth rates, seasonal cycle extraction, exponential curve fitting from scratch, project future levels. Output tables and ASCII visualization. 400-600 lines.
+
+4. **sea_level_analysis.py** — Analyze sea level rise: tide gauge data (generate synthetic for 5 stations), compute station trends, global mean sea level, acceleration detection (quadratic fit vs linear), confidence intervals from scratch. Output tables and ASCII plots. 400-600 lines.
+
+5. **correlation_analysis.py** — Cross-variable correlation analysis: load results from all 4 analysis scripts above (import their data generation functions), compute Pearson and Spearman correlations between temperature/precipitation/CO2/sea level, lag correlation analysis, Granger causality test from scratch. Output correlation matrix table. 300-500 lines.
+
+**Summary reports** (these compile results from ALL analysis scripts — every number, trend description, and finding must exactly match the analysis script outputs):
+
+6. **executive_summary.md** — 1-page executive summary citing the exact key findings from each analysis script: specific temperature trend values, precipitation changes, CO2 growth rates, and sea level rise rates. Every number must match the script outputs. 500-800 words.
+
+7. **methodology.md** — Description of all statistical methods used across all 5 scripts: the exact formulas for linear regression, correlation coefficients, Mann-Kendall test, confidence intervals as implemented in the scripts. Must match the implementations. 500-800 words.
+
+8. **data_dictionary.md** — Complete dictionary of all variables, column names, units, and data ranges used across all scripts. Every variable name must match the scripts exactly. 400-600 words.
+
+All scripts must use consistent variable naming, date formats (ISO 8601), units (°C for temperature, mm for precipitation, ppm for CO2, mm for sea level), and output formatting (same table border style, same number of decimal places).

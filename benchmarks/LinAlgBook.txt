@@ -1,0 +1,15 @@
+Write a beginner-friendly linear algebra tutorial targeting first-year undergraduates. The tutorial must be split into exactly six markdown files:
+
+1. **vectors.md** — Vector spaces, operations, linear independence, spanning sets. 800-1200 words, 2+ LaTeX worked examples.
+
+2. **matrix_ops.md** — Matrix multiplication, inverse, transpose, row reduction. 800-1200 words, 2+ LaTeX worked examples.
+
+3. **determinants.md** — Determinant definition, properties, cofactor expansion, Cramer's rule. 800-1200 words, 2+ LaTeX worked examples.
+
+4. **eigen.md** — Eigenvalues, eigenvectors, diagonalization, characteristic polynomial. 800-1200 words, 2+ LaTeX worked examples.
+
+5. **svd.md** — Singular value decomposition, low-rank approximation, applications. 800-1200 words, 2+ LaTeX worked examples.
+
+6. **pca.md** — Principal component analysis, covariance matrix, dimensionality reduction. 800-1200 words, 2+ LaTeX worked examples.
+
+Cross-chapter consistency of notation and symbols is critical: vector notation (bold vs arrow), default vector orientation, subscript start, transpose symbol, norm bracket style, matrix size convention, eigenvalue ordering convention.

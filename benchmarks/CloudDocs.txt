@@ -1,0 +1,23 @@
+Write complete API documentation for a fictional cloud storage service called "CloudVault". The documentation consists of module-level API references and cross-cutting guides.
+
+**Module API references** (each is a comprehensive API doc with endpoint descriptions, request/response schemas, code examples, and error codes):
+
+1. **auth_api.md** — Authentication & Authorization API: OAuth2 flows (authorization code, client credentials, refresh token), JWT token structure, scopes and permissions, API key management, rate limiting per auth level. 15+ endpoints with full request/response examples in curl and Python. 2500-3500 words.
+
+2. **storage_api.md** — File Storage API: upload (multipart, resumable, chunked), download (direct, signed URLs, streaming), file metadata CRUD, versioning, trash/restore, sharing links with expiry. 20+ endpoints. 3000-4000 words.
+
+3. **search_api.md** — Search & Query API: full-text search, metadata filters, date ranges, file type filtering, sort options, pagination (cursor-based), search suggestions, saved searches. 10+ endpoints. 2000-3000 words.
+
+4. **admin_api.md** — Administration API: user management (CRUD, roles, quotas), organization settings, usage analytics, audit logs, billing endpoints, webhook configuration. 15+ endpoints. 2500-3500 words.
+
+5. **webhook_api.md** — Webhooks & Events API: event types (file.created, file.deleted, file.shared, user.joined, storage.quota_exceeded), webhook registration, payload schemas, retry policy, signature verification. 10+ endpoints. 2000-3000 words.
+
+**Cross-cutting guides** (these reference ALL module APIs above — every endpoint reference, error code, and schema name must match the module docs exactly):
+
+6. **quickstart.md** — Getting Started guide walking through: register app, get API key, authenticate, upload first file, search for it, share it, set up webhook. Each step references specific endpoints from the module docs by exact path and method. 800-1200 words.
+
+7. **error_reference.md** — Complete error code reference aggregating ALL error codes from all 5 modules. Each error must list: HTTP status, error code string, description, which endpoints can return it, and resolution steps. Must match the error codes defined in each module doc exactly. 800-1200 words.
+
+8. **migration_guide.md** — v1 to v2 migration guide listing every breaking change across all modules: renamed endpoints, changed request/response schemas, deprecated fields, new required parameters. Must reference exact endpoint paths from the module docs. 600-1000 words.
+
+All documents must use consistent formatting: endpoint format `METHOD /api/v2/path`, consistent schema naming (PascalCase for types, camelCase for fields), consistent error code format `RESOURCE_ACTION_ERROR`, and the same authentication header examples throughout.

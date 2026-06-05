@@ -1,0 +1,25 @@
+Create a complete set of HTML slide presentations for a 3-day machine learning workshop. Each presentation is a standalone HTML file using CSS for styling and JavaScript for slide navigation (arrow keys, click).
+
+**Main presentations** (each is a full HTML slide deck with 20-30 slides, inline CSS and JS, speaker notes in hidden divs):
+
+1. **day1_foundations.html** — Day 1 Morning: ML Foundations. Slides covering: supervised vs unsupervised learning, bias-variance tradeoff, cross-validation, evaluation metrics (accuracy, precision, recall, F1, ROC-AUC), feature engineering basics. Include LaTeX-rendered equations using Unicode math symbols. 500-700 lines.
+
+2. **day1_linear.html** — Day 1 Afternoon: Linear Models. Slides covering: linear regression (normal equation, gradient descent), logistic regression, regularization (L1, L2, elastic net), SVMs with kernel trick. Include decision boundary visualizations as SVG diagrams. 500-700 lines.
+
+3. **day2_trees.html** — Day 2 Morning: Tree-Based Methods. Slides covering: decision trees (ID3, C4.5, CART), random forests, gradient boosting (XGBoost, LightGBM), feature importance, hyperparameter tuning. Include tree diagram SVGs. 500-700 lines.
+
+4. **day2_neural.html** — Day 2 Afternoon: Neural Networks. Slides covering: perceptrons, backpropagation, activation functions, CNNs (convolution, pooling, architectures), RNNs (LSTM, GRU), transfer learning. Include network architecture SVG diagrams. 500-700 lines.
+
+5. **day3_practical.html** — Day 3 Morning: Practical ML Pipeline. Slides covering: data preprocessing, missing values, imbalanced classes, model selection, experiment tracking, deployment basics, ethical considerations. Include pipeline flow diagrams as SVG. 500-700 lines.
+
+6. **day3_advanced.html** — Day 3 Afternoon: Advanced Topics. Slides covering: attention mechanisms, transformers, self-supervised learning, generative models (VAE, GAN basics), reinforcement learning overview, current trends. Include architecture diagrams. 500-700 lines.
+
+**Workshop support materials** (these reference and summarize content from ALL 6 presentations — they must use the exact same terminology, equation notation, and diagram labeling as the presentations):
+
+7. **handout.html** — Printable 2-page handout summarizing key concepts from all 6 sessions. Must reference the exact equation numbers and terminology used in each presentation. 200-300 lines.
+
+8. **exercises.html** — Practice exercises page with 3 exercises per session (18 total), each referencing specific slides and concepts from the corresponding presentation. 200-300 lines.
+
+9. **glossary.html** — Complete glossary of all technical terms used across all 6 presentations, with definitions matching exactly how each term was introduced in its source presentation. 200-300 lines.
+
+All files must share the same CSS color scheme, font choices, and slide layout conventions. The support materials must cross-reference presentations using consistent session numbering (Day X, Session Y) and slide numbers.

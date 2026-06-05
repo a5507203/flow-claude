@@ -1,0 +1,69 @@
+Build a 2D pixel survival game inspired by Minecraft using Python and Pygame.
+
+The game should be a side-scrolling 2D platformer view (like the original Minecraft 2D or Terraria) where the player can explore, mine blocks, collect resources, craft items, fight enemies, and survive through day-night cycles. The player moves left/right and can jump; gravity pulls the player down.
+
+### Core Features
+
+**World:**
+- Procedurally generated open world (at least 256x256 blocks)
+- Multiple biomes (forest, desert, snow, plains) with distinct terrain and vegetation
+- Underground caves with ore deposits at varying depths
+- Natural structures: trees, water lakes, flower patches, and small villages
+
+**Blocks and Resources:**
+- At least 15 block types (grass, dirt, stone, sand, wood, leaves, water, various ores, snow, cactus, crafting table, furnace)
+- Each block has visual appearance, mining hardness, and drop items
+- Some blocks require specific tools to mine efficiently
+
+**Player:**
+- Left/right movement with jump and gravity physics
+- Collision detection against solid blocks (platformer-style)
+- Health system (can take damage, heal, die and respawn)
+- Hunger system that depletes over time
+- Mine blocks by clicking (with mining progress animation)
+- Place blocks from inventory
+- Attack nearby enemies
+
+**Inventory and Crafting:**
+- 36-slot inventory (9 hotbar + 27 storage) with item stacking
+- Hotbar selection with number keys
+- Drag-and-drop between inventory slots
+- 3x3 crafting grid with at least 15 recipes (tools, building materials, utility items)
+
+**Enemies:**
+- At least 3 enemy types: one melee chaser, one ranged attacker, one passive animal
+- Enemies spawn at night or in dark areas
+- Basic AI: chase player, attack, wander, flee
+- Knockback and attack cooldowns
+
+**Day-Night Cycle:**
+- Full cycle over 10 real-time minutes
+- Smooth sky color transitions
+- Darkness overlay at night with reduced visibility
+- Torch placement for local lighting
+
+**UI:**
+- Health and hunger bars
+- Hotbar with item display
+- Minimap showing nearby terrain
+- Debug info (FPS, coordinates, current biome)
+- Inventory screen overlay (toggle with E key)
+
+**Save/Load:**
+- Save world state to JSON with compression
+- Multiple save slots
+- Auto-save every 2 minutes
+
+**Visual Effects:**
+- Block breaking particles
+- Damage numbers
+- Item pickup sparkles
+- Torch flame effects
+
+### Constraints
+
+- Python 3.10+ with Pygame only (no other external libraries)
+- No image or sound assets — use colored rectangles and pixels for all graphics
+- Block size: 32x32 pixels on screen
+- Window: 1024x768, targeting 60 FPS
+- The game must be playable by running a single entry point script

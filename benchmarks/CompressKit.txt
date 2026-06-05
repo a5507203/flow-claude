@@ -1,0 +1,44 @@
+Build a multi-algorithm file compression toolkit in Python that implements several compression algorithms from scratch.
+
+The toolkit should let users compress and decompress files using different algorithms, bundle multiple files into archives, and benchmark algorithms against each other.
+
+### Core Features
+
+**Compression Algorithms (implement from scratch, no external compression libraries):**
+- Huffman coding
+- LZ77
+- LZW
+- Burrows-Wheeler Transform with Move-to-Front encoding
+- Run-Length Encoding
+- Arithmetic coding
+- Deflate (combining LZ77 and Huffman)
+
+Each algorithm must support both compress and decompress, and guarantee round-trip correctness: decompressing a compressed file must produce the exact original.
+
+**Archive Format:**
+- Custom archive format for bundling multiple files
+- Store filenames, original sizes, checksums, and compressed data
+- Support compressing entire directories preserving structure
+- Integrity verification on extraction
+
+**Data Integrity:**
+- CRC32 checksum (using lookup table)
+- Adler32 rolling checksum
+- Verification on decompression
+
+**Command-Line Interface:**
+- Compress a single file with a chosen algorithm
+- Decompress a file (auto-detect algorithm from header)
+- Create and extract multi-file archives
+- Benchmark mode: run all algorithms on a file and report compression ratio, speed, and correctness
+- Show file and archive metadata
+
+**Self-Test:**
+- Built-in test that generates various data patterns (random, repeated, text-like) and verifies all algorithms produce correct round-trip results
+
+### Constraints
+
+- Python 3.10+ with no external libraries (no zlib, lzma, bz2 — everything from scratch)
+- All algorithms must handle edge cases: empty input, single byte, all identical bytes, random bytes
+- Bit-level I/O utility for algorithms that need sub-byte operations
+- The toolkit must be runnable from the command line

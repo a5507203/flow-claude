@@ -1,0 +1,63 @@
+Build a full-stack e-commerce platform with a Python backend and web frontend.
+
+The platform should be a complete online store where users can browse products, manage a shopping cart, place orders, and where admins can manage inventory and view analytics.
+
+### Core Features
+
+**Product Catalog:**
+- Browse products with pagination
+- Filter by category, price range, and rating
+- Search by keyword
+- Sort by price, rating, or newest
+- Product detail pages with description and customer reviews
+
+**Shopping Cart:**
+- Add products with quantity selection
+- Update quantities or remove items
+- Show subtotals and total
+- Persist cart across page navigation
+- Check stock availability before adding
+
+**User Accounts:**
+- Register with email, username, and password
+- Login/logout with session management
+- View order history
+- Write product reviews (one per product per user)
+
+**Checkout and Orders:**
+- Shipping address form with validation
+- Order confirmation with order number
+- Payment simulation (mark as paid after confirmation)
+- Order status tracking (pending, paid, shipped, delivered, cancelled)
+- Cancel pending orders
+
+**Admin Dashboard:**
+- Overview statistics (total users, orders, revenue)
+- Order management with status updates and filtering
+- Product management (add, edit, delete products)
+- Sales analytics (top products, daily orders)
+
+**Frontend:**
+- Responsive design that works on mobile and desktop
+- Navigation with search bar, cart icon with item count, and user menu
+- Visually polished (not raw unstyled HTML)
+- All data loaded dynamically from the API
+
+### Technical Requirements
+
+- Backend: Python 3.10+ with Flask and SQLAlchemy (SQLite database)
+- Frontend: vanilla HTML, CSS, and JavaScript only (no React, Vue, jQuery, or CSS frameworks)
+- No external image assets — use CSS-generated placeholders for product images
+- Backend serves JSON REST APIs; frontend uses fetch() for all data operations
+- Do NOT use static HTML files or hardcoded data — all product listings, cart contents, order history, and admin data must be loaded dynamically from the API
+- Session-based authentication with server-side sessions (not localStorage tokens)
+- All API endpoints must validate inputs and return appropriate error messages
+- The application must be runnable with a single command (`python app.py`)
+- Include a database seed script that populates at least 20 products across 5 categories, plus one admin user and one regular user
+
+### Quality Requirements
+
+- The codebase must be production-quality: proper error handling, input validation, and security (password hashing, CSRF-safe session auth, SQL injection prevention via ORM)
+- The frontend must be fully functional: every button, form, and link must work end-to-end with the backend API
+- The admin dashboard must include working analytics with visual charts (CSS-based bar charts or similar, no external charting libraries)
+- The CSS must be comprehensive: responsive layout with mobile breakpoints, hover effects, transitions, consistent color scheme via CSS custom properties, and at least 600 lines of CSS

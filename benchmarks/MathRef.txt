@@ -1,0 +1,17 @@
+Write a comprehensive discrete mathematics textbook for undergraduates. The textbook should cover the following topics, each as a separate markdown file with 3000-4000 words and at least 5 fully worked LaTeX proofs:
+
+- Propositional and predicate logic (truth tables, connectives, tautologies, normal forms, quantifiers)
+- Set theory (set operations, power sets, Cartesian products, set identities with proofs, Russell's paradox)
+- Relations (reflexive, symmetric, transitive, antisymmetric, equivalence relations, partial orders, Hasse diagrams)
+- Functions (injective, surjective, bijective, composition, inverse, pigeonhole principle, cardinality)
+- Combinatorics (permutations, combinations, binomial theorem, inclusion-exclusion, generating functions, recurrences)
+- Graph theory (adjacency matrices, isomorphism, Euler/Hamilton paths, planar graphs, coloring, trees, MST)
+
+After all chapters are complete, create short reference appendices (each 400-600 words) that compile information from the chapters:
+
+- A symbol table (400-600 words) listing every mathematical symbol used, organized by chapter, with exact LaTeX commands matching each chapter's notation choices character-for-character
+- A theorem index (400-600 words) listing every theorem, lemma, corollary, and proposition with the exact name, number, and statement as written in the source chapter
+- A cross-reference guide (300-500 words) citing exact theorem numbers showing which concepts from earlier chapters appear in later ones
+- A proof techniques summary (400-600 words) citing exact theorem numbers where each technique (direct proof, contradiction, induction, contrapositive, cases, diagonalization) is demonstrated
+
+All chapters and appendices must use consistent notation: the same symbol for empty set, the same notation for function composition, the same theorem numbering format (Theorem X.Y), the same proof block structure. The appendices are particularly sensitive to inconsistency because they aggregate information from all chapters — any deviation in symbol usage, theorem naming, or formatting between an appendix and its source chapter will break the cross-referencing.
