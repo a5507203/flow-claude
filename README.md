@@ -91,7 +91,7 @@ python3 .claude/skills/flow/run_scheduler.py \
 
 ## Benchmark results
 
-Evaluated on 9 benchmarks spanning code generation, document authoring, and structured planning. Throughput measured as deliverable words per second (excluding intermediate artifacts).
+Evaluated on 9 benchmarks spanning code generation, document authoring, and structured planning. Throughput measured as deliverable words per second (excluding intermediate artifacts). The CC baseline is vanilla Claude Code without the `/flow` skill or any additional orchestration.
 
 ### Opus 4.6
 
