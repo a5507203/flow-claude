@@ -1,6 +1,6 @@
-# /flow — CostPar Orchestrator Skill
+# /flow — Parallelism Orchestrator Skill
 
-**CostPar** (Cost-aware Parallelizability scheduler) is a Claude Code skill that automatically decides whether to parallelize multi-agent task execution. The core insight: parallel execution isn't always faster — it introduces alignment overhead (inconsistent naming, interfaces, formatting) and re-exploration costs. CostPar uses a token-cost inequality to determine, per dependency layer, whether the parallel speedup outweighs these costs.
+flow is a Claude Code skill that automatically decides whether to parallelize multi-agent task execution. The core insight: parallel execution isn't always faster — it introduces alignment overhead (inconsistent naming, interfaces, formatting) and re-exploration costs. This skill uses a token-cost inequality to determine, per dependency layer, whether the parallel speedup outweighs these costs.
 
 ## Install
 
@@ -129,7 +129,7 @@ Evaluated on 9 benchmarks spanning code generation, document authoring, and stru
 |--------|----------------------|-------------|
 | `/flow` skill (Opus 4.6) | 33.7 | 2.4x |
 | `/flow` skill (Sonnet 4.6) | 34.2 | 2.4x |
-| CostPar SDK fork (Sonnet 4.6) | 38.1 | 2.3x |
+| Claude SDK fork (Sonnet 4.6) | 38.1 | 2.3x |
 | Claude Code (no orchestration) | 16.6 | 1.0x |
 
 The `/flow` skill achieves **2.4x mean throughput** over unorchestrated Claude Code across 9 benchmarks, matching the SDK-based implementation — while running entirely on subscription credits.
